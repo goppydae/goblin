@@ -1,0 +1,23 @@
+site_name: Goblin
+site_description: Distributed Orchestrator for GAPI
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: deep purple
+      accent: teal
+    - scheme: slate
+      primary: deep purple
+      accent: teal
+
+nav:
+  - Home: index.md
+  - Usage: usage.md
+  - Architecture: architecture.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
