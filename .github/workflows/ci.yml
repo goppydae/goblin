@@ -24,6 +24,7 @@ jobs:
         with:
           repository: goppydae/gapi
           path: gapi
+          token: ${{ secrets.CI_PAT }}
 
       - name: Install Nix
         uses: cachix/install-nix-action@v24
