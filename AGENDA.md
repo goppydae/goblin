@@ -40,7 +40,7 @@ Leverages the robust local agent lifecycle management of GAPI to build a scalabl
 ### Immediate Priorities
 - [x] **State Management**: Distributed Key/Value store integration (on top of Raft).
 - [x] **Job Scheduling**: Distributed task placement strategies.
-- [ ] **Agent Migration**: Moving agents between nodes in response to failure or load.
+- [x] **Agent Migration**: Moving agents between nodes in response to failure or load.
 
 ---
 
@@ -59,4 +59,24 @@ Leverages the robust local agent lifecycle management of GAPI to build a scalabl
 - **KV Store**: Implemented a replicated finite-state machine (FSM) over Raft.
 - **Scheduling**: Simple random placement strategy (extensible interface).
 - **Integration**: Full source-to-binary verification link with Gapi.
+
+---
+
+## Proposed Enhancements
+
+### Resource-Aware Scheduling
+- [ ] **StrategyLeastLoaded/BinPack**: Move beyond random scheduling by tracking node capacity and load.
+- [ ] **Job Constraints**: Support node labels, affinity/anti-affinity rules.
+
+### Security Hardening
+- [ ] **mTLS**: Enforce strict mTLS for all Raft/Serf/Control plane traffic (remove `InsecureSkipVerify`).
+- [ ] **CA Rotation**: Automated certificate management.
+
+### Observability
+- [ ] **Cluster Metrics**: Expose Raft latency, Serf member counts, and job placement stats via Prometheus.
+- [ ] **Distributed Logs**: Centralized log aggregation for all cluster nodes.
+
+### Enhanced Job Specs
+- [ ] **RestartPolicy**: Explicit control over job restart behavior (Always, OnFailure, Never).
+- [ ] **Environment Variables**: Inject `Env` map into running agents.
 

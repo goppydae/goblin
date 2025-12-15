@@ -94,6 +94,13 @@ func (c *ClusterController) Lifecycle(ctx context.Context, id, action string) (b
 	return false, fmt.Errorf("action %s not supported in cluster mode yet", action)
 }
 
+func (c *ClusterController) GetLogs(ctx context.Context, id string) (<-chan string, error) {
+	// TODO: Implement distributed log streaming via QUIC
+	ch := make(chan string)
+	close(ch)
+	return ch, fmt.Errorf("distributed logs not implemented yet")
+}
+
 // Redefine quicRequest if it's not exported?
 // It's in the same package (cli), so it should be visible if defined in cli.go
 // It is defined in cli.go as `func quicRequest(...)`. It is unexported (lowercase q).
