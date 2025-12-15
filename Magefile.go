@@ -113,6 +113,27 @@ func Test() error {
 	return sh.RunV("go", "test", "-v", "./...")
 }
 
+// TestCluster runs cluster coordination tests
+func TestCluster() error {
+	mg.Deps(Build)
+	fmt.Println("Running cluster tests...")
+	return sh.RunV("./test/test_cluster.sh")
+}
+
+// TestMigration runs data migration tests
+func TestMigration() error {
+	mg.Deps(Build)
+	fmt.Println("Running migration tests...")
+	return sh.RunV("./test/test_migration.sh")
+}
+
+// TestScheduler runs scheduler tests
+func TestScheduler() error {
+	mg.Deps(Build)
+	fmt.Println("Running scheduler tests...")
+	return sh.RunV("./test/test_scheduler.sh")
+}
+
 // Clean removes build artifacts
 func Clean() error {
 	fmt.Println("Cleaning build artifacts...")
@@ -206,4 +227,67 @@ func (Docs) Html() error {
 		return fmt.Errorf("mkdocs not found. Run 'nix develop' to get documentation tools")
 	}
 	return sh.RunV("mkdocs", "build")
+}
+
+// Man generates man pages from markdown files using Pandoc
+func (Docs) Man() error {
+	fmt.Println("Generating Man pages...")
+	// Check for pandoc
+	if _, err := exec.LookPath("pandoc"); err != nil {
+		return fmt.Errorf("pandoc not found. Run 'nix develop' to get documentation tools")
+	}
+
+	if err := os.MkdirAll("man/man1", 0755); err != nil {
+		return err
+	}
+
+	// Generate man pages for Goblin commands
+	pages := map[string]string{
+		"docs/index.md":           "man/man1/goblin.1",
+		"docs/getting-started.md": "man/man1/goblin-quickstart.1",
+	}
+
+	for src, dst := range pages {
+		// Check if source exists
+		if _, err := os.Stat(src); os.IsNotExist(err) {
+			fmt.Printf("Skipping %s (not found)\n", src)
+			continue
+		}
+
+		fmt.Printf("Generating %s -> %s\n", src, dst)
+		if err := sh.Run("pandoc", src, "-s", "-t", "man", "-o", dst); err != nil {
+			return fmt.Errorf("failed to generate %s: %w", dst, err)
+		}
+	}
+
+	fmt.Println("✅ Man pages generated in ./man/man1")
+	return nil
+}
+
+// TestUnit runs only unit tests (core and internal packages)
+func TestUnit() error {
+	mg.Deps(checkHermetic)
+	fmt.Println("Running unit tests...")
+	return sh.RunV("go", "test", "-v", "./core/...", "./internal/...")
+}
+
+// Lint runs linters
+func Lint() error {
+	fmt.Println("Running linters...")
+
+	// Check if golangci-lint is available
+	if _, err := exec.LookPath("golangci-lint"); err == nil {
+		return sh.RunV("golangci-lint", "run")
+	}
+
+	// Fallback to go vet
+	fmt.Println("golangci-lint not found, using go vet...")
+	return sh.RunV("go", "vet", "./...")
+}
+
+// Dev runs the development build and starts goblind
+func Dev() error {
+	mg.Deps(Build)
+	fmt.Println("Starting goblind in development mode...")
+	return sh.RunV("./bin/goblind")
 }
