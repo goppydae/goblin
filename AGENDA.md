@@ -39,24 +39,24 @@ Leverages the robust local agent lifecycle management of GAPI to build a scalabl
 
 ### Immediate Priorities
 - [x] **State Management**: Distributed Key/Value store integration (on top of Raft).
-- [ ] **Job Scheduling**: Distributed task placement strategies.
+- [x] **Job Scheduling**: Distributed task placement strategies.
 - [ ] **Agent Migration**: Moving agents between nodes in response to failure or load.
 
 ---
 
-## 🎉 Session Accomplishments (2025-12-14)
+## 🎉 Session Accomplishments (2025-12-15)
 
-### Goblin (12 Features)
-1. ✅ **Project Setup** - go.mod, structure, README
-2. ✅ **Distributed Event Bus** - Core pub/sub
-3. ✅ **Routing Logic** - Topic-based strategies
-4. ✅ **Comprehensive Tests** - 6/6 passing
-5. ✅ **Working Daemon** - goblind operational
-6. ✅ **Node Discovery** - Serf integration
-7. ✅ **Consensus Layer** - Raft integration with FSM
-8. ✅ **Event Replication** - Gossip/Raft backed bus
-9. ✅ **Dev Environment** - Nix flake & documentation site
-10. ✅ **Multi-Node Support** - `goblinctl` flags for local clusters
-11. ✅ **Namespacing & Tagging** - Daemon grouping and ACL control
-12. ✅ **Documentation Integration** - HTML & Man page generation
-13. ✅ **Hermetic Builds** - Parity with GAPI build system
+### Goblin (Job Scheduling Release)
+1. ✅ **Scheduler Core** - Filter & Assign logic
+2. ✅ **Job Submission API** - gRPC/HTTP endpoints
+3. ✅ **KV Store** - Raft-based distributed storage
+4. ✅ **Agent Lifecycle** - Gapi client integration
+5. ✅ **CLI Tooling** - `schedule` and `status` commands
+6. ✅ **CI/CD Pipeline** - GitHub Actions with Gapi integration
+7. ✅ **E2E Verification** - Multi-node cluster scheduling tests
+
+### Breakdown
+- **KV Store**: Implemented a replicated finite-state machine (FSM) over Raft.
+- **Scheduling**: Simple random placement strategy (extensible interface).
+- **Integration**: Full source-to-binary verification link with Gapi.
+
