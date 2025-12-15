@@ -25,7 +25,7 @@ func TestDistributedEventBus_PublishLocal(t *testing.T) {
 		"count":   42,
 	}
 
-	err := bus.PublishLocal("test.topic", payload)
+	err := bus.PublishLocal("", "test.topic", payload, nil)
 	if err != nil {
 		t.Fatalf("PublishLocal failed: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestDistributedEventBus_MultipleSubscribers(t *testing.T) {
 	}
 
 	payload := map[string]interface{}{"test": true}
-	err := bus.PublishLocal("test.multi", payload)
+	err := bus.PublishLocal("", "test.multi", payload, nil)
 	if err != nil {
 		t.Fatalf("PublishLocal failed: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestDistributedEventBus_NoSubscribers(t *testing.T) {
 	bus := NewDistributedEventBus("node1", nil, nil)
 
 	payload := map[string]interface{}{"test": true}
-	err := bus.PublishLocal("nonexistent.topic", payload)
+	err := bus.PublishLocal("", "nonexistent.topic", payload, nil)
 	if err != nil {
 		t.Fatalf("PublishLocal should not error with no subscribers: %v", err)
 	}

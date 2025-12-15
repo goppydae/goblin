@@ -107,6 +107,12 @@ func (c *Consensus) Leader() string {
 	return string(addr)
 }
 
+// VerifyLeader checks if this node is the leader and has a quorum
+func (c *Consensus) VerifyLeader() error {
+	future := c.raft.VerifyLeader()
+	return future.Error()
+}
+
 // Apply applies a command to the Raft log
 func (c *Consensus) Apply(data []byte, timeout time.Duration) error {
 	future := c.raft.Apply(data, timeout)
@@ -131,6 +137,6 @@ func (c *Consensus) Shutdown() error {
 }
 
 // GetState returns the current FSM state
-func (c *Consensus) GetState(key string) (interface{}, bool) {
-	return c.fsm.Get(key)
+func (c *Consensus) GetState(namespace, key string) ([]byte, bool) {
+	return c.fsm.Get(namespace, key)
 }

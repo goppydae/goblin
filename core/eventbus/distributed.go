@@ -14,6 +14,8 @@ import (
 type Event struct {
 	ID        string                 `json:"id"`
 	Topic     string                 `json:"topic"`
+	Namespace string                 `json:"namespace"`
+	Tags      []string               `json:"tags"`
 	Payload   map[string]interface{} `json:"payload"`
 	NodeID    string                 `json:"node_id"`
 	Timestamp time.Time              `json:"timestamp"`
@@ -22,10 +24,18 @@ type Event struct {
 // EventHandler is a function that handles events
 type EventHandler func(Event)
 
+// EventBus defines the interface for the event bus
+type EventBus interface {
+	Subscribe(topic string, handler EventHandler) Subscription
+	PublishLocal(namespace, topic string, payload map[string]interface{}, tags []string) error
+	PublishCluster(namespace, topic string, payload map[string]interface{}, tags []string) error
+	PublishLeader(namespace, topic string, payload map[string]interface{}, tags []string) error
+}
+
 // DistributedEventBus manages cluster-wide event distribution
 type DistributedEventBus struct {
 	nodeID      string
-	subscribers map[string][]EventHandler
+	subscribers map[string]map[string]EventHandler
 	router      *EventRouter
 	membership  *cluster.Membership
 	consensus   *consensus.Consensus
@@ -36,7 +46,7 @@ type DistributedEventBus struct {
 func NewDistributedEventBus(nodeID string, membership *cluster.Membership, consensus *consensus.Consensus) *DistributedEventBus {
 	bus := &DistributedEventBus{
 		nodeID:      nodeID,
-		subscribers: make(map[string][]EventHandler),
+		subscribers: make(map[string]map[string]EventHandler),
 		router:      NewEventRouter(),
 		membership:  membership,
 		consensus:   consensus,
@@ -50,19 +60,56 @@ func NewDistributedEventBus(nodeID string, membership *cluster.Membership, conse
 	return bus
 }
 
+// Subscription represents an active event subscription
+type Subscription struct {
+	ID    string
+	Topic string
+	bus   *DistributedEventBus
+}
+
+// Unsubscribe removes the subscription
+func (s *Subscription) Unsubscribe() {
+	s.bus.Unsubscribe(s)
+}
+
 // Subscribe registers a handler for a specific topic
-func (bus *DistributedEventBus) Subscribe(topic string, handler EventHandler) {
+func (bus *DistributedEventBus) Subscribe(topic string, handler EventHandler) Subscription {
 	bus.mu.Lock()
 	defer bus.mu.Unlock()
 
-	bus.subscribers[topic] = append(bus.subscribers[topic], handler)
+	subID := generateEventID() // Reusing ID generator for simplicity
+	if _, ok := bus.subscribers[topic]; !ok {
+		bus.subscribers[topic] = make(map[string]EventHandler)
+	}
+	bus.subscribers[topic][subID] = handler
+
+	return Subscription{
+		ID:    subID,
+		Topic: topic,
+		bus:   bus,
+	}
+}
+
+// Unsubscribe removes a handler
+func (bus *DistributedEventBus) Unsubscribe(sub *Subscription) {
+	bus.mu.Lock()
+	defer bus.mu.Unlock()
+
+	if handlers, ok := bus.subscribers[sub.Topic]; ok {
+		delete(handlers, sub.ID)
+		if len(handlers) == 0 {
+			delete(bus.subscribers, sub.Topic)
+		}
+	}
 }
 
 // PublishLocal publishes an event only on the local node
-func (bus *DistributedEventBus) PublishLocal(topic string, payload map[string]interface{}) error {
+func (bus *DistributedEventBus) PublishLocal(namespace, topic string, payload map[string]interface{}, tags []string) error {
 	event := Event{
 		ID:        generateEventID(),
 		Topic:     topic,
+		Namespace: namespace,
+		Tags:      tags,
 		Payload:   payload,
 		NodeID:    bus.nodeID,
 		Timestamp: time.Now(),
@@ -72,10 +119,12 @@ func (bus *DistributedEventBus) PublishLocal(topic string, payload map[string]in
 }
 
 // PublishCluster publishes an event to all nodes in the cluster via Serf gossip
-func (bus *DistributedEventBus) PublishCluster(topic string, payload map[string]interface{}) error {
+func (bus *DistributedEventBus) PublishCluster(namespace, topic string, payload map[string]interface{}, tags []string) error {
 	event := Event{
 		ID:        generateEventID(),
 		Topic:     topic,
+		Namespace: namespace,
+		Tags:      tags,
 		Payload:   payload,
 		NodeID:    bus.nodeID,
 		Timestamp: time.Now(),
@@ -100,7 +149,7 @@ func (bus *DistributedEventBus) PublishCluster(topic string, payload map[string]
 }
 
 // PublishLeader publishes an event that only the leader can send via Raft
-func (bus *DistributedEventBus) PublishLeader(topic string, payload map[string]interface{}) error {
+func (bus *DistributedEventBus) PublishLeader(namespace, topic string, payload map[string]interface{}, tags []string) error {
 	// Check if we have consensus
 	if bus.consensus == nil {
 		return errors.New("consensus not available")
@@ -114,6 +163,8 @@ func (bus *DistributedEventBus) PublishLeader(topic string, payload map[string]i
 	event := Event{
 		ID:        generateEventID(),
 		Topic:     topic,
+		Namespace: namespace,
+		Tags:      tags,
 		Payload:   payload,
 		NodeID:    bus.nodeID,
 		Timestamp: time.Now(),

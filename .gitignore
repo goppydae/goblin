@@ -1,6 +1,6 @@
 # Binaries
-goblinctl
-goblind
+/goblinctl
+/goblind
 *.so
 *.test
 bin/
@@ -10,7 +10,6 @@ data/
 site/
 man/
 .bin/
-flake.lock
 
 # IDE
 .idea/

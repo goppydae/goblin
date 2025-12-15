@@ -12,13 +12,33 @@
         pkgs = import nixpkgs {
           inherit system;
         };
+        
+        # Simple package definition for now, or just shell
+        goblin = pkgs.buildGoModule {
+          pname = "goblin";
+          version = "0.0.1";
+          src = ./.;
+          vendorHash = null; # or "..." if vendored
+          subPackages = [ "cmd/goblind" "cmd/goblinctl" ];
+        };
+
       in {
+        packages = {
+          default = goblin;
+          goblin = goblin;
+        };
+        
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
             go
             gopls
             gotools
             gcc
+            mage
+            # Protobuf
+            protobuf
+            protoc-gen-go
+            protoc-gen-go-grpc
             # Documentation
             pandoc
             python3Packages.mkdocs
@@ -28,9 +48,28 @@
           shellHook = ''
             export GOBIN=$PWD/.bin
             export PATH=$GOBIN:$PATH
+            
+            # Add tools to PATH explicitly if needed, but mkShell handles it.
+            export PATH=${pkgs.gcc}/bin:${pkgs.go}/bin:$PATH
+
             echo "👹 Goblin Dev Shell Active"
-            echo "Remember: Goblin depends on sibling '../gapi' via go.mod replace"
+            echo "Use 'mage build' to build binaries."
           '';
+        };
+        
+        apps = {
+          default = {
+            type = "app";
+            program = "${goblin}/bin/goblind";
+          };
+          goblind = {
+            type = "app";
+            program = "${goblin}/bin/goblind";
+          };
+          goblinctl = {
+            type = "app";
+            program = "${goblin}/bin/goblinctl";
+          };
         };
       }
     );

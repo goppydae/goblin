@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = "github.com/goppydae/goblin/internal/proto";
+
+// CommandType defines the operation type for the FSM
+enum CommandType {
+  SET = 0;
+  DELETE = 1;
+  CAS = 2; // Compare-And-Swap
+}
+
+// LogEntry represents a command in the Raft log
+message LogEntry {
+  CommandType type = 1;
+  string namespace = 2;
+  string key = 3;
+  bytes value = 4;
+  uint64 cas_version = 5; // For optimistic concurrency checks
+}
