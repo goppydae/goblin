@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/binary"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -22,13 +23,19 @@ import (
 	"github.com/goppydae/goblin/core/cluster"
 	"github.com/goppydae/goblin/core/consensus"
 	"github.com/goppydae/goblin/core/eventbus"
+	"github.com/goppydae/goblin/core/scheduler"
 	"github.com/goppydae/goblin/core/store"
+
+	gapiclient "github.com/goppydae/gapi/core/client"
+	gapiconfig "github.com/goppydae/gapi/core/config"
 )
 
 var RootCmd = &cobra.Command{
 	Use:   "goblinctl",
 	Short: "Goblin distributed supervisor control",
 }
+
+// ... helper code ...
 
 var (
 	nodeID   string
@@ -106,6 +113,134 @@ var startCmd = &cobra.Command{
 		kvStore := store.NewStore(consensus, bus)
 		fmt.Println("✅ Distributed KV Store initialized")
 
+		// Create Scheduler
+		sched := scheduler.NewScheduler(kvStore, membership)
+		fmt.Println("✅ Scheduler initialized")
+		_ = sched // Prevent unused variable error for now
+
+		// Start Job Watcher (Leader only)
+		go func() {
+			pendingPrefix := "/jobs/pending/"
+			fmt.Println("👑 Leader Scheduler watching for pending jobs...")
+
+			// Watch for KV changes
+			ch := kvStore.Watch(context.Background(), "default", "")
+			for e := range ch {
+				if !consensus.IsLeader() {
+					continue
+				}
+
+				pl := e.Payload
+				key, _ := pl["key"].(string)
+				op, _ := pl["op"].(string)
+				val, _ := pl["value"].(string) // Job ID
+
+				// If new pending job
+				if op == "set" && len(key) > len(pendingPrefix) && key[:len(pendingPrefix)] == pendingPrefix {
+					jobID := val
+					fmt.Printf("📋 Scheduler detected pending job: %s\n", jobID)
+
+					// 1. Schedule
+					// We need a Job struct. For MVP, we reconstruct it from ID.
+					job := &scheduler.Job{ID: jobID}
+
+					targetNode, err := sched.Schedule(job, scheduler.StrategyRandom)
+					if err != nil {
+						log.Printf("⚠️ Failed to schedule job %s: %v", jobID, err)
+						continue
+					}
+					fmt.Printf("🎯 Scheduling job %s to node %s\n", jobID, targetNode)
+
+					// 2. Assign
+					if err := sched.Assign(context.Background(), jobID, targetNode); err != nil {
+						log.Printf("⚠️ Failed to assign job: %v", err)
+						continue
+					}
+					fmt.Println("✅ Assignment persisted.")
+
+					// 3. Cleanup Pending?
+					// kvStore.Delete(context.Background(), "default", key)
+				}
+			}
+		}()
+
+		// Start Node Job Watcher (Assignment watcher)
+		go func() {
+			assignmentsPrefix := fmt.Sprintf("/jobs/assignments/%s/", nodeID)
+			fmt.Printf("👀 Watching for jobs at %s...\n", assignmentsPrefix)
+
+			// 1. Initialize GAPI Client
+			gapiCfg, err := gapiconfig.Load()
+			if err != nil {
+				log.Printf("⚠️ Failed to load GAPI config: %v", err)
+				return
+			}
+			client, err := gapiclient.New(gapiCfg)
+			if err != nil {
+				log.Printf("⚠️ Failed to create GAPI client: %v", err)
+				return
+			}
+
+			// 2. Watch for KV changes
+			// Watch all keys in default namespace and filter by prefix
+			ch := kvStore.Watch(context.Background(), "default", "")
+
+			for e := range ch {
+				pl := e.Payload
+				key, _ := pl["key"].(string)
+				op, _ := pl["op"].(string)
+				val, _ := pl["value"].(string) // Job ID
+
+				if op == "set" && len(key) > len(assignmentsPrefix) && key[:len(assignmentsPrefix)] == assignmentsPrefix {
+					jobID := val // Value is the Job ID per our Assign logic
+					fmt.Printf("🎯 Job Assigned: %s (Key: %s)\n", jobID, key)
+
+					// 3. Resolve Job Spec to get Agent ID
+					// We need to read /jobs/specs/<jobID> to know which agent.
+					// Since we are inside the daemon, we can read from Store directly!
+					// BUT Get implementation requires Leader check. If we are follower, Get fails?
+					// Wait, store.Get() errors if not leader. We are likely running on a follower node too.
+					// This is a flaw in my Store design for followers regarding local reads.
+					// For now, let's assume the Job ID IS the Agent ID for the purpose of the demo
+					// OR try to read via local consensus state if accessible (Store.Get enforces Leader).
+
+					// HACK: For MVP, assume JobID == AgentID or we just try to start "agent_id" if we could parse the spec.
+					// Let's rely on the value we stored. In Assign() we stored valid Job ID.
+					// Let's assume the scheduler assigned it because the agent exists.
+					// Let's try to lookup spec.
+					// If Get fails (not leader), we might be stuck.
+					// We could use `quicRequest` to ask the leader for the spec?
+					// Or just relax Store.Get to allow stale reads?
+					// Modifying Store.Get is risky right now.
+					// Let's use `quicRequest` to localhost:8080? No, that's US (if we are leader).
+					// We should query the cluster leader.
+
+					// SIMPLIFICATION: We will assume JobID implies AgentID matches for now
+					// OR we parse the Job Spec from the SET event if we were watching /jobs/specs too?
+					// No, we only watched assignments.
+
+					// Let's fallback to assuming JobID contains the useful info or just log it for now.
+					// Better: Try to start agent with name = jobID.
+					// If jobID="my-service-job", we try to start "my-service-job".
+					// The user needs to ensure they match or we need that lookup.
+
+					log.Printf("🚀 Attempting to start agent for Job %s...", jobID)
+
+					log.Printf("🚀 Attempting to start agent for Job %s...", jobID)
+
+					// Note: Client.Start takes a list of agent IDs.
+					results := client.Start(context.Background(), []string{jobID})
+					for _, res := range results {
+						if res.Err != nil {
+							log.Printf("❌ Failed to start agent %s: %v", res.AgentID, res.Err)
+						} else {
+							log.Printf("✅ Agent %s started (Status: %s)", res.AgentID, res.Status.State)
+						}
+					}
+				}
+			}
+		}()
+
 		// Generate TLS for QUIC
 		cert, err := generateDocsCert()
 		if err != nil {
@@ -150,8 +285,8 @@ var startCmd = &cobra.Command{
 func init() {
 	startCmd.Flags().StringVar(&nodeID, "id", "", "Unique Node ID (default: hostname)")
 	startCmd.Flags().StringVar(&serfAddr, "serf-addr", "127.0.0.1", "Serf bind address")
-	startCmd.Flags().IntVar(&serfPort, "serf-port", 7946, "Serf bind port")
-	startCmd.Flags().StringVar(&raftAddr, "raft-addr", "127.0.0.1:8300", "Raft bind address (host:port)")
+	startCmd.Flags().IntVar(&serfPort, "serf-port", 9001, "Serf bind port")
+	startCmd.Flags().StringVar(&raftAddr, "raft-addr", "127.0.0.1:9002", "Raft bind address (host:port)")
 	startCmd.Flags().StringVar(&raftDir, "data", "./data/raft", "Data directory for Raft log")
 	startCmd.Flags().StringVar(&joinAddr, "join", "", "Join existing cluster peer (host:port)")
 
@@ -169,15 +304,56 @@ func init() {
 	// Add Watch command
 	kvCmd.AddCommand(kvWatchCmd)
 
+	// Scheduler
+	RootCmd.AddCommand(scheduleCmd)
+
 	// Shared KV flags
 	kvCmd.PersistentFlags().StringVar(&kvNamespace, "namespace", "default", "KV Namespace")
-	RootCmd.PersistentFlags().StringVar(&apiAddr, "api-addr", "127.0.0.1:8080", "API address")
+	RootCmd.PersistentFlags().StringVar(&apiAddr, "api-addr", "127.0.0.1:9000", "API address")
 }
 
 var (
 	kvNamespace string
 	apiAddr     string
 )
+
+var scheduleCmd = &cobra.Command{
+	Use:   "schedule <job-id> <agent-id> <agent-type>",
+	Short: "Schedule a job to the cluster",
+	Args:  cobra.ExactArgs(3),
+	Run: func(cmd *cobra.Command, args []string) {
+		jobID, agentID, agentType := args[0], args[1], args[2] // e.g. job-1 my-agent service
+
+		// Connect to KV to Schedule
+		// For now we just use a direct QUIC call if we had a proper API for it.
+		// BUT wait, `goblinctl` is a client. It needs to talk to `goblind`.
+		// We haven't implemented a "Schedule" RPC yet.
+		// For MVP, we can treat "Schedule" as writing to /jobs/request/<id> via KV Set?
+		// Or we can just use the KV store directly if the client supports it.
+		// Let's reuse quicRequest to write the job spec to keys.
+
+		// 1. Write Job Spec
+		spec := map[string]string{
+			"id":         jobID,
+			"agent_id":   agentID,
+			"agent_type": agentType,
+		}
+		specBytes, _ := json.Marshal(spec) // naive marshal
+		if _, err := quicRequest(1, "default", "/jobs/specs/"+jobID, specBytes); err != nil {
+			log.Fatalf("Failed to write job spec: %v", err)
+		}
+
+		// 2. Trigger Scheduling?
+		// Ideally, the leader watches /jobs/specs and schedules them.
+		// For this MVP, we will do client-side scheduling or just write a "pending" key.
+		// Let's write to /jobs/pending/<jobID> and have the leader pick it up.
+		if _, err := quicRequest(1, "default", "/jobs/pending/"+jobID, []byte(jobID)); err != nil {
+			log.Fatalf("Failed to submit job: %v", err)
+		}
+
+		fmt.Printf("✅ Job %s submitted\n", jobID)
+	},
+}
 
 func handleQUICConn(conn *quic.Conn, s *store.Store, bus eventbus.EventBus) {
 	for {

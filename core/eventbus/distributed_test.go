@@ -56,6 +56,9 @@ func TestDistributedEventBus_PublishLocal(t *testing.T) {
 func TestDistributedEventBus_MultipleSubscribers(t *testing.T) {
 	bus := NewDistributedEventBus("node1", nil, nil)
 
+	var wg sync.WaitGroup
+	wg.Add(3)
+
 	count := 0
 	var mu sync.Mutex
 
@@ -63,8 +66,9 @@ func TestDistributedEventBus_MultipleSubscribers(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		bus.Subscribe("test.multi", func(e Event) {
 			mu.Lock()
-			defer mu.Unlock()
 			count++
+			mu.Unlock()
+			wg.Done()
 		})
 	}
 
@@ -74,8 +78,19 @@ func TestDistributedEventBus_MultipleSubscribers(t *testing.T) {
 		t.Fatalf("PublishLocal failed: %v", err)
 	}
 
-	// Wait for async handlers
-	time.Sleep(10 * time.Millisecond)
+	// Wait for async handlers with timeout
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Success
+	case <-time.After(1 * time.Second):
+		t.Fatal("Timeout waiting for subscribers")
+	}
 
 	mu.Lock()
 	defer mu.Unlock()

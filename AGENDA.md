@@ -38,7 +38,7 @@ Leverages the robust local agent lifecycle management of GAPI to build a scalabl
 ## Roadmap
 
 ### Immediate Priorities
-- [ ] **State Management**: Distributed Key/Value store integration (on top of Raft).
+- [x] **State Management**: Distributed Key/Value store integration (on top of Raft).
 - [ ] **Job Scheduling**: Distributed task placement strategies.
 - [ ] **Agent Migration**: Moving agents between nodes in response to failure or load.
 
