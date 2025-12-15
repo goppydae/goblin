@@ -79,3 +79,66 @@ func (s *Scheduler) RegisterJob(ctx context.Context, job *Job) error {
 	key := fmt.Sprintf("/jobs/specs/%s", job.ID)
 	return s.store.Set(ctx, "default", key, data)
 }
+
+// Migrate moves a job from one node to another
+func (s *Scheduler) Migrate(ctx context.Context, jobID, fromNode, toNode string) error {
+	// 1. Assign to new node
+	if err := s.Assign(ctx, jobID, toNode); err != nil {
+		return fmt.Errorf("failed to assign to new node: %w", err)
+	}
+
+	// 2. Remove from old node
+	key := fmt.Sprintf("/jobs/assignments/%s/%s", fromNode, jobID)
+	if err := s.store.Delete(ctx, "default", key); err != nil {
+		// Warn but don't fail, we already re-assigned
+		fmt.Printf("⚠️ Failed to cleanup old assignment for %s on %s: %v\n", jobID, fromNode, err)
+	}
+
+	fmt.Printf("🔄 Job %s migrated from %s to %s\n", jobID, fromNode, toNode)
+	return nil
+}
+
+// HandleNodeFailure reschedules all jobs from a failed node
+func (s *Scheduler) HandleNodeFailure(ctx context.Context, failedNodeID string) error {
+	prefix := fmt.Sprintf("/jobs/assignments/%s/", failedNodeID)
+
+	// Scan for assigned jobs
+	assignments, err := s.store.Scan(ctx, "default", prefix)
+	if err != nil {
+		return fmt.Errorf("failed to scan assignments for failed node %s: %w", failedNodeID, err)
+	}
+
+	if len(assignments) == 0 {
+		fmt.Printf("ℹ️ No jobs found on failed node %s\n", failedNodeID)
+		// DEBUG: Dump all keys
+		all, _ := s.store.Scan(ctx, "default", "")
+		fmt.Printf("🔍 DEBUG: Dumping %d keys in default namespace:\n", len(all))
+		for k := range all {
+			fmt.Printf(" - %s\n", k)
+		}
+		return nil
+	}
+
+	fmt.Printf("🚨 Node %s failed. Rescheduling %d jobs...\n", failedNodeID, len(assignments))
+
+	for _, jobIDBytes := range assignments {
+		jobID := string(jobIDBytes)
+
+		// Create a synthetic job struct for scheduling (id is enough for MVP)
+		job := &Job{ID: jobID}
+
+		// Pick new node
+		newNode, err := s.Schedule(job, StrategyRandom)
+		if err != nil {
+			fmt.Printf("❌ Failed to find new node for job %s: %v\n", jobID, err)
+			continue
+		}
+
+		// Perform migration
+		if err := s.Migrate(ctx, jobID, failedNodeID, newNode); err != nil {
+			fmt.Printf("❌ Migration failed for job %s: %v\n", jobID, err)
+		}
+	}
+
+	return nil
+}

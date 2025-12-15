@@ -140,3 +140,8 @@ func (c *Consensus) Shutdown() error {
 func (c *Consensus) GetState(namespace, key string) ([]byte, bool) {
 	return c.fsm.Get(namespace, key)
 }
+
+// Scan returns all keys matching the prefix
+func (c *Consensus) Scan(namespace, prefix string) map[string][]byte {
+	return c.fsm.Scan(namespace, prefix)
+}

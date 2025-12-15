@@ -83,6 +83,20 @@ func (s *Store) Get(ctx context.Context, namespace, key string) ([]byte, bool, e
 	return val, found, nil
 }
 
+// Scan retrieves all keys matching a prefix
+func (s *Store) Scan(ctx context.Context, namespace, prefix string) (map[string][]byte, error) {
+	// For now, strict: only Leader serves consistent reads.
+	if s.consensus.IsLeader() {
+		if err := s.consensus.VerifyLeader(); err != nil {
+			return nil, ErrNotLeader
+		}
+	} else {
+		return nil, ErrNotLeader
+	}
+
+	return s.consensus.Scan(namespace, prefix), nil
+}
+
 // Delete removes a key from the store
 func (s *Store) Delete(ctx context.Context, namespace, key string) error {
 	cmd := &pb.LogEntry{

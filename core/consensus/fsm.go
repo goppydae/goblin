@@ -102,6 +102,24 @@ func (f *FSM) Get(namespace, key string) ([]byte, bool) {
 	return nil, false
 }
 
+// Scan returns all key-value pairs in a namespace that match the prefix
+func (f *FSM) Scan(namespace, prefix string) map[string][]byte {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	result := make(map[string][]byte)
+	if kv, ok := f.state[namespace]; ok {
+		for k, v := range kv {
+			if len(k) >= len(prefix) && k[:len(prefix)] == prefix {
+				val := make([]byte, len(v))
+				copy(val, v)
+				result[k] = val
+			}
+		}
+	}
+	return result
+}
+
 // fsmSnapshot implements raft.FSMSnapshot
 type fsmSnapshot struct {
 	state map[string]map[string][]byte

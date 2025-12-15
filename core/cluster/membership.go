@@ -3,21 +3,24 @@ package cluster
 import (
 	"fmt"
 	"log"
+	"sync"
 
 	"github.com/hashicorp/serf/serf"
 )
 
 // Membership manages cluster membership using Serf
 type Membership struct {
-	serf     *serf.Serf
-	eventCh  chan serf.Event
-	nodeID   string
-	bindAddr string
-	bindPort int
+	serf      *serf.Serf
+	eventCh   chan serf.Event
+	nodeID    string
+	bindAddr  string
+	bindPort  int
+	handler   func(serf.Event)
+	handlerMu sync.RWMutex
 }
 
 // NewMembership creates a new Serf-based membership manager
-func NewMembership(nodeID, bindAddr string, bindPort int) (*Membership, error) {
+func NewMembership(nodeID, bindAddr string, bindPort int, tags map[string]string) (*Membership, error) {
 	eventCh := make(chan serf.Event, 256)
 
 	config := serf.DefaultConfig()
@@ -25,6 +28,7 @@ func NewMembership(nodeID, bindAddr string, bindPort int) (*Membership, error) {
 	config.MemberlistConfig.BindAddr = bindAddr
 	config.MemberlistConfig.BindPort = bindPort
 	config.EventCh = eventCh
+	config.Tags = tags
 
 	// Disable logging for cleaner output
 	config.LogOutput = nil
@@ -88,17 +92,30 @@ func (m *Membership) UserEvent(name string, payload []byte) error {
 	return m.serf.UserEvent(name, payload, false)
 }
 
+// SetEventHandler sets a callback for Serf events
+func (m *Membership) SetEventHandler(handler func(serf.Event)) {
+	m.handlerMu.Lock()
+	defer m.handlerMu.Unlock()
+	m.handler = handler
+}
+
 // handleEvents processes Serf events
 func (m *Membership) handleEvents() {
 	for event := range m.eventCh {
+		// Log events
 		switch e := event.(type) {
 		case serf.MemberEvent:
 			m.handleMemberEvent(e)
 		case serf.UserEvent:
 			m.handleUserEvent(e)
-		case *serf.Query:
-			// Handle queries if needed
 		}
+
+		// Invoke callback
+		m.handlerMu.RLock()
+		if m.handler != nil {
+			m.handler(event)
+		}
+		m.handlerMu.RUnlock()
 	}
 }
 

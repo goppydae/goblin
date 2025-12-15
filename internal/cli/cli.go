@@ -16,7 +16,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/hashicorp/serf/serf"
 	"github.com/quic-go/quic-go"
 	"github.com/spf13/cobra"
 
@@ -28,6 +30,7 @@ import (
 
 	gapiclient "github.com/goppydae/gapi/core/client"
 	gapiconfig "github.com/goppydae/gapi/core/config"
+	"github.com/goppydae/gapi/core/tui"
 )
 
 var RootCmd = &cobra.Command{
@@ -62,7 +65,10 @@ var startCmd = &cobra.Command{
 
 		// Create Serf membership
 		// Parse serfAddr/Port logic? Simplified: assuming serfAddr is IP
-		membership, err := cluster.NewMembership(nodeID, serfAddr, serfPort)
+		tags := map[string]string{
+			"raft_addr": raftAddr,
+		}
+		membership, err := cluster.NewMembership(nodeID, serfAddr, serfPort, tags)
 		if err != nil {
 			log.Fatalf("Failed to create membership: %v", err)
 		}
@@ -116,7 +122,69 @@ var startCmd = &cobra.Command{
 		// Create Scheduler
 		sched := scheduler.NewScheduler(kvStore, membership)
 		fmt.Println("✅ Scheduler initialized")
-		_ = sched // Prevent unused variable error for now
+
+		// Register failure handler (Leader only)
+		membership.SetEventHandler(func(e serf.Event) {
+			if !consensus.IsLeader() {
+				return
+			}
+			switch e.EventType() {
+			case serf.EventMemberJoin:
+				me, ok := e.(serf.MemberEvent)
+				if !ok {
+					return
+				}
+				for _, m := range me.Members {
+					raftAddr, ok := m.Tags["raft_addr"]
+					if ok {
+						log.Printf("🤝 Adding voter %s at %s to Raft", m.Name, raftAddr)
+						if err := consensus.AddVoter(m.Name, raftAddr); err != nil {
+							log.Printf("⚠️ Failed to add voter %s: %v", m.Name, err)
+						}
+					}
+				}
+			case serf.EventMemberFailed, serf.EventMemberLeave:
+				me, ok := e.(serf.MemberEvent)
+				if !ok {
+					return
+				}
+				for _, m := range me.Members {
+					log.Printf("💀 Leader detected failure of node %s. Initiating recovery...", m.Name)
+					if err := sched.HandleNodeFailure(context.Background(), m.Name); err != nil {
+						log.Printf("❌ Recovery failed for node %s: %v", m.Name, err)
+					}
+					// Also remove from Raft?
+					// Ideally yes.
+					if err := consensus.RemoveServer(m.Name); err != nil {
+						log.Printf("⚠️ Failed to remove server %s from Raft: %v", m.Name, err)
+					}
+				}
+			}
+		})
+
+		// Start Reconciliation Loop (Leader)
+		go func() {
+			ticker := time.NewTicker(5 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					if !consensus.IsLeader() {
+						continue
+					}
+					// Check for failed nodes in Serf
+					members := membership.Members()
+					for _, m := range members {
+						if m.Status == serf.StatusFailed || m.Status == serf.StatusLeft {
+							log.Printf("💀 Reconciliation: Node %s is down (%s). Checking for orphaned jobs...", m.Name, m.Status)
+							if err := sched.HandleNodeFailure(context.Background(), m.Name); err != nil {
+								log.Printf("❌ Recovery failed for node %s: %v", m.Name, err)
+							}
+						}
+					}
+				}
+			}
+		}()
 
 		// Start Job Watcher (Leader only)
 		go func() {
@@ -171,14 +239,16 @@ var startCmd = &cobra.Command{
 
 			// 1. Initialize GAPI Client
 			gapiCfg, err := gapiconfig.Load()
+			var client *gapiclient.Client
 			if err != nil {
-				log.Printf("⚠️ Failed to load GAPI config: %v", err)
-				return
-			}
-			client, err := gapiclient.New(gapiCfg)
-			if err != nil {
-				log.Printf("⚠️ Failed to create GAPI client: %v", err)
-				return
+				log.Printf("⚠️ Failed to load GAPI config: %v. Running in localized/mock mode.", err)
+			} else {
+				c, err := gapiclient.New(gapiCfg)
+				if err != nil {
+					log.Printf("⚠️ Failed to create GAPI client: %v. Running in localized/mock mode.", err)
+				} else {
+					client = c
+				}
 			}
 
 			// 2. Watch for KV changes
@@ -189,52 +259,41 @@ var startCmd = &cobra.Command{
 				pl := e.Payload
 				key, _ := pl["key"].(string)
 				op, _ := pl["op"].(string)
-				val, _ := pl["value"].(string) // Job ID
+				if len(key) > len(assignmentsPrefix) && key[:len(assignmentsPrefix)] == assignmentsPrefix {
+					jobID := key[len(assignmentsPrefix):] // Extract Job ID from Key
 
-				if op == "set" && len(key) > len(assignmentsPrefix) && key[:len(assignmentsPrefix)] == assignmentsPrefix {
-					jobID := val // Value is the Job ID per our Assign logic
-					fmt.Printf("🎯 Job Assigned: %s (Key: %s)\n", jobID, key)
+					if op == "set" {
+						// value is jobID, but we parsed it from key too.
+						fmt.Printf("🎯 Job Assigned: %s (Key: %s)\n", jobID, key)
+						log.Printf("🚀 Attempting to start agent for Job %s...", jobID)
 
-					// 3. Resolve Job Spec to get Agent ID
-					// We need to read /jobs/specs/<jobID> to know which agent.
-					// Since we are inside the daemon, we can read from Store directly!
-					// BUT Get implementation requires Leader check. If we are follower, Get fails?
-					// Wait, store.Get() errors if not leader. We are likely running on a follower node too.
-					// This is a flaw in my Store design for followers regarding local reads.
-					// For now, let's assume the Job ID IS the Agent ID for the purpose of the demo
-					// OR try to read via local consensus state if accessible (Store.Get enforces Leader).
-
-					// HACK: For MVP, assume JobID == AgentID or we just try to start "agent_id" if we could parse the spec.
-					// Let's rely on the value we stored. In Assign() we stored valid Job ID.
-					// Let's assume the scheduler assigned it because the agent exists.
-					// Let's try to lookup spec.
-					// If Get fails (not leader), we might be stuck.
-					// We could use `quicRequest` to ask the leader for the spec?
-					// Or just relax Store.Get to allow stale reads?
-					// Modifying Store.Get is risky right now.
-					// Let's use `quicRequest` to localhost:8080? No, that's US (if we are leader).
-					// We should query the cluster leader.
-
-					// SIMPLIFICATION: We will assume JobID implies AgentID matches for now
-					// OR we parse the Job Spec from the SET event if we were watching /jobs/specs too?
-					// No, we only watched assignments.
-
-					// Let's fallback to assuming JobID contains the useful info or just log it for now.
-					// Better: Try to start agent with name = jobID.
-					// If jobID="my-service-job", we try to start "my-service-job".
-					// The user needs to ensure they match or we need that lookup.
-
-					log.Printf("🚀 Attempting to start agent for Job %s...", jobID)
-
-					log.Printf("🚀 Attempting to start agent for Job %s...", jobID)
-
-					// Note: Client.Start takes a list of agent IDs.
-					results := client.Start(context.Background(), []string{jobID})
-					for _, res := range results {
-						if res.Err != nil {
-							log.Printf("❌ Failed to start agent %s: %v", res.AgentID, res.Err)
+						if client != nil {
+							results := client.Start(context.Background(), []string{jobID})
+							for _, res := range results {
+								if res.Err != nil {
+									log.Printf("❌ Failed to start agent %s: %v", res.AgentID, res.Err)
+								} else {
+									log.Printf("✅ Agent %s started (Status: %s)", res.AgentID, res.Status.State)
+								}
+							}
 						} else {
-							log.Printf("✅ Agent %s started (Status: %s)", res.AgentID, res.Status.State)
+							log.Printf("🚧 [MOCK] Starting agent %s", jobID)
+						}
+					} else if op == "delete" {
+						fmt.Printf("🛑 Job Unassigned: %s\n", jobID)
+						log.Printf("🛑 Stopping agent for Job %s...", jobID)
+
+						if client != nil {
+							results := client.Stop(context.Background(), []string{jobID})
+							for _, res := range results {
+								if res.Err != nil {
+									log.Printf("❌ Failed to stop agent %s: %v", res.AgentID, res.Err)
+								} else {
+									log.Printf("✅ Agent %s stopped (Status: %s)", res.AgentID, res.Status.State)
+								}
+							}
+						} else {
+							log.Printf("🚧 [MOCK] Stopping agent %s", jobID)
 						}
 					}
 				}
@@ -292,6 +351,7 @@ func init() {
 
 	RootCmd.AddCommand(startCmd)
 	RootCmd.AddCommand(statusCmd)
+	RootCmd.AddCommand(tuiCmd)
 	RootCmd.AddCommand(publishCmd)
 
 	publishCmd.Flags().StringVar(&publishNamespace, "namespace", "", "Event namespace")
@@ -306,6 +366,8 @@ func init() {
 
 	// Scheduler
 	RootCmd.AddCommand(scheduleCmd)
+	RootCmd.AddCommand(jobCmd)
+	jobCmd.AddCommand(migrateJobCmd)
 
 	// Shared KV flags
 	kvCmd.PersistentFlags().StringVar(&kvNamespace, "namespace", "default", "KV Namespace")
@@ -316,6 +378,39 @@ var (
 	kvNamespace string
 	apiAddr     string
 )
+
+var jobCmd = &cobra.Command{
+	Use:   "job",
+	Short: "Job management",
+}
+
+var migrateJobCmd = &cobra.Command{
+	Use:   "migrate <job-id> <from-node> <to-node>",
+	Short: "Manually migrate a job between nodes",
+	Args:  cobra.ExactArgs(3),
+	Run: func(cmd *cobra.Command, args []string) {
+		jobID, fromNode, toNode := args[0], args[1], args[2]
+
+		// 1. Assign to new node
+		// Key: /jobs/assignments/<node>/<jobID>
+		// Value: <jobID>
+		newKey := fmt.Sprintf("/jobs/assignments/%s/%s", toNode, jobID)
+		if _, err := quicRequest(1, "default", newKey, []byte(jobID)); err != nil {
+			log.Fatalf("Failed to assign to new node: %v", err)
+		}
+		fmt.Printf("✅ Assigned job %s to %s\n", jobID, toNode)
+
+		// 2. Remove from old node
+		oldKey := fmt.Sprintf("/jobs/assignments/%s/%s", fromNode, jobID)
+		if _, err := quicRequest(3, "default", oldKey, nil); err != nil {
+			log.Printf("⚠️ Failed to remove from old node: %v", err)
+		} else {
+			fmt.Printf("🗑️ Removed job %s from %s\n", jobID, fromNode)
+		}
+
+		fmt.Printf("🔄 Migration of %s complete.\n", jobID)
+	},
+}
 
 var scheduleCmd = &cobra.Command{
 	Use:   "schedule <job-id> <agent-id> <agent-type>",
@@ -455,6 +550,20 @@ func handleQUICStream(stream *quic.Stream, s *store.Store, bus eventbus.EventBus
 			pl := e.Payload
 			msg := fmt.Sprintf("%s %s %s", pl["op"], pl["key"], pl["value"])
 			writeResp(0, []byte(msg))
+		}
+	case 5: // SCAN
+		// key is treated as prefix
+		results, err := s.Scan(ctx, namespace, key)
+		if err != nil {
+			writeResp(2, []byte(err.Error()))
+			return
+		}
+		// Marshal to JSON
+		data, err := json.Marshal(results)
+		if err != nil {
+			writeResp(2, []byte(err.Error()))
+		} else {
+			writeResp(0, data)
 		}
 	}
 }
@@ -665,5 +774,14 @@ var statusCmd = &cobra.Command{
 	Short: "Show Goblin supervisor status",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("Goblin status: all systems nominal.")
+	},
+}
+
+var tuiCmd = &cobra.Command{
+	Use:   "tui",
+	Short: "Cluster TUI",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctrl := NewClusterController(apiAddr)
+		return tui.Run(ctrl)
 	},
 }
