@@ -4,7 +4,7 @@
 // 	protoc        v6.32.1
 // source: proto/raft.proto
 
-package proto
+package goblinv1
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -74,7 +74,7 @@ func (CommandType) EnumDescriptor() ([]byte, []int) {
 // LogEntry represents a command in the Raft log
 type LogEntry struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          CommandType            `protobuf:"varint,1,opt,name=type,proto3,enum=proto.CommandType" json:"type,omitempty"`
+	Type          CommandType            `protobuf:"varint,1,opt,name=type,proto3,enum=goblin.v1.proto.CommandType" json:"type,omitempty"`
 	Namespace     string                 `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
 	Key           string                 `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"`
 	Value         []byte                 `protobuf:"bytes,4,opt,name=value,proto3" json:"value,omitempty"`
@@ -152,9 +152,9 @@ var File_proto_raft_proto protoreflect.FileDescriptor
 
 const file_proto_raft_proto_rawDesc = "" +
 	"\n" +
-	"\x10proto/raft.proto\x12\x05proto\"\x99\x01\n" +
-	"\bLogEntry\x12&\n" +
-	"\x04type\x18\x01 \x01(\x0e2\x12.proto.CommandTypeR\x04type\x12\x1c\n" +
+	"\x10proto/raft.proto\x12\x0fgoblin.v1.proto\"\xa3\x01\n" +
+	"\bLogEntry\x120\n" +
+	"\x04type\x18\x01 \x01(\x0e2\x1c.goblin.v1.proto.CommandTypeR\x04type\x12\x1c\n" +
 	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12\x10\n" +
 	"\x03key\x18\x03 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x04 \x01(\fR\x05value\x12\x1f\n" +
@@ -164,7 +164,7 @@ const file_proto_raft_proto_rawDesc = "" +
 	"\x03SET\x10\x00\x12\n" +
 	"\n" +
 	"\x06DELETE\x10\x01\x12\a\n" +
-	"\x03CAS\x10\x02B+Z)github.com/goppydae/goblin/internal/protob\x06proto3"
+	"\x03CAS\x10\x02B4Z2github.com/goppydae/goblin/internal/proto;goblinv1b\x06proto3"
 
 var (
 	file_proto_raft_proto_rawDescOnce sync.Once
@@ -181,11 +181,11 @@ func file_proto_raft_proto_rawDescGZIP() []byte {
 var file_proto_raft_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_proto_raft_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_proto_raft_proto_goTypes = []any{
-	(CommandType)(0), // 0: proto.CommandType
-	(*LogEntry)(nil), // 1: proto.LogEntry
+	(CommandType)(0), // 0: goblin.v1.proto.CommandType
+	(*LogEntry)(nil), // 1: goblin.v1.proto.LogEntry
 }
 var file_proto_raft_proto_depIdxs = []int32{
-	0, // 0: proto.LogEntry.type:type_name -> proto.CommandType
+	0, // 0: goblin.v1.proto.LogEntry.type:type_name -> goblin.v1.proto.CommandType
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
