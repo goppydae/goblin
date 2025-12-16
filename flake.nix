@@ -21,6 +21,9 @@
         goblin = pkgs.callPackage ./nix/package.nix {};
         
       in {
+        # Formatter
+        formatter = pkgs.nixpkgs-fmt;
+
         # Package output
         packages = {
           default = goblin;
@@ -65,6 +68,30 @@
             modules = [ ./nix/generators/base.nix ];
             format = "lxc";
           };
+
+          raw = nixos-generators.nixosGenerate {
+             inherit system;
+             modules = [ ./nix/generators/base.nix ];
+             format = "raw";
+           };
+           
+           raw-efi = nixos-generators.nixosGenerate {
+             inherit system;
+             modules = [ ./nix/generators/base.nix ];
+             format = "raw-efi";
+           };
+           
+           virtualbox = nixos-generators.nixosGenerate {
+             inherit system;
+             modules = [ ./nix/generators/base.nix ];
+             format = "virtualbox";
+           };
+           
+           vmware = nixos-generators.nixosGenerate {
+             inherit system;
+             modules = [ ./nix/generators/base.nix ];
+             format = "vmware";
+           };
         };
         
         # Development shell
@@ -74,6 +101,9 @@
             gopls
             gotools
             gcc
+            pkg-config
+            openssl
+            pam
             mage
             # Protobuf
             protobuf

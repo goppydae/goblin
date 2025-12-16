@@ -29,7 +29,7 @@ nix develop --command mage build
 
 echo "Starting Gapi Daemon..."
 # Use fixtures as agent source (contains simple.py.service)
-export GAPI_AGENT_PATH="$GAPI_ROOT/test/adk/fixtures"
+export RUNTIME_AGENT_PATH="$GAPI_ROOT/test/adk/fixtures"
 pushd "$GAPI_ROOT" > /dev/null
 "$GAPI_BIN/gapid" &
 GAPID_PID=$!
