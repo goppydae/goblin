@@ -4,7 +4,7 @@
 // 	protoc        v6.32.1
 // source: proto/lifecycle_status.proto
 
-package proto
+package gapiv1
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -110,7 +110,7 @@ var File_proto_lifecycle_status_proto protoreflect.FileDescriptor
 
 const file_proto_lifecycle_status_proto_rawDesc = "" +
 	"\n" +
-	"\x1cproto/lifecycle_status.proto\x12\x05proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc9\x01\n" +
+	"\x1cproto/lifecycle_status.proto\x12\rgapi.v1.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc9\x01\n" +
 	"\x0fLifecycleStatus\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x18\n" +
@@ -118,7 +118,7 @@ const file_proto_lifecycle_status_proto_rawDesc = "" +
 	"\x04time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x1a\n" +
 	"\bhostname\x18\x05 \x01(\tR\bhostname\x12\x1f\n" +
 	"\vschema_hash\x18\x06 \x01(\tR\n" +
-	"schemaHashB/Z-github.com/goppydae/gapi/internal/proto;protob\x06proto3"
+	"schemaHashB0Z.github.com/goppydae/gapi/internal/proto;gapiv1b\x06proto3"
 
 var (
 	file_proto_lifecycle_status_proto_rawDescOnce sync.Once
@@ -134,11 +134,11 @@ func file_proto_lifecycle_status_proto_rawDescGZIP() []byte {
 
 var file_proto_lifecycle_status_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_proto_lifecycle_status_proto_goTypes = []any{
-	(*LifecycleStatus)(nil),       // 0: proto.LifecycleStatus
+	(*LifecycleStatus)(nil),       // 0: gapi.v1.proto.LifecycleStatus
 	(*timestamppb.Timestamp)(nil), // 1: google.protobuf.Timestamp
 }
 var file_proto_lifecycle_status_proto_depIdxs = []int32{
-	1, // 0: proto.LifecycleStatus.time:type_name -> google.protobuf.Timestamp
+	1, // 0: gapi.v1.proto.LifecycleStatus.time:type_name -> google.protobuf.Timestamp
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name

@@ -33,6 +33,7 @@ import (
 
 	gapiclient "github.com/goppydae/gapi/core/client"
 	gapiconfig "github.com/goppydae/gapi/core/config"
+	gapisup "github.com/goppydae/gapi/core/supervisor"
 )
 
 // Config holds configuration for the Supervisor
@@ -298,19 +299,33 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		assignmentsPrefix := fmt.Sprintf("/jobs/assignments/%s/", nodeID)
 		fmt.Printf("👀 Watching for jobs at %s...\n", assignmentsPrefix)
 
-		// 1. Initialize GAPI Client
+		// 1. Initialize & Start Embedded GAPI Supervisor
+		fmt.Println("🚀 Starting Embedded GAPI Supervisor...")
 		gapiCfg, err := gapiconfig.Load()
-		var client *gapiclient.Client
+		var gapiSup *gapisup.Supervisor
 		if err != nil {
-			log.Printf("⚠️ Failed to load GAPI config: %v. Running in localized/mock mode.", err)
-		} else {
-			c, err := gapiclient.New(gapiCfg)
-			if err != nil {
-				log.Printf("⚠️ Failed to create GAPI client: %v. Running in localized/mock mode.", err)
-			} else {
-				client = c
+			log.Printf("⚠️ Failed to load GAPI config: %v. Using defaults.", err)
+			gapiCfg = &gapiconfig.Config{
+				Transport: gapiconfig.TransportConfig{Type: "quic", Address: "127.0.0.1:4242"},
 			}
 		}
+
+		gapiSup, err = gapisup.New(gapiCfg)
+		if err != nil {
+			log.Fatalf("❌ Failed to initialize embedded GAPI supervisor: %v", err)
+		}
+
+		// Run GAPI Supervisor in background
+		go func() {
+			if err := gapiSup.Run(ctx); err != nil {
+				log.Printf("❌ Embedded GAPI supervisor exited with error: %v", err)
+			}
+		}()
+
+		// Create Local Client
+		fmt.Println("🔗 Connecting to embedded GAPI via EventBus...")
+		client := gapiclient.NewFromBus(gapiSup.Bus())
+		fmt.Println("✅ Connected to embedded GAPI")
 
 		// 2. Watch for KV changes
 		// Watch all keys in default namespace and filter by prefix

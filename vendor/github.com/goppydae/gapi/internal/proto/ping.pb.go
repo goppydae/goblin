@@ -4,7 +4,7 @@
 // 	protoc        v6.32.1
 // source: proto/ping.proto
 
-package proto
+package gapiv1
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -69,10 +69,10 @@ var File_proto_ping_proto protoreflect.FileDescriptor
 
 const file_proto_ping_proto_rawDesc = "" +
 	"\n" +
-	"\x10proto/ping.proto\x12\x05proto\"$\n" +
+	"\x10proto/ping.proto\x12\rgapi.v1.proto\"$\n" +
 	"\n" +
 	"PingStatus\x12\x16\n" +
-	"\x06status\x18\x01 \x01(\tR\x06statusB/Z-github.com/goppydae/gapi/internal/proto;protob\x06proto3"
+	"\x06status\x18\x01 \x01(\tR\x06statusB0Z.github.com/goppydae/gapi/internal/proto;gapiv1b\x06proto3"
 
 var (
 	file_proto_ping_proto_rawDescOnce sync.Once
@@ -88,7 +88,7 @@ func file_proto_ping_proto_rawDescGZIP() []byte {
 
 var file_proto_ping_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_proto_ping_proto_goTypes = []any{
-	(*PingStatus)(nil), // 0: proto.PingStatus
+	(*PingStatus)(nil), // 0: gapi.v1.proto.PingStatus
 }
 var file_proto_ping_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for method output_type

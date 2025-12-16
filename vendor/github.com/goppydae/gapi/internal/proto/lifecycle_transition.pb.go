@@ -4,7 +4,7 @@
 // 	protoc        v6.32.1
 // source: proto/lifecycle_transition.proto
 
-package proto
+package gapiv1
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -102,13 +102,13 @@ var File_proto_lifecycle_transition_proto protoreflect.FileDescriptor
 
 const file_proto_lifecycle_transition_proto_rawDesc = "" +
 	"\n" +
-	" proto/lifecycle_transition.proto\x12\x05proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa0\x01\n" +
+	" proto/lifecycle_transition.proto\x12\rgapi.v1.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa0\x01\n" +
 	"\x13LifecycleTransition\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x12\n" +
 	"\x04from\x18\x02 \x01(\tR\x04from\x12\x0e\n" +
 	"\x02to\x18\x03 \x01(\tR\x02to\x12\x1a\n" +
 	"\bhostname\x18\x04 \x01(\tR\bhostname\x12.\n" +
-	"\x04time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x04timeB/Z-github.com/goppydae/gapi/internal/proto;protob\x06proto3"
+	"\x04time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x04timeB0Z.github.com/goppydae/gapi/internal/proto;gapiv1b\x06proto3"
 
 var (
 	file_proto_lifecycle_transition_proto_rawDescOnce sync.Once
@@ -124,11 +124,11 @@ func file_proto_lifecycle_transition_proto_rawDescGZIP() []byte {
 
 var file_proto_lifecycle_transition_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_proto_lifecycle_transition_proto_goTypes = []any{
-	(*LifecycleTransition)(nil),   // 0: proto.LifecycleTransition
+	(*LifecycleTransition)(nil),   // 0: gapi.v1.proto.LifecycleTransition
 	(*timestamppb.Timestamp)(nil), // 1: google.protobuf.Timestamp
 }
 var file_proto_lifecycle_transition_proto_depIdxs = []int32{
-	1, // 0: proto.LifecycleTransition.time:type_name -> google.protobuf.Timestamp
+	1, // 0: gapi.v1.proto.LifecycleTransition.time:type_name -> google.protobuf.Timestamp
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name

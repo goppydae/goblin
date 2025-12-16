@@ -4,7 +4,7 @@
 // 	protoc        v6.32.1
 // source: proto/lifecycle_control.proto
 
-package proto
+package gapiv1
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -83,7 +83,7 @@ type LifecycleControl struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	AgentId string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
 	// Enum for supported lifecycle actions
-	Action LifecycleControl_Action `protobuf:"varint,2,opt,name=action,proto3,enum=proto.LifecycleControl_Action" json:"action,omitempty"`
+	Action LifecycleControl_Action `protobuf:"varint,2,opt,name=action,proto3,enum=gapi.v1.proto.LifecycleControl_Action" json:"action,omitempty"`
 	// Environment variables for the agent (only used for START/RESTART)
 	Env map[string]string `protobuf:"bytes,3,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// Restart policy (e.g. "always", "on-failure", "never")
@@ -154,11 +154,11 @@ var File_proto_lifecycle_control_proto protoreflect.FileDescriptor
 
 const file_proto_lifecycle_control_proto_rawDesc = "" +
 	"\n" +
-	"\x1dproto/lifecycle_control.proto\x12\x05proto\"\xd8\x02\n" +
+	"\x1dproto/lifecycle_control.proto\x12\rgapi.v1.proto\"\xe8\x02\n" +
 	"\x10LifecycleControl\x12\x19\n" +
-	"\bagent_id\x18\x01 \x01(\tR\aagentId\x126\n" +
-	"\x06action\x18\x02 \x01(\x0e2\x1e.proto.LifecycleControl.ActionR\x06action\x122\n" +
-	"\x03env\x18\x03 \x03(\v2 .proto.LifecycleControl.EnvEntryR\x03env\x12%\n" +
+	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12>\n" +
+	"\x06action\x18\x02 \x01(\x0e2&.gapi.v1.proto.LifecycleControl.ActionR\x06action\x12:\n" +
+	"\x03env\x18\x03 \x03(\v2(.gapi.v1.proto.LifecycleControl.EnvEntryR\x03env\x12%\n" +
 	"\x0erestart_policy\x18\x04 \x01(\tR\rrestartPolicy\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
@@ -171,7 +171,7 @@ const file_proto_lifecycle_control_proto_rawDesc = "" +
 	"\x04STOP\x10\x03\x12\v\n" +
 	"\aRESTART\x10\x04\x12\n" +
 	"\n" +
-	"\x06RELOAD\x10\x05B/Z-github.com/goppydae/gapi/internal/proto;protob\x06proto3"
+	"\x06RELOAD\x10\x05B0Z.github.com/goppydae/gapi/internal/proto;gapiv1b\x06proto3"
 
 var (
 	file_proto_lifecycle_control_proto_rawDescOnce sync.Once
@@ -188,13 +188,13 @@ func file_proto_lifecycle_control_proto_rawDescGZIP() []byte {
 var file_proto_lifecycle_control_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_proto_lifecycle_control_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_proto_lifecycle_control_proto_goTypes = []any{
-	(LifecycleControl_Action)(0), // 0: proto.LifecycleControl.Action
-	(*LifecycleControl)(nil),     // 1: proto.LifecycleControl
-	nil,                          // 2: proto.LifecycleControl.EnvEntry
+	(LifecycleControl_Action)(0), // 0: gapi.v1.proto.LifecycleControl.Action
+	(*LifecycleControl)(nil),     // 1: gapi.v1.proto.LifecycleControl
+	nil,                          // 2: gapi.v1.proto.LifecycleControl.EnvEntry
 }
 var file_proto_lifecycle_control_proto_depIdxs = []int32{
-	0, // 0: proto.LifecycleControl.action:type_name -> proto.LifecycleControl.Action
-	2, // 1: proto.LifecycleControl.env:type_name -> proto.LifecycleControl.EnvEntry
+	0, // 0: gapi.v1.proto.LifecycleControl.action:type_name -> gapi.v1.proto.LifecycleControl.Action
+	2, // 1: gapi.v1.proto.LifecycleControl.env:type_name -> gapi.v1.proto.LifecycleControl.EnvEntry
 	2, // [2:2] is the sub-list for method output_type
 	2, // [2:2] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name

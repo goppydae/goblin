@@ -4,7 +4,7 @@
 // 	protoc        v6.32.1
 // source: proto/log_message.proto
 
-package proto
+package gapiv1
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -93,13 +93,13 @@ var File_proto_log_message_proto protoreflect.FileDescriptor
 
 const file_proto_log_message_proto_rawDesc = "" +
 	"\n" +
-	"\x17proto/log_message.proto\x12\x05proto\"u\n" +
+	"\x17proto/log_message.proto\x12\rgapi.v1.proto\"u\n" +
 	"\n" +
 	"LogMessage\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x14\n" +
 	"\x05level\x18\x02 \x01(\tR\x05level\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12\x1c\n" +
-	"\ttimestamp\x18\x04 \x01(\x03R\ttimestampB/Z-github.com/goppydae/gapi/internal/proto;protob\x06proto3"
+	"\ttimestamp\x18\x04 \x01(\x03R\ttimestampB0Z.github.com/goppydae/gapi/internal/proto;gapiv1b\x06proto3"
 
 var (
 	file_proto_log_message_proto_rawDescOnce sync.Once
@@ -115,7 +115,7 @@ func file_proto_log_message_proto_rawDescGZIP() []byte {
 
 var file_proto_log_message_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_proto_log_message_proto_goTypes = []any{
-	(*LogMessage)(nil), // 0: proto.LogMessage
+	(*LogMessage)(nil), // 0: gapi.v1.proto.LogMessage
 }
 var file_proto_log_message_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for method output_type

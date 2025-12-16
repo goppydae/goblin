@@ -1,0 +1,28 @@
+"""{{.Description}}"""
+
+ID = "{{.ID}}"
+TYPE = "service"
+VERSION = "1.0.0"
+DESCRIPTION = "{{.Description}}"
+
+
+def initialize():
+    """Initialize the service"""
+    print(f"[{ID}] Initializing...")
+    # TODO: Add initialization logic
+
+
+def start():
+    """Start the service"""
+    print(f"[{ID}] Starting...")
+    import time
+    
+    while True:
+        # TODO: Add service logic
+        time.sleep(1)
+
+
+def stop():
+    """Stop the service"""
+    print(f"[{ID}] Stopping...")
+    # TODO: Add cleanup logic

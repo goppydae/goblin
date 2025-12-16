@@ -1,0 +1,342 @@
+package cli
+
+import (
+	"embed"
+	_ "embed"
+	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"time"
+
+	"github.com/fsnotify/fsnotify"
+	"github.com/spf13/cobra"
+
+	"github.com/goppydae/gapi/core/crypto"
+)
+
+//go:embed templates/*.tmpl
+var templatesFS embed.FS
+
+var agentCmd = &cobra.Command{
+	Use:   "agent",
+	Short: "Manage GAPI agents",
+	Long:  "Build, sign, and manage GAPI agents across Python and Go.",
+}
+
+var agentBuildCmd = &cobra.Command{
+	Use:   "build [path]",
+	Short: "Build Go agents",
+	Long: `Build Go agents from source and generate checksums.
+
+Examples:
+  gapictl agent build agents/go/foundational/init/
+  gapictl agent build --watch agents/go/coordination/cluster_join/
+  gapictl agent build --sign --key=~/.gapi/signing.key agents/go/foundational/init/`,
+	Args: cobra.ExactArgs(1),
+	RunE: runAgentBuild,
+}
+
+var agentCleanCmd = &cobra.Command{
+	Use:   "clean",
+	Short: "Clean build artifacts",
+	Long:  "Remove all built binaries and checksums from agents/build/",
+	RunE:  runAgentClean,
+}
+
+var agentNewCmd = &cobra.Command{
+	Use:   "new [name]",
+	Short: "Create a new agent from template",
+	Long: `Create a new agent from template with proper structure.
+
+Examples:
+  gapictl agent new my_service
+  gapictl agent new --type=timer my_timer
+  gapictl agent new --lang=python --type=service my_py_service`,
+	Args: cobra.ExactArgs(1),
+	RunE: runAgentNew,
+}
+
+var (
+	watchMode   bool
+	signBuild   bool
+	keyPath     string
+	outputDir   string
+	agentLang   string
+	agentType   string
+	agentOutput string
+)
+
+func init() {
+	agentBuildCmd.Flags().BoolVarP(&watchMode, "watch", "w", false, "Watch for changes and rebuild")
+	agentBuildCmd.Flags().BoolVar(&signBuild, "sign", false, "Sign the built binary with ED25519")
+	agentBuildCmd.Flags().StringVar(&keyPath, "key", "", "Path to ED25519 signing key")
+	agentBuildCmd.Flags().StringVarP(&outputDir, "output", "o", "agents/build/go", "Output directory for built binaries")
+
+	agentNewCmd.Flags().StringVarP(&agentLang, "lang", "l", "go", "Agent language (go, python)")
+	agentNewCmd.Flags().StringVarP(&agentType, "type", "t", "service", "Agent type (service, timer, socket)")
+	agentNewCmd.Flags().StringVarP(&agentOutput, "output", "o", "", "Output directory (default: agents/{lang}/foundational or agents/{lang}/services)")
+
+	agentCmd.AddCommand(agentBuildCmd)
+	agentCmd.AddCommand(agentCleanCmd)
+	agentCmd.AddCommand(agentNewCmd)
+	rootCmd.AddCommand(agentCmd)
+	rootCmd.AddCommand(agentReloadCmd)
+}
+
+func runAgentBuild(cmd *cobra.Command, args []string) error {
+	sourcePath := args[0]
+
+	// Validate source path
+	info, err := os.Stat(sourcePath)
+	if err != nil {
+		return fmt.Errorf("source path error: %w", err)
+	}
+
+	if watchMode {
+		return watchAndBuild(sourcePath, info.IsDir())
+	}
+
+	// Build single agent or all agents in directory
+	if info.IsDir() {
+		return buildDirectory(sourcePath)
+	}
+	return buildAgent(sourcePath)
+}
+
+func watchAndBuild(sourcePath string, isDir bool) error {
+	// Initial build
+	fmt.Println("🔨 Initial build...")
+	if isDir {
+		if err := buildDirectory(sourcePath); err != nil {
+			log.Printf("Initial build failed: %v", err)
+		}
+	} else {
+		if err := buildAgent(sourcePath); err != nil {
+			log.Printf("Initial build failed: %v", err)
+		}
+	}
+
+	// Setup file watcher
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return fmt.Errorf("failed to create watcher: %w", err)
+	}
+	defer watcher.Close()
+
+	// Watch the source path
+	if err := addWatchRecursive(watcher, sourcePath); err != nil {
+		return fmt.Errorf("failed to watch path: %w", err)
+	}
+
+	fmt.Printf("👀 Watching %s for changes (Ctrl+C to stop)...\n", sourcePath)
+
+	// Debounce timer to avoid rebuilding on every file save
+	var debounceTimer *time.Timer
+	debounceDuration := 300 * time.Millisecond
+
+	for {
+		select {
+		case event, ok := <-watcher.Events:
+			if !ok {
+				return nil
+			}
+
+			// Only rebuild on .go file changes
+			if filepath.Ext(event.Name) != ".go" {
+				continue
+			}
+
+			// Ignore temporary files
+			if filepath.Base(event.Name)[0] == '.' {
+				continue
+			}
+
+			if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
+				// Reset debounce timer
+				if debounceTimer != nil {
+					debounceTimer.Stop()
+				}
+
+				debounceTimer = time.AfterFunc(debounceDuration, func() {
+					fmt.Printf("\n📝 Change detected: %s\n", event.Name)
+					fmt.Println("🔨 Rebuilding...")
+
+					if isDir {
+						if err := buildDirectory(sourcePath); err != nil {
+							log.Printf("Build failed: %v", err)
+						} else {
+							fmt.Println("✅ Rebuild complete")
+						}
+					} else {
+						if err := buildAgent(sourcePath); err != nil {
+							log.Printf("Build failed: %v", err)
+						} else {
+							fmt.Println("✅ Rebuild complete")
+						}
+					}
+
+					fmt.Printf("👀 Watching for changes...\n")
+				})
+			}
+
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				return nil
+			}
+			log.Printf("Watcher error: %v", err)
+		}
+	}
+}
+
+func addWatchRecursive(watcher *fsnotify.Watcher, path string) error {
+	return filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip hidden directories and build artifacts
+		if info.IsDir() {
+			base := filepath.Base(p)
+			if base[0] == '.' || base == "build" {
+				return filepath.SkipDir
+			}
+			return watcher.Add(p)
+		}
+		return nil
+	})
+}
+
+func buildDirectory(dir string) error {
+	fmt.Printf("Building all Go agents in %s...\n", dir)
+
+	// Find all directories with main.go
+	var agentDirs []string
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && info.Name() == "main.go" {
+			agentDirs = append(agentDirs, filepath.Dir(path))
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to scan directory: %w", err)
+	}
+
+	if len(agentDirs) == 0 {
+		return fmt.Errorf("no Go agents found in %s (looking for main.go)", dir)
+	}
+
+	for _, agentDir := range agentDirs {
+		if err := buildAgent(agentDir); err != nil {
+			log.Printf("Failed to build %s: %v", agentDir, err)
+		}
+	}
+
+	fmt.Printf("✅ Built %d agents\n", len(agentDirs))
+	return nil
+}
+
+func buildAgent(sourcePath string) error {
+	// Determine agent name from directory
+	agentName := filepath.Base(sourcePath)
+	if agentName == "." {
+		agentName = filepath.Base(filepath.Dir(sourcePath))
+	}
+
+	// Create output directory
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	outputBinary := filepath.Join(outputDir, agentName)
+
+	fmt.Printf("Building %s...\n", agentName)
+
+	// Compute source hash for verification chain
+	sourceHash, err := crypto.HashDirectory(sourcePath, "*.go")
+	if err != nil {
+		log.Printf("Warning: failed to compute source hash: %v", err)
+		sourceHash = "unknown"
+	}
+
+	// Build with embedded metadata
+	buildTime := time.Now().Format(time.RFC3339)
+	ldflags := fmt.Sprintf("-X main.SourceHash=%s -X main.BuildTime=%s", sourceHash, buildTime)
+
+	// Make output path absolute
+	absOutputBinary, err := filepath.Abs(outputBinary)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	// Build from source directory
+	buildCmd := exec.Command("go", "build", "-ldflags", ldflags, "-o", absOutputBinary, ".")
+	buildCmd.Dir = sourcePath
+	buildCmd.Stdout = os.Stdout
+	buildCmd.Stderr = os.Stderr
+
+	if err := buildCmd.Run(); err != nil {
+		return fmt.Errorf("build failed: %w", err)
+	}
+
+	// Generate BLAKE3 hash
+	hash, err := crypto.HashFile(outputBinary)
+	if err != nil {
+		return fmt.Errorf("failed to hash binary: %w", err)
+	}
+
+	hashFile := outputBinary + ".b3"
+	if err := os.WriteFile(hashFile, []byte(hash+"\n"), 0644); err != nil {
+		return fmt.Errorf("failed to write hash file: %w", err)
+	}
+
+	fmt.Printf("  ✓ Binary: %s\n", outputBinary)
+	fmt.Printf("  ✓ Hash:   %s\n", hashFile)
+
+	// Optionally sign
+	if signBuild {
+		if keyPath == "" {
+			return fmt.Errorf("--sign requires --key to be specified")
+		}
+
+		keypair, err := crypto.LoadPrivate(keyPath)
+		if err != nil {
+			return fmt.Errorf("failed to load signing key: %w", err)
+		}
+
+		signature := keypair.Sign([]byte(hash))
+		sigFile := outputBinary + ".sig"
+		if err := os.WriteFile(sigFile, []byte(fmt.Sprintf("%x\n", signature)), 0644); err != nil {
+			return fmt.Errorf("failed to write signature: %w", err)
+		}
+
+		fmt.Printf("  ✓ Signature: %s\n", sigFile)
+	}
+
+	return nil
+}
+
+func runAgentClean(cmd *cobra.Command, args []string) error {
+	buildDirs := []string{
+		"agents/build/go",
+		"agents/build/plugins",
+	}
+
+	for _, dir := range buildDirs {
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			continue
+		}
+
+		fmt.Printf("Cleaning %s...\n", dir)
+		if err := os.RemoveAll(dir); err != nil {
+			log.Printf("Failed to clean %s: %v", dir, err)
+		}
+	}
+
+	fmt.Println("✅ Clean complete")
+	return nil
+}

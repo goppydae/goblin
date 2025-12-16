@@ -1,0 +1,64 @@
+// {{.Name}} - {{.Description}}
+package main
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"net"
+	"os"
+)
+
+var describe = flag.Bool("describe", false, "Print agent metadata")
+
+func main() {
+	flag.Parse()
+
+	if *describe {
+		metadata := map[string]interface{}{
+			"describe": map[string]interface{}{
+				"id":           "{{.ID}}",
+				"type":         "socket",
+				"version":      "1.0.0",
+				"language":     "go",
+				"description":  "{{.Description}}",
+				"listen_stream": "127.0.0.1:8080",
+				"capabilities": []string{"initialize", "start", "stop"},
+			},
+		}
+		json.NewEncoder(os.Stdout).Encode(metadata)
+		return
+	}
+
+	// Start socket server
+	start()
+}
+
+func start() {
+	fmt.Println("[{{.ID}}] Starting socket server...")
+
+	listener, err := net.Listen("tcp", "127.0.0.1:8080")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to listen: %v\n", err)
+		os.Exit(1)
+	}
+	defer listener.Close()
+
+	fmt.Println("[{{.ID}}] Listening on 127.0.0.1:8080")
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to accept: %v\n", err)
+			continue
+		}
+
+		go handleConnection(conn)
+	}
+}
+
+func handleConnection(conn net.Conn) {
+	defer conn.Close()
+	fmt.Println("[{{.ID}}] Connection accepted")
+	// TODO: Add connection handling logic
+}

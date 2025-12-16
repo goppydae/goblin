@@ -4,7 +4,7 @@
 // 	protoc        v6.32.1
 // source: proto/agent_status.proto
 
-package proto
+package gapiv1
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -95,7 +95,7 @@ type AgentStatus struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Type          string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
-	State         AgentState             `protobuf:"varint,3,opt,name=state,proto3,enum=proto.AgentState" json:"state,omitempty"`
+	State         AgentState             `protobuf:"varint,3,opt,name=state,proto3,enum=gapi.v1.proto.AgentState" json:"state,omitempty"`
 	Name          string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
 	Language      string                 `protobuf:"bytes,5,opt,name=language,proto3" json:"language,omitempty"`
 	Version       string                 `protobuf:"bytes,6,opt,name=version,proto3" json:"version,omitempty"`
@@ -299,11 +299,11 @@ var File_proto_agent_status_proto protoreflect.FileDescriptor
 
 const file_proto_agent_status_proto_rawDesc = "" +
 	"\n" +
-	"\x18proto/agent_status.proto\x12\x05proto\"\xc9\x02\n" +
+	"\x18proto/agent_status.proto\x12\rgapi.v1.proto\"\xd1\x02\n" +
 	"\vAgentStatus\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04type\x18\x02 \x01(\tR\x04type\x12'\n" +
-	"\x05state\x18\x03 \x01(\x0e2\x11.proto.AgentStateR\x05state\x12\x12\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\x12/\n" +
+	"\x05state\x18\x03 \x01(\x0e2\x19.gapi.v1.proto.AgentStateR\x05state\x12\x12\n" +
 	"\x04name\x18\x04 \x01(\tR\x04name\x12\x1a\n" +
 	"\blanguage\x18\x05 \x01(\tR\blanguage\x12\x18\n" +
 	"\aversion\x18\x06 \x01(\tR\aversion\x12\"\n" +
@@ -313,9 +313,9 @@ const file_proto_agent_status_proto_rawDesc = "" +
 	"\fmemory_usage\x18\n" +
 	" \x01(\x04R\vmemoryUsage\x12\x1b\n" +
 	"\tuptime_ns\x18\v \x01(\x03R\buptimeNs\"\x14\n" +
-	"\x12AgentStatusRequest\"A\n" +
-	"\x13AgentStatusResponse\x12*\n" +
-	"\x06agents\x18\x01 \x03(\v2\x12.proto.AgentStatusR\x06agents*\x92\x02\n" +
+	"\x12AgentStatusRequest\"I\n" +
+	"\x13AgentStatusResponse\x122\n" +
+	"\x06agents\x18\x01 \x03(\v2\x1a.gapi.v1.proto.AgentStatusR\x06agents*\x92\x02\n" +
 	"\n" +
 	"AgentState\x12\x17\n" +
 	"\x13AGENT_STATE_UNKNOWN\x10\x00\x12\x1c\n" +
@@ -327,11 +327,11 @@ const file_proto_agent_status_proto_rawDesc = "" +
 	"\x14AGENT_STATE_STOPPING\x10\x06\x12\x17\n" +
 	"\x13AGENT_STATE_STOPPED\x10\a\x12\x16\n" +
 	"\x12AGENT_STATE_FAILED\x10\b\x12\x19\n" +
-	"\x15AGENT_STATE_RELOADING\x10\t2Q\n" +
+	"\x15AGENT_STATE_RELOADING\x10\t2a\n" +
 	"\n" +
-	"Supervisor\x12C\n" +
+	"Supervisor\x12S\n" +
 	"\n" +
-	"ListAgents\x12\x19.proto.AgentStatusRequest\x1a\x1a.proto.AgentStatusResponseB/Z-github.com/goppydae/gapi/internal/proto;protob\x06proto3"
+	"ListAgents\x12!.gapi.v1.proto.AgentStatusRequest\x1a\".gapi.v1.proto.AgentStatusResponseB0Z.github.com/goppydae/gapi/internal/proto;gapiv1b\x06proto3"
 
 var (
 	file_proto_agent_status_proto_rawDescOnce sync.Once
@@ -348,16 +348,16 @@ func file_proto_agent_status_proto_rawDescGZIP() []byte {
 var file_proto_agent_status_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_proto_agent_status_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_proto_agent_status_proto_goTypes = []any{
-	(AgentState)(0),             // 0: proto.AgentState
-	(*AgentStatus)(nil),         // 1: proto.AgentStatus
-	(*AgentStatusRequest)(nil),  // 2: proto.AgentStatusRequest
-	(*AgentStatusResponse)(nil), // 3: proto.AgentStatusResponse
+	(AgentState)(0),             // 0: gapi.v1.proto.AgentState
+	(*AgentStatus)(nil),         // 1: gapi.v1.proto.AgentStatus
+	(*AgentStatusRequest)(nil),  // 2: gapi.v1.proto.AgentStatusRequest
+	(*AgentStatusResponse)(nil), // 3: gapi.v1.proto.AgentStatusResponse
 }
 var file_proto_agent_status_proto_depIdxs = []int32{
-	0, // 0: proto.AgentStatus.state:type_name -> proto.AgentState
-	1, // 1: proto.AgentStatusResponse.agents:type_name -> proto.AgentStatus
-	2, // 2: proto.Supervisor.ListAgents:input_type -> proto.AgentStatusRequest
-	3, // 3: proto.Supervisor.ListAgents:output_type -> proto.AgentStatusResponse
+	0, // 0: gapi.v1.proto.AgentStatus.state:type_name -> gapi.v1.proto.AgentState
+	1, // 1: gapi.v1.proto.AgentStatusResponse.agents:type_name -> gapi.v1.proto.AgentStatus
+	2, // 2: gapi.v1.proto.Supervisor.ListAgents:input_type -> gapi.v1.proto.AgentStatusRequest
+	3, // 3: gapi.v1.proto.Supervisor.ListAgents:output_type -> gapi.v1.proto.AgentStatusResponse
 	3, // [3:4] is the sub-list for method output_type
 	2, // [2:3] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name

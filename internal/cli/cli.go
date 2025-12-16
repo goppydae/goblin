@@ -15,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/goppydae/gapi/core/tui"
+	gapicli "github.com/goppydae/gapi/pkg/cli"
 	"github.com/goppydae/goblin/core/scheduler"
 	"github.com/goppydae/goblin/internal/supervisor"
 )
@@ -91,6 +92,18 @@ func init() {
 	RootCmd.PersistentFlags().StringVar(&apiAddr, "api-addr", "127.0.0.1:9000", "API address")
 	runCmd.Flags().StringVarP(&runFile, "file", "f", "", "Job spec file (YAML/JSON)")
 	runCmd.MarkFlagRequired("file")
+
+	// Mount GAPI Commands
+	for _, cmd := range gapicli.GetRoot().Commands() {
+		if cmd.Use == "tui" {
+			cmd.Use = "agent-tui"
+			cmd.Short = "Local Agent TUI"
+		}
+		if cmd.Name() == "version" {
+			continue // Avoid conflict
+		}
+		RootCmd.AddCommand(cmd)
+	}
 }
 
 var runFile string

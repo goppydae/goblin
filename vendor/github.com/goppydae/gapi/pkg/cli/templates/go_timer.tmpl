@@ -1,0 +1,39 @@
+// {{.Name}} - {{.Description}}
+package main
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"os"
+)
+
+var describe = flag.Bool("describe", false, "Print agent metadata")
+
+func main() {
+	flag.Parse()
+
+	if *describe {
+		metadata := map[string]interface{}{
+			"describe": map[string]interface{}{
+				"id":           "{{.ID}}",
+				"type":         "timer",
+				"version":      "1.0.0",
+				"language":     "go",
+				"description":  "{{.Description}}",
+				"schedule":     "OnUnitActiveSec=60s",
+				"capabilities": []string{"start"},
+			},
+		}
+		json.NewEncoder(os.Stdout).Encode(metadata)
+		return
+	}
+
+	// Execute timer task
+	start()
+}
+
+func start() {
+	fmt.Println("[{{.ID}}] Timer triggered")
+	// TODO: Add timer task logic
+}

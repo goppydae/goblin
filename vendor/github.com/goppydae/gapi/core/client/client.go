@@ -37,6 +37,11 @@ func New(cfg *config.Config) (*Client, error) {
 	return &Client{bus: bus}, nil
 }
 
+// NewFromBus creates a new Client using an existing EventBus (for in-process use).
+func NewFromBus(bus *eventbus.EventBus[*anypb.Any]) *Client {
+	return &Client{bus: bus}
+}
+
 // Ping sends a ping to the daemon and waits for a pong.
 func (c *Client) Ping(ctx context.Context) (string, error) {
 	done := make(chan string, 1)

@@ -4,7 +4,7 @@
 // 	protoc        v6.32.1
 // source: proto/event.proto
 
-package proto
+package gapiv1
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -210,7 +210,7 @@ var File_proto_event_proto protoreflect.FileDescriptor
 
 const file_proto_event_proto_rawDesc = "" +
 	"\n" +
-	"\x11proto/event.proto\x12\x05proto\x1a\x19google/protobuf/any.proto\"s\n" +
+	"\x11proto/event.proto\x12\rgapi.v1.proto\x1a\x19google/protobuf/any.proto\"s\n" +
 	"\x05Event\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x16\n" +
@@ -222,7 +222,7 @@ const file_proto_event_proto_rawDesc = "" +
 	"\aversion\x18\x03 \x01(\tR\aversion\":\n" +
 	"\bBusEvent\x12\x14\n" +
 	"\x05topic\x18\x01 \x01(\tR\x05topic\x12\x18\n" +
-	"\apayload\x18\x02 \x01(\tR\apayloadB/Z-github.com/goppydae/gapi/internal/proto;protob\x06proto3"
+	"\apayload\x18\x02 \x01(\tR\apayloadB0Z.github.com/goppydae/gapi/internal/proto;gapiv1b\x06proto3"
 
 var (
 	file_proto_event_proto_rawDescOnce sync.Once
@@ -238,13 +238,13 @@ func file_proto_event_proto_rawDescGZIP() []byte {
 
 var file_proto_event_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_proto_event_proto_goTypes = []any{
-	(*Event)(nil),          // 0: proto.Event
-	(*LifecycleEvent)(nil), // 1: proto.LifecycleEvent
-	(*BusEvent)(nil),       // 2: proto.BusEvent
+	(*Event)(nil),          // 0: gapi.v1.proto.Event
+	(*LifecycleEvent)(nil), // 1: gapi.v1.proto.LifecycleEvent
+	(*BusEvent)(nil),       // 2: gapi.v1.proto.BusEvent
 	(*anypb.Any)(nil),      // 3: google.protobuf.Any
 }
 var file_proto_event_proto_depIdxs = []int32{
-	3, // 0: proto.Event.payload:type_name -> google.protobuf.Any
+	3, // 0: gapi.v1.proto.Event.payload:type_name -> google.protobuf.Any
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name

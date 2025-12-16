@@ -1,0 +1,78 @@
+// {{.Name}} - {{.Description}}
+package main
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+)
+
+var (
+	// Injected at build time via ldflags
+	SourceHash string
+	BuildTime  string
+	Version    string = "1.0.0"
+)
+
+var describe = flag.Bool("describe", false, "Print agent metadata")
+
+func main() {
+	flag.Parse()
+
+	if *describe {
+		metadata := map[string]interface{}{
+			"describe": map[string]interface{}{
+				"id":           "{{.ID}}",
+				"type":         "service",
+				"version":      Version,
+				"language":     "go",
+				"description":  "{{.Description}}",
+				"capabilities": []string{"initialize", "start", "stop"},
+				"build_info": map[string]string{
+					"source_hash": SourceHash,
+					"build_time":  BuildTime,
+				},
+			},
+		}
+		json.NewEncoder(os.Stdout).Encode(metadata)
+		return
+	}
+
+	// Initialize
+	initialize()
+
+	// Start service
+	start()
+}
+
+func initialize() {
+	fmt.Println("[{{.ID}}] Initializing...")
+	// TODO: Add initialization logic
+}
+
+func start() {
+	fmt.Println("[{{.ID}}] Starting...")
+
+	// Setup graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// Main service loop
+	for {
+		select {
+		case <-sigChan:
+			stop()
+			return
+		default:
+			// TODO: Add service logic
+		}
+	}
+}
+
+func stop() {
+	fmt.Println("[{{.ID}}] Stopping...")
+	// TODO: Add cleanup logic
+}

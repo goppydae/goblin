@@ -4,7 +4,7 @@
 // - protoc             v6.32.1
 // source: proto/agent_status.proto
 
-package proto
+package gapiv1
 
 import (
 	context "context"
@@ -19,7 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Supervisor_ListAgents_FullMethodName = "/proto.Supervisor/ListAgents"
+	Supervisor_ListAgents_FullMethodName = "/gapi.v1.proto.Supervisor/ListAgents"
 )
 
 // SupervisorClient is the client API for Supervisor service.
@@ -108,7 +108,7 @@ func _Supervisor_ListAgents_Handler(srv interface{}, ctx context.Context, dec fu
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var Supervisor_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "proto.Supervisor",
+	ServiceName: "gapi.v1.proto.Supervisor",
 	HandlerType: (*SupervisorServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{

@@ -4,7 +4,7 @@
 // 	protoc        v6.32.1
 // source: proto/envelope.proto
 
-package proto
+package gapiv1
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -118,7 +118,7 @@ var File_proto_envelope_proto protoreflect.FileDescriptor
 
 const file_proto_envelope_proto_rawDesc = "" +
 	"\n" +
-	"\x14proto/envelope.proto\x12\x05proto\x1a\x19google/protobuf/any.proto\"\xbe\x01\n" +
+	"\x14proto/envelope.proto\x12\rgapi.v1.proto\x1a\x19google/protobuf/any.proto\"\xbe\x01\n" +
 	"\bEnvelope\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x14\n" +
@@ -126,7 +126,7 @@ const file_proto_envelope_proto_rawDesc = "" +
 	"\x06source\x18\x04 \x01(\tR\x06source\x12\x1c\n" +
 	"\tnamespace\x18\x05 \x01(\tR\tnamespace\x12.\n" +
 	"\apayload\x18\x06 \x01(\v2\x14.google.protobuf.AnyR\apayload\x12\x12\n" +
-	"\x04tags\x18\a \x03(\tR\x04tagsB/Z-github.com/goppydae/gapi/internal/proto;protob\x06proto3"
+	"\x04tags\x18\a \x03(\tR\x04tagsB0Z.github.com/goppydae/gapi/internal/proto;gapiv1b\x06proto3"
 
 var (
 	file_proto_envelope_proto_rawDescOnce sync.Once
@@ -142,11 +142,11 @@ func file_proto_envelope_proto_rawDescGZIP() []byte {
 
 var file_proto_envelope_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_proto_envelope_proto_goTypes = []any{
-	(*Envelope)(nil),  // 0: proto.Envelope
+	(*Envelope)(nil),  // 0: gapi.v1.proto.Envelope
 	(*anypb.Any)(nil), // 1: google.protobuf.Any
 }
 var file_proto_envelope_proto_depIdxs = []int32{
-	1, // 0: proto.Envelope.payload:type_name -> google.protobuf.Any
+	1, // 0: gapi.v1.proto.Envelope.payload:type_name -> google.protobuf.Any
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
