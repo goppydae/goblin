@@ -4,11 +4,15 @@
 
 ## Overview
 
-While GAPI manages agents on a single node, Goblin adds:
+While GAPI provides the local runtime library, Goblin is the **Production Daemon**.
+
+It **embeds** GAPI to run agents locally, while adding:
 - **Cluster Membership** - Node discovery via Serf
 - **Consensus** - Leader election via Raft
 - **Distributed Events** - Cluster-wide pub/sub messaging
 - **Multi-Node Coordination** - Reconcile desired state across nodes
+
+**You only need running `goblind` on your servers.** No separate `gapid` is required.
 
 ## Architecture
 
@@ -19,8 +23,8 @@ While GAPI manages agents on a single node, Goblin adds:
 │                                                 │
 │  Node A (Leader)         Node B         Node C  │
 │  ┌──────────────┐     ┌──────────┐   ┌────────┐│
-│  │ GAPI Local   │     │ GAPI     │   │ GAPI   ││
-│  │ Supervisor   │     │ Super    │   │ Super  ││
+│  │ GAPI (Embedded)  │     │ GAPI     │   │ GAPI   ││
+│  │ Runtime          │     │ (Embedded│   │ (Embed ││
 │  └──────┬───────┘     │ visor    │   │ visor  ││
 │         │             └────┬─────┘   └───┬────┘│
 │         │                  │             │     │

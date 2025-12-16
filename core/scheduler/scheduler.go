@@ -73,8 +73,15 @@ func (s *Scheduler) Schedule(job *Job, strategy Strategy) (string, error) {
 	// 3. Apply Strategy
 	switch strategy {
 	case StrategyRandom, StrategyRoundRobin:
-		rand.Seed(time.Now().UnixNano())
-		return capableNodes[rand.Intn(len(capableNodes))].Name, nil
+		// Use local random source instead of global Seed (deprecated)
+		src := rand.NewSource(time.Now().UnixNano())
+		r := rand.New(src)
+
+		// Shuffle nodes
+		r.Shuffle(len(capableNodes), func(i, j int) {
+			capableNodes[i], capableNodes[j] = capableNodes[j], capableNodes[i]
+		})
+		return capableNodes[0].Name, nil
 
 	case StrategyLeastLoaded:
 		// Pick node with lowest % resource utilization (avg of cpu% and mem%)

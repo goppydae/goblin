@@ -20,6 +20,7 @@ var (
 	raftDir       string
 	joinAddr      string
 	apiAddr       string
+	runtimeAddr   string
 	encryptionKey string
 	certFile      string
 	keyFile       string
@@ -56,6 +57,7 @@ var rootCmd = &cobra.Command{
 			KeyFile:       keyFile,
 			CAFile:        caFile,
 			MetricsAddr:   metricsAddr,
+			RuntimeAddr:   runtimeAddr,
 		}
 		return supervisor.New(cfg).Run(cmd.Context())
 	},
@@ -89,6 +91,7 @@ func init() {
 	rootCmd.Flags().StringVar(&raftDir, "data", "./data/raft", "Data directory for Raft log")
 	rootCmd.Flags().StringVar(&joinAddr, "join", "", "Join existing cluster peer (host:port)")
 	rootCmd.Flags().StringVar(&apiAddr, "api-addr", "127.0.0.1:9000", "API address")
+	rootCmd.Flags().StringVar(&runtimeAddr, "runtime-addr", "", "Embedded Runtime bind address (default: 127.0.0.1:4242)")
 
 	// Security Flags
 	rootCmd.Flags().StringVar(&encryptionKey, "encrypt", "", "Base64 encoded 32-byte secret key for Serf encryption")

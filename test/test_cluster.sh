@@ -23,7 +23,7 @@ echo "Using binaries in $BIN_DIR"
 echo "Starting Goblin node..."
 mkdir -p /tmp/goblin-test
 # gapi start uses --id, --api-addr, --gossip-addr typically. Checking common pattern.
-"$BIN_DIR/goblind" start --id node1 --data /tmp/goblin-test/node1 --api-addr :8080 --serf-addr 127.0.0.1 --serf-port 9191 &
+"$BIN_DIR/goblind" start --id node1 --data /tmp/goblin-test/node1 --api-addr :8080 --serf-addr 127.0.0.1 --serf-port 9191 --runtime-addr 127.0.0.1:4243 &
 GOBLIN_PID=$!
 
 # Wait for startup

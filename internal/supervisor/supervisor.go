@@ -51,6 +51,7 @@ type Config struct {
 	KeyFile       string
 	CAFile        string
 	MetricsAddr   string
+	RuntimeAddr   string
 }
 
 // Supervisor manages the Goblin daemon components
@@ -305,9 +306,16 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		var gapiSup *gapisup.Supervisor
 		if err != nil {
 			log.Printf("⚠️ Failed to load GAPI config: %v. Using defaults.", err)
-			gapiCfg = &gapiconfig.Config{
-				Transport: gapiconfig.TransportConfig{Type: "quic", Address: "127.0.0.1:4242"},
+			addr := "127.0.0.1:4242"
+			if s.cfg.RuntimeAddr != "" {
+				addr = s.cfg.RuntimeAddr
 			}
+			gapiCfg = &gapiconfig.Config{
+				Transport: gapiconfig.TransportConfig{Type: "quic", Address: addr},
+			}
+		} else if s.cfg.RuntimeAddr != "" {
+			// Override if flag provided
+			gapiCfg.Transport.Address = s.cfg.RuntimeAddr
 		}
 
 		gapiSup, err = gapisup.New(gapiCfg)
@@ -609,12 +617,20 @@ func handleQUICStream(stream *quic.Stream, s *store.Store, bus eventbus.EventBus
 		return buf, nil
 	}
 
-	writeResp := func(status byte, val []byte) {
-		stream.Write([]byte{status})
+	writeResp := func(status byte, val []byte) error {
+		if _, err := stream.Write([]byte{status}); err != nil {
+			return err
+		}
+		// length prefix (4 bytes)
 		var lenBuf [4]byte
 		binary.BigEndian.PutUint32(lenBuf[:], uint32(len(val)))
-		stream.Write(lenBuf[:])
-		stream.Write(val)
+		if _, err := stream.Write(lenBuf[:]); err != nil {
+			return err
+		}
+		if _, err := stream.Write(val); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	// For watch commands, we might not read NS/Key immediately if the protocol differs,
