@@ -211,6 +211,25 @@ Body:
 - `proto/agent.proto`: clarify `capabilities` field semantics
 - Tests: `go test ./...`
 
+---
+
+## .agentsignore
+
+The repository MAY define one or more `.agentsignore` files.
+
+Paths matched by `.agentsignore` are **out of bounds** for all agents.
+They MUST NOT be read, modified, referenced, or used for inference.
+
+This restriction applies to:
+- Code and documentation
+- Planning and walkthrough artifacts
+- Agent Activity Ledger entries
+- Commit message production
+
+If a path is ignored, the agent may acknowledge that it is excluded,
+but MUST NOT inspect or describe its contents.
+
+`.agentsignore` takes precedence over all other permissions.
 
 ---
 
