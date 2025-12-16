@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"encoding/pem"
@@ -13,7 +14,10 @@ import (
 	"io"
 	"log"
 	"math/big"
+	"net/http"
 	"os"
+	"strconv"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/serf/serf"
@@ -22,8 +26,10 @@ import (
 	"github.com/goppydae/goblin/core/cluster"
 	"github.com/goppydae/goblin/core/consensus"
 	"github.com/goppydae/goblin/core/eventbus"
+	"github.com/goppydae/goblin/core/metrics"
 	"github.com/goppydae/goblin/core/scheduler"
 	"github.com/goppydae/goblin/core/store"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	gapiclient "github.com/goppydae/gapi/core/client"
 	gapiconfig "github.com/goppydae/gapi/core/config"
@@ -31,13 +37,19 @@ import (
 
 // Config holds configuration for the Supervisor
 type Config struct {
-	NodeID   string
-	SerfAddr string
-	SerfPort int
-	RaftAddr string
-	RaftDir  string
-	JoinAddr string
-	APIAddr  string
+	NodeID        string
+	SerfAddr      string
+	SerfPort      int
+	RaftAddr      string
+	RaftDir       string
+	JoinAddr      string
+	APIAddr       string
+	Tags          map[string]string
+	EncryptionKey string // Base64 encoded 32-byte key
+	CertFile      string
+	KeyFile       string
+	CAFile        string
+	MetricsAddr   string
 }
 
 // Supervisor manages the Goblin daemon components
@@ -60,11 +72,65 @@ func (s *Supervisor) Run(ctx context.Context) error {
 
 	fmt.Printf("🚀 Goblin supervisor starting as '%s'...\n", nodeID)
 
+	// Decode Encryption Key
+	var secretKey []byte
+	if s.cfg.EncryptionKey != "" {
+		key, err := base64.StdEncoding.DecodeString(s.cfg.EncryptionKey)
+		if err != nil {
+			return fmt.Errorf("failed to decode encryption key: %w", err)
+		}
+		if len(key) != 32 && len(key) != 16 && len(key) != 24 {
+			return fmt.Errorf("encryption key must be 16, 24, or 32 bytes (got %d)", len(key))
+		}
+		secretKey = key
+		fmt.Println("🔒 Serf encryption enabled")
+	}
+
+	// Load TLS Config
+	var tlsCfg *tls.Config
+	if s.cfg.CertFile != "" && s.cfg.KeyFile != "" {
+		// Use CertManager for dynamic reloading
+		cm, err := NewCertManager(s.cfg.CertFile, s.cfg.KeyFile)
+		if err != nil {
+			return fmt.Errorf("failed to load TLS certs: %w", err)
+		}
+		go cm.Watch(ctx)
+
+		tlsCfg = &tls.Config{
+			GetCertificate:       cm.GetCertificate,
+			GetClientCertificate: cm.GetClientCertificate,
+			MinVersion:           tls.VersionTLS12,
+		}
+		fmt.Println("🔒 TLS enabled (Dynamic Reloading)")
+
+		// If CA provided, enable Client Auth for mTLS
+		if s.cfg.CAFile != "" {
+			caCert, err := os.ReadFile(s.cfg.CAFile)
+			if err != nil {
+				return fmt.Errorf("failed to read CA file: %w", err)
+			}
+			caPool := x509.NewCertPool()
+			caPool.AppendCertsFromPEM(caCert)
+			tlsCfg.ClientCAs = caPool
+			tlsCfg.ClientAuth = tls.RequireAndVerifyClientCert
+			tlsCfg.RootCAs = caPool
+			fmt.Println("🔒 Raft mTLS enabled")
+		} else {
+			fmt.Println("⚠️ TLS enabled but no CA provided - mTLS disabled")
+		}
+	} else {
+		// Default to insecure
+		fmt.Println("⚠️ Security warning: Encryption disabled")
+	}
+
 	// Create Serf membership
 	tags := map[string]string{
 		"raft_addr": s.cfg.RaftAddr,
 	}
-	membership, err := cluster.NewMembership(nodeID, s.cfg.SerfAddr, s.cfg.SerfPort, tags)
+	for k, v := range s.cfg.Tags {
+		tags[k] = v
+	}
+	membership, err := cluster.NewMembership(nodeID, s.cfg.SerfAddr, s.cfg.SerfPort, tags, secretKey)
 	if err != nil {
 		return fmt.Errorf("failed to create membership: %w", err)
 	}
@@ -82,7 +148,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	}
 
 	// Create Raft consensus
-	consensus, err := consensus.NewConsensus(nodeID, s.cfg.RaftDir, s.cfg.RaftAddr)
+	consensus, err := consensus.NewConsensus(nodeID, s.cfg.RaftDir, s.cfg.RaftAddr, tlsCfg)
 	if err != nil {
 		return fmt.Errorf("failed to create consensus: %w", err)
 	}
@@ -263,7 +329,25 @@ func (s *Supervisor) Run(ctx context.Context) error {
 					log.Printf("🚀 Attempting to start agent for Job %s...", jobID)
 
 					if client != nil {
-						results := client.Start(context.Background(), []string{jobID})
+						// Fetch Job Spec
+						specKey := "/jobs/specs/" + jobID
+						var opts gapiclient.LifecycleOptions
+
+						specVal, ok, _ := kvStore.Get(context.Background(), "default", specKey)
+						if ok {
+							var job scheduler.Job
+							if err := json.Unmarshal(specVal, &job); err == nil {
+								opts.Env = job.Env
+								opts.RestartPolicy = job.RestartPolicy
+								log.Printf("📜 Loaded spec for %s: Env=%v, Restart=%s", jobID, opts.Env, opts.RestartPolicy)
+							} else {
+								log.Printf("⚠️ Failed to unmarshal job spec for %s: %v", jobID, err)
+							}
+						} else {
+							log.Printf("⚠️ No job spec found for %s, using defaults", jobID)
+						}
+
+						results := client.StartWithOpts(context.Background(), []string{jobID}, opts)
 						for _, res := range results {
 							if res.Err != nil {
 								log.Printf("❌ Failed to start agent %s: %v", res.AgentID, res.Err)
@@ -328,6 +412,64 @@ func (s *Supervisor) Run(ctx context.Context) error {
 			go handleQUICConn(conn, kvStore, bus)
 		}
 	}()
+	// Start Metrics Server
+	if s.cfg.MetricsAddr != "" {
+		go func() {
+			http.Handle("/metrics", promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{}))
+			log.Printf("📊 Metrics server listening on %s", s.cfg.MetricsAddr)
+			if err := http.ListenAndServe(s.cfg.MetricsAddr, nil); err != nil {
+				log.Printf("⚠️ Metrics server failed: %v", err)
+			}
+		}()
+
+		// Start Metrics Collector
+		go func() {
+			ticker := time.NewTicker(5 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					// Update Raft Stats
+					stats := consensus.Stats()
+					if term, ok := stats["term"]; ok {
+						val, _ := strconv.ParseFloat(term, 64)
+						metrics.RaftTerm.Set(val)
+					}
+
+					state := stats["state"]
+					var stateVal float64
+					switch state {
+					case "Leader":
+						stateVal = 2
+					case "Candidate":
+						stateVal = 1
+					default:
+						stateVal = 0
+					}
+					metrics.RaftState.Set(stateVal)
+
+					// Update Cluster Members
+					members := membership.Members()
+					alive, failed, left := 0, 0, 0
+					for _, m := range members {
+						switch m.Status {
+						case serf.StatusAlive:
+							alive++
+						case serf.StatusFailed:
+							failed++
+						case serf.StatusLeft:
+							left++
+						}
+					}
+					metrics.ClusterMembers.WithLabelValues("alive").Set(float64(alive))
+					metrics.ClusterMembers.WithLabelValues("failed").Set(float64(failed))
+					metrics.ClusterMembers.WithLabelValues("left").Set(float64(left))
+				}
+			}
+		}()
+	}
 
 	fmt.Println("📡 Listening for cluster events...")
 
@@ -343,6 +485,76 @@ func handleQUICConn(conn *quic.Conn, s *store.Store, bus eventbus.EventBus) {
 			return
 		}
 		go handleQUICStream(stream, s, bus)
+	}
+}
+
+// CertManager handles dynamic certificate reloading
+type CertManager struct {
+	mu       sync.RWMutex
+	cert     *tls.Certificate
+	certFile string
+	keyFile  string
+}
+
+func NewCertManager(certFile, keyFile string) (*CertManager, error) {
+	cm := &CertManager{
+		certFile: certFile,
+		keyFile:  keyFile,
+	}
+	if err := cm.Load(); err != nil {
+		return nil, err
+	}
+	return cm, nil
+}
+
+func (cm *CertManager) Load() error {
+	cert, err := tls.LoadX509KeyPair(cm.certFile, cm.keyFile)
+	if err != nil {
+		return err
+	}
+	cm.mu.Lock()
+	cm.cert = &cert
+	cm.mu.Unlock()
+	return nil
+}
+
+func (cm *CertManager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	return cm.cert, nil
+}
+
+func (cm *CertManager) GetClientCertificate(req *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	return cm.cert, nil
+}
+
+func (cm *CertManager) Watch(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	var lastMod time.Time
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			info, err := os.Stat(cm.certFile)
+			if err != nil {
+				continue
+			}
+			if info.ModTime().After(lastMod) {
+				log.Printf("🔄 Detected certificate change, reloading...")
+				if err := cm.Load(); err != nil {
+					log.Printf("❌ Failed to reload cert: %v", err)
+				} else {
+					log.Printf("✅ Certificate reloaded successfully")
+					lastMod = info.ModTime()
+				}
+			}
+		}
 	}
 }
 

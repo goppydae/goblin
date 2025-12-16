@@ -1,6 +1,7 @@
 package consensus
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
@@ -16,13 +17,13 @@ import (
 type Consensus struct {
 	raft      *raft.Raft
 	fsm       *FSM
-	transport *raft.NetworkTransport
+	transport raft.Transport
 	nodeID    string
 	dataDir   string
 }
 
 // NewConsensus creates a new Raft-based consensus manager
-func NewConsensus(nodeID, dataDir, bindAddr string) (*Consensus, error) {
+func NewConsensus(nodeID, dataDir, bindAddr string, tlsCfg *tls.Config) (*Consensus, error) {
 	// Create data directory
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create data dir: %w", err)
@@ -58,14 +59,24 @@ func NewConsensus(nodeID, dataDir, bindAddr string) (*Consensus, error) {
 	}
 
 	// Create transport
-	addr, err := net.ResolveTCPAddr("tcp", bindAddr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve address: %w", err)
-	}
+	var transport raft.Transport
 
-	transport, err := raft.NewTCPTransport(bindAddr, addr, 3, 10*time.Second, os.Stderr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create transport: %w", err)
+	if tlsCfg != nil {
+		stream, err := NewTLSStreamLayer(bindAddr, tlsCfg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create TLS stream: %w", err)
+		}
+		transport = raft.NewNetworkTransport(stream, 3, 10*time.Second, os.Stderr)
+	} else {
+		addr, err := net.ResolveTCPAddr("tcp", bindAddr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve address: %w", err)
+		}
+
+		transport, err = raft.NewTCPTransport(bindAddr, addr, 3, 10*time.Second, os.Stderr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create transport: %w", err)
+		}
 	}
 
 	// Create Raft
@@ -144,4 +155,9 @@ func (c *Consensus) GetState(namespace, key string) ([]byte, bool) {
 // Scan returns all keys matching the prefix
 func (c *Consensus) Scan(namespace, prefix string) map[string][]byte {
 	return c.fsm.Scan(namespace, prefix)
+}
+
+// Stats returns Raft statistics
+func (c *Consensus) Stats() map[string]string {
+	return c.raft.Stats()
 }

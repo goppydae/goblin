@@ -4,7 +4,7 @@ This guide covers how to run Goblin in various configurations.
 
 ## Prerequisites
 
-- **Goblin Binary**: Built via `go build ./cmd/goblinctl` or `nix build .#goblinctl`.
+- **Goblin Binary**: Built via `nix develop -c mage build`.
 - **Ports**: Ensure necessary ports aren't blocked by firewalls.
 
 ## Single Node (Development)
@@ -13,7 +13,7 @@ Start a single node with default settings:
 
 ```bash
 # Uses hostname as ID, listening on 127.0.0.1:7946 (Serf) and :8300 (Raft)
-./goblinctl start
+./bin/goblind
 ```
 
 ## Multi-Node Local Cluster
@@ -24,7 +24,7 @@ To simulate a 3-node cluster on a single machine, you must use different ports a
 Starts the first node.
 
 ```bash
-./goblinctl start \
+./bin/goblind \
   --id node1 \
   --serf-port 7946 \
   --raft-addr 127.0.0.1:8300 \
@@ -35,7 +35,7 @@ Starts the first node.
 Joins Node 1.
 
 ```bash
-./goblinctl start \
+./bin/goblind \
   --id node2 \
   --serf-port 7947 \
   --raft-addr 127.0.0.1:8301 \
@@ -47,7 +47,7 @@ Joins Node 1.
 Joins cluster via Node 1.
 
 ```bash
-./goblinctl start \
+./bin/goblind \
   --id node3 \
   --serf-port 7948 \
   --raft-addr 127.0.0.1:8302 \
@@ -73,5 +73,5 @@ The distributed event bus will log `[cluster]` events.
 
 To check local status:
 ```bash
-./goblinctl status
+./bin/goblinctl status
 ```

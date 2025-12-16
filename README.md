@@ -37,10 +37,10 @@ While GAPI manages agents on a single node, Goblin adds:
 
 ```bash
 # Build
-go build ./cmd/goblinctl
+nix develop -c mage build
 
 # Run single node
-./goblinctl start
+./bin/goblind
 
 # Run multi-node cluster
 # See docs/usage.md
@@ -56,7 +56,8 @@ go build ./cmd/goblinctl
 ```
 goblin/
 ├── cmd/
-│   └── goblinctl/        # CLI & Daemon entry point
+│   ├── goblinctl/        # CLI Tool
+│   └── goblind/          # Daemon entry point
 ├── core/
 │   ├── cluster/          # Serf Membership
 │   ├── consensus/        # Raft Consensus

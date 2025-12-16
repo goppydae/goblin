@@ -8,11 +8,14 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 
 	"github.com/quic-go/quic-go"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 
 	"github.com/goppydae/gapi/core/tui"
+	"github.com/goppydae/goblin/core/scheduler"
 	"github.com/goppydae/goblin/internal/supervisor"
 )
 
@@ -66,6 +69,7 @@ func init() {
 	RootCmd.AddCommand(statusCmd)
 	RootCmd.AddCommand(tuiCmd)
 	RootCmd.AddCommand(publishCmd)
+	RootCmd.AddCommand(runCmd)
 
 	publishCmd.Flags().StringVar(&publishNamespace, "namespace", "", "Event namespace")
 	publishCmd.Flags().StringSliceVar(&publishTags, "tags", []string{}, "Event tags")
@@ -85,6 +89,49 @@ func init() {
 	// Shared KV flags
 	kvCmd.PersistentFlags().StringVar(&kvNamespace, "namespace", "default", "KV Namespace")
 	RootCmd.PersistentFlags().StringVar(&apiAddr, "api-addr", "127.0.0.1:9000", "API address")
+	runCmd.Flags().StringVarP(&runFile, "file", "f", "", "Job spec file (YAML/JSON)")
+	runCmd.MarkFlagRequired("file")
+}
+
+var runFile string
+
+var runCmd = &cobra.Command{
+	Use:   "run",
+	Short: "Run a job from a spec file",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		data, err := os.ReadFile(runFile)
+		if err != nil {
+			return fmt.Errorf("failed to read file: %w", err)
+		}
+
+		var job scheduler.Job
+		if err := yaml.Unmarshal(data, &job); err != nil {
+			return fmt.Errorf("failed to parse job spec: %w", err)
+		}
+
+		if job.ID == "" {
+			return fmt.Errorf("job spec must have an ID")
+		}
+
+		fmt.Printf("🚀 Submitting Job %s (Agent: %s, Type: %s)...\n", job.ID, job.AgentID, job.AgentType)
+		if job.Resources.CPU > 0 || job.Resources.Memory > 0 {
+			fmt.Printf("   Requested: %.1f CPU, %d MB RAM\n", job.Resources.CPU, job.Resources.Memory/1024/1024)
+		}
+
+		// 1. Write Job Spec
+		specBytes, _ := json.Marshal(job)
+		if _, err := quicRequest(1, "default", "/jobs/specs/"+job.ID, specBytes); err != nil {
+			return fmt.Errorf("failed to write job spec: %w", err)
+		}
+
+		// 2. Trigger Scheduling (add to pending)
+		if _, err := quicRequest(1, "default", "/jobs/pending/"+job.ID, []byte(job.ID)); err != nil {
+			return fmt.Errorf("failed to submit job: %w", err)
+		}
+
+		fmt.Printf("✅ Job %s submitted successfully\n", job.ID)
+		return nil
+	},
 }
 
 var (
