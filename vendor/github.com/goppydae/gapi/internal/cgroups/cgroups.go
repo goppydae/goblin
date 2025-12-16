@@ -31,6 +31,10 @@ var serviceRoot string
 // It moves the current process (gapid) into 'gapid-infra/supervisor'.
 // Then it enables controllers (+cpu +memory) in 'gapid-infra'.
 func Setup() error {
+	if os.Getenv("RUNTIME_CGROUPS_DISABLE") != "" {
+		return fmt.Errorf("cgroups disabled by configuration")
+	}
+
 	root, err := detectRoot()
 	if err != nil {
 		return err

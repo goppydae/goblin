@@ -7,7 +7,7 @@ import (
 
 	"github.com/goppydae/goblin/core/consensus"
 	"github.com/goppydae/goblin/core/eventbus"
-	pb "github.com/goppydae/goblin/internal/proto"
+	goblinv1 "github.com/goppydae/goblin/proto"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -33,8 +33,8 @@ func NewStore(c *consensus.Consensus, bus eventbus.EventBus) *Store {
 
 // Set writes a key-value pair to the store
 func (s *Store) Set(ctx context.Context, namespace, key string, value []byte) error {
-	cmd := &pb.LogEntry{
-		Type:      pb.CommandType_SET,
+	cmd := &goblinv1.LogEntry{
+		Type:      goblinv1.CommandType_SET,
 		Namespace: namespace,
 		Key:       key,
 		Value:     value,
@@ -107,8 +107,8 @@ func (s *Store) Scan(ctx context.Context, namespace, prefix string) (map[string]
 
 // Delete removes a key from the store
 func (s *Store) Delete(ctx context.Context, namespace, key string) error {
-	cmd := &pb.LogEntry{
-		Type:      pb.CommandType_DELETE,
+	cmd := &goblinv1.LogEntry{
+		Type:      goblinv1.CommandType_DELETE,
 		Namespace: namespace,
 		Key:       key,
 	}

@@ -72,7 +72,7 @@ const file_proto_ping_proto_rawDesc = "" +
 	"\x10proto/ping.proto\x12\rgapi.v1.proto\"$\n" +
 	"\n" +
 	"PingStatus\x12\x16\n" +
-	"\x06status\x18\x01 \x01(\tR\x06statusB0Z.github.com/goppydae/gapi/internal/proto;gapiv1b\x06proto3"
+	"\x06status\x18\x01 \x01(\tR\x06statusB+Z)github.com/goppydae/gapi/pkg/proto;gapiv1b\x06proto3"
 
 var (
 	file_proto_ping_proto_rawDescOnce sync.Once

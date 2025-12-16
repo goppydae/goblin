@@ -87,10 +87,10 @@ github.com/goppydae/gapi/internal/lifecycle
 github.com/goppydae/gapi/internal/logging/logcore
 github.com/goppydae/gapi/internal/logging/logevent
 github.com/goppydae/gapi/internal/logging/logoutput
-github.com/goppydae/gapi/internal/proto
 github.com/goppydae/gapi/internal/state
 github.com/goppydae/gapi/internal/transport
 github.com/goppydae/gapi/pkg/cli
+github.com/goppydae/gapi/pkg/proto
 # github.com/hashicorp/errwrap v1.1.0
 ## explicit
 github.com/hashicorp/errwrap
@@ -473,7 +473,4 @@ google.golang.org/protobuf/types/known/timestamppb
 # gopkg.in/natefinch/lumberjack.v2 v2.2.1
 ## explicit; go 1.13
 gopkg.in/natefinch/lumberjack.v2
-# gopkg.in/yaml.v3 v3.0.1
-## explicit
-gopkg.in/yaml.v3
 # github.com/goppydae/gapi => ../gapi

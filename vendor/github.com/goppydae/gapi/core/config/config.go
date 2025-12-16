@@ -54,14 +54,14 @@ type Config struct {
 }
 
 func Load() (*Config, error) {
-	if env := os.Getenv("GAPI_CONFIG"); env != "" {
+	if env := os.Getenv("RUNTIME_CONFIG"); env != "" {
 		viper.SetConfigFile(env)
 	} else {
 		viper.SetConfigName("config")
 		viper.SetConfigType("yaml")
 		addDefaultPaths() // uses build tag-specific implementation
 	}
-	viper.SetEnvPrefix("GAPI")
+	viper.SetEnvPrefix("RUNTIME")
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 

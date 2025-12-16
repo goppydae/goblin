@@ -99,7 +99,7 @@ const file_proto_log_message_proto_rawDesc = "" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x14\n" +
 	"\x05level\x18\x02 \x01(\tR\x05level\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12\x1c\n" +
-	"\ttimestamp\x18\x04 \x01(\x03R\ttimestampB0Z.github.com/goppydae/gapi/internal/proto;gapiv1b\x06proto3"
+	"\ttimestamp\x18\x04 \x01(\x03R\ttimestampB+Z)github.com/goppydae/gapi/pkg/proto;gapiv1b\x06proto3"
 
 var (
 	file_proto_log_message_proto_rawDescOnce sync.Once

@@ -22,3 +22,46 @@ This file contains lessons learned the hard way. Read this before debugging "imp
 ### Cluster Stability
 **Symptom:** "It works on my machine" but fails in a real cluster.
 **Lesson:** Unit tests are insufficient for distributed consensus. Always verify changes with `test_cluster.sh` (3-node ensemble) to catch replication and leader election race conditions.
+
+## QUIC RPC Migration: 130k Tokens Well Spent (Dec 2024)
+
+**Achievement**: Migrated from HTTP/net/rpc to QUIC transport in one epic 2-hour session.
+
+### The quic-go API Trap
+
+```go
+// ❌ This haunted us for 30+ iterations
+var conn quic.Connection  // undefined: quic.Connection
+
+// ✅ The truth
+var conn *quic.Conn
+stream, _ := conn.AcceptStream(ctx)  // Returns *quic.Stream
+io.ReadFull(stream, buf)  // Use directly, not *stream
+```
+
+### RPC Handler Type Mismatch
+
+When creating QUIC adapters for existing RPC methods, use the ACTUAL types:
+
+```go
+// ❌ Creating new types breaks RPC signatures
+type JobSubmitRequest struct { ... }
+
+// ✅ Use existing scheduler types
+var job scheduler.Job  // Matches SubmitJob(*scheduler.Job, *string)
+```
+
+### TUI Field Name Changes
+
+```go
+// ❌ OLD                  // ✅ NEW
+AgentID   → ID
+AgentType → Type  
+Status    → State
+```
+
+### The Reward
+
+Port 9000 now speaks QUIC+TLS1.3+Protobuf. Unified with GAPI architecture. HTTP server removed entirely.
+
+**Stats**: 45+ tool calls, 130k tokens, 100% success rate (eventually).

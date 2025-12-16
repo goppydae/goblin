@@ -23,7 +23,7 @@ import (
 	"github.com/goppydae/gapi/internal/cgroups"
 	"github.com/goppydae/gapi/internal/eventbus"
 	"github.com/goppydae/gapi/internal/lifecycle"
-	protopkg "github.com/goppydae/gapi/internal/proto"
+	protopkg "github.com/goppydae/gapi/pkg/proto"
 )
 
 type PythonAgent struct {
@@ -58,6 +58,9 @@ type PythonAgent struct {
 	nextRunID string
 	startTime time.Time
 	bus       *eventbus.EventBus[*anypb.Any]
+
+	waitOnce sync.Once
+	waitErr  error
 }
 
 func NewPythonAgent(
@@ -321,7 +324,7 @@ func (a *PythonAgent) Start(ctx context.Context) error {
 	cmd.Env = os.Environ() // start with env
 
 	if a.nextRunID != "" {
-		cmd.Env = append(cmd.Env, "GAPI_RUN_ID="+a.nextRunID)
+		cmd.Env = append(cmd.Env, "RUNTIME_RUN_ID="+a.nextRunID)
 	}
 
 	if len(extraFiles) > 0 {
@@ -346,7 +349,9 @@ func (a *PythonAgent) Start(ctx context.Context) error {
 	// }
 
 	var err error
+	a.waitOnce = sync.Once{} // Reset for new run
 	a.stdout, err = a.cmd.StdoutPipe()
+
 	if err != nil {
 		return err
 	}
@@ -379,15 +384,20 @@ func (a *PythonAgent) Start(ctx context.Context) error {
 
 	// Oneshot behavior: Wait for completion
 	if a.typ == "oneshot" {
-		a.publishStatus("STARTING", "oneshot running")
-		// Wait for exit
+		rid := a.nextRunID
+		a.publishStatusWithRunID("STARTING", "oneshot running", rid)
+
+		// Release lock while waiting for exit to avoid deadlock with stream handlers
+		a.mu.Unlock()
 		err := a.cmd.Wait()
+		a.mu.Lock()
+
 		if err != nil {
-			a.publishStatus("FAILED", fmt.Sprintf("oneshot failed: %v", err))
+			a.publishStatusWithRunID("FAILED", fmt.Sprintf("oneshot failed: %v", err), rid)
 			a.cleanupAfterExit()
 			return fmt.Errorf("oneshot agent failed: %w", err)
 		}
-		a.publishStatus("COMPLETED", "oneshot success")
+		a.publishStatusWithRunID("COMPLETED", "oneshot success", rid)
 		a.cleanupAfterExit()
 		return nil
 	}
@@ -397,25 +407,37 @@ func (a *PythonAgent) Start(ctx context.Context) error {
 
 func (a *PythonAgent) Stop(ctx context.Context) error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 
 	if a.cmd == nil || a.cmd.Process == nil {
+		a.mu.Unlock()
 		return nil
 	}
 
+	rid := a.nextRunID
 	_ = a.cmd.Process.Signal(syscall.SIGTERM)
 
 	done := make(chan error, 1)
-	go func() { done <- a.cmd.Wait() }()
+	go func() {
+		a.waitOnce.Do(func() {
+			a.waitErr = a.cmd.Wait()
+		})
+		done <- a.waitErr
+	}()
+
+	// Release lock to allow stream handlers (stdout/stderr/control) to process
+	// output/events and acquire RLock without deadlocking.
+	a.mu.Unlock()
 
 	select {
 	case err := <-done:
-		a.publishStatus("STOPPED", "process exited")
+		a.mu.Lock()
+		a.publishStatusWithRunID("STOPPED", "process exited", rid)
 		a.cleanupAfterExit()
 		// Re-arm lazy activation
 		if a.listenSpec != "" && a.trafficHandler != nil {
 			_ = a.armLocked()
 		}
+		a.mu.Unlock()
 		return err
 	case <-ctx.Done():
 		_ = a.cmd.Process.Kill()
@@ -423,12 +445,14 @@ func (a *PythonAgent) Stop(ctx context.Context) error {
 		case <-done:
 		case <-time.After(750 * time.Millisecond):
 		}
-		a.publishStatus("STOPPED", "killed after timeout")
+		a.mu.Lock()
+		a.publishStatusWithRunID("STOPPED", "killed after timeout", rid)
 		a.cleanupAfterExit()
 		// Re-arm lazy activation
 		if a.listenSpec != "" && a.trafficHandler != nil {
 			_ = a.armLocked()
 		}
+		a.mu.Unlock()
 		return context.DeadlineExceeded
 	}
 }
@@ -466,9 +490,16 @@ func (a *PythonAgent) Reload(ctx context.Context) error {
 		"--module", a.path, "--id", a.id, "--type", a.typ, "--reload",
 	)
 	if a.nextRunID != "" {
-		cmd.Env = append(os.Environ(), "GAPI_RUN_ID="+a.nextRunID)
+		cmd.Env = append(os.Environ(), "RUNTIME_RUN_ID="+a.nextRunID)
 	}
-	return cmd.Run()
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	a.publishStatusWithRunID("RUNNING", "reload complete", a.nextRunID)
+	return nil
 }
 
 func (a *PythonAgent) Reset() {
@@ -487,6 +518,7 @@ func (a *PythonAgent) streamControl(r io.Reader) {
 		}
 		var m map[string]any
 		if err := json.Unmarshal([]byte(line), &m); err != nil {
+
 			a.publishLog("stdout", line)
 			continue
 		}
@@ -504,6 +536,8 @@ func (a *PythonAgent) streamControl(r io.Reader) {
 			a.publishStatus("PENDING", "agent stopping")
 		case "stopped":
 			a.publishStatus("STOPPED", "agent stopped")
+		case "reloaded":
+			a.publishStatus("RUNNING", "agent reloaded")
 		case "error":
 			msg, _ := getString(m, "error")
 			if msg == "" {
@@ -539,6 +573,13 @@ func (a *PythonAgent) publishStatus(state, message string) {
 	a.mu.RLock()
 	rid := a.nextRunID
 	a.mu.RUnlock()
+	a.publishStatusWithRunID(state, message, rid)
+}
+
+func (a *PythonAgent) publishStatusWithRunID(state, message, rid string) {
+	if a.bus == nil {
+		return
+	}
 
 	if rid != "" && !strings.Contains(message, "run_id=") {
 		if message == "" {

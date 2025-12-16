@@ -13,13 +13,13 @@ import (
 	"github.com/goppydae/gapi/core/config"
 	"github.com/goppydae/gapi/core/tui"
 	"github.com/goppydae/gapi/core/version"
-	protopkg "github.com/goppydae/gapi/internal/proto"
+	protopkg "github.com/goppydae/gapi/pkg/proto"
 )
 
 var rootCmd = &cobra.Command{
 	Use:   "gapictl",
-	Short: "GAPI Control CLI",
-	Long:  "CLI for controlling GAPI agents and supervisors.",
+	Short: "Runtime Control CLI",
+	Long:  "CLI for controlling Runtime agents and supervisors.",
 }
 
 // Execute runs the root command.
@@ -52,8 +52,8 @@ var pingCmd = &cobra.Command{
 		}
 
 		fmt.Print("pinging... ")
-		// 5s timeout
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		// 30s timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
 		status, err := c.Ping(ctx)
@@ -76,7 +76,7 @@ var agentReloadCmd = &cobra.Command{
 			log.Fatalf("failed to init client: %v", err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
 		if err := c.ReloadAgents(ctx); err != nil {
@@ -102,7 +102,7 @@ var agentStatusCmd = &cobra.Command{
 			log.Fatalf("failed to init client: %v", err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
 		agents, err := c.AgentStatus(ctx)

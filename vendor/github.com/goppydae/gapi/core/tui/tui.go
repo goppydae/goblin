@@ -341,7 +341,7 @@ func (m Model) renderList() string {
 		}
 	}
 
-	header := fmt.Sprintf("GAPI Monitor - Agents: %d running, %d stopped", running, stopped)
+	header := fmt.Sprintf("Runtime Monitor - Agents: %d running, %d stopped", running, stopped)
 	if m.filter.mode != FilterNone {
 		header += fmt.Sprintf(" [%d/%d filtered]", filtered, len(m.agents))
 	}

@@ -21,7 +21,7 @@ import (
 	"github.com/goppydae/gapi/internal/cgroups"
 	"github.com/goppydae/gapi/internal/eventbus"
 	"github.com/goppydae/gapi/internal/lifecycle"
-	protopkg "github.com/goppydae/gapi/internal/proto"
+	protopkg "github.com/goppydae/gapi/pkg/proto"
 )
 
 type GoAgent struct {

@@ -92,7 +92,7 @@ func Summary() string {
 	name := active.Name
 	version := active.Version
 	if name == "" {
-		name = "GAPI Core"
+		name = "Runtime Core"
 	}
 	if version == "" {
 		version = GAPIVersion
@@ -101,9 +101,9 @@ func Summary() string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "%-11s %s\n", name+":", version)
 
-	// Avoid duplicate GAPI Core line if it's already the label
-	if name != "GAPI Core" {
-		fmt.Fprintf(&out, "GAPI Core:  %s\n", GAPIVersion)
+	// Avoid duplicate Runtime Core line if it's already the label
+	if name != "Runtime Core" {
+		fmt.Fprintf(&out, "Runtime Core: %s\n", GAPIVersion)
 	}
 
 	fmt.Fprintf(&out, "Go DDK:     %s\n", GoDDKVersion)

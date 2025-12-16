@@ -27,7 +27,7 @@ import (
 	"github.com/goppydae/gapi/internal/lifecycle"
 	"github.com/goppydae/gapi/internal/logging/logcore"
 	"github.com/goppydae/gapi/internal/logging/logevent"
-	protopkg "github.com/goppydae/gapi/internal/proto"
+	protopkg "github.com/goppydae/gapi/pkg/proto"
 	"github.com/goppydae/gapi/internal/transport"
 	"github.com/rs/zerolog"
 )
@@ -80,7 +80,7 @@ func New(cfg *config.Config) (*Supervisor, error) {
 	// Check config first, then env
 	kp := cfg.Security.VerifyKey
 	if kp == "" {
-		kp = os.Getenv("GAPI_VERIFY_KEY")
+		kp = os.Getenv("RUNTIME_VERIFY_KEY")
 	}
 
 	if kp != "" {
@@ -616,7 +616,7 @@ func isInFlight(state string) bool {
 }
 
 func resolvePyRunner() string {
-	if v := os.Getenv("GAPI_PY_RUNNER"); v != "" {
+	if v := os.Getenv("RUNTIME_PY_RUNNER"); v != "" {
 		return v
 	}
 	if exe, err := os.Executable(); err == nil {
@@ -630,7 +630,7 @@ func resolvePyRunner() string {
 }
 
 func resolveAgentsDir(cfg *config.Config) string {
-	if v := os.Getenv("GAPI_AGENTS_DIR"); v != "" {
+	if v := os.Getenv("RUNTIME_AGENTS_DIR"); v != "" {
 		return v
 	}
 	type agentsDirGetter interface{ AgentsDir() string }

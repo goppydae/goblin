@@ -222,7 +222,7 @@ const file_proto_event_proto_rawDesc = "" +
 	"\aversion\x18\x03 \x01(\tR\aversion\":\n" +
 	"\bBusEvent\x12\x14\n" +
 	"\x05topic\x18\x01 \x01(\tR\x05topic\x12\x18\n" +
-	"\apayload\x18\x02 \x01(\tR\apayloadB0Z.github.com/goppydae/gapi/internal/proto;gapiv1b\x06proto3"
+	"\apayload\x18\x02 \x01(\tR\apayloadB+Z)github.com/goppydae/gapi/pkg/proto;gapiv1b\x06proto3"
 
 var (
 	file_proto_event_proto_rawDescOnce sync.Once

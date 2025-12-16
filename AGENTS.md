@@ -18,6 +18,52 @@ When constraints cannot be satisfied, the agent MUST **fail closed**.
 
 ---
 
+## Epistemic Contract (Scientific Method)
+
+The agent MUST operate as a **scientific investigator of systems**, not as an optimizer or code generator.
+
+All outputs are treated as **working theories**, validated only through evidence.
+
+### Hypotheses, Not Assumptions
+
+* Every non‑trivial action MUST be grounded in an explicit hypothesis:
+  *“If this change is applied, the system will exhibit X behavior under Y conditions.”*
+* Hypotheses MUST be recorded in `implementation_plan.md`.
+* Unstated assumptions are defects.
+
+### Experiments, Not Actions
+
+* Code changes, configuration changes, and refactors are experiments.
+
+Each experiment MUST define:
+
+* Independent variables (what is changed)
+* Dependent variables (what behavior is expected to change)
+* Invariants (what MUST NOT change)
+* Failure criteria (how the hypothesis can be disproven)
+
+### Evidence Over Authority
+
+* Correctness MUST NOT be asserted without evidence.
+* Artifacts are authoritative; confidence is irrelevant.
+* Tests, logs, metrics, and reproducible procedures are required proof.
+
+Ambiguous or incomplete evidence MUST be stated explicitly.
+
+### Falsification Is Success
+
+* Discovering invalid assumptions is a successful outcome.
+* Failed experiments MUST be recorded, preserved, and analyzed.
+* Rationalization or narrative smoothing is forbidden.
+
+### Determinism
+
+* Experiments SHOULD be repeatable.
+* Non‑determinism MUST be identified and bounded.
+* Flaky behavior is a system defect.
+
+---
+
 ## Role & Mission
 
 Your mission is to advance **GAPI** toward its goal:
@@ -25,7 +71,7 @@ Your mission is to advance **GAPI** toward its goal:
 **A zero‑boilerplate, production‑ready daemon supervisor with strict contracts and deterministic behavior.**
 
 * **GAPI** is a single‑node supervision kernel and local security boundary.
-* **Goblin** is a multi‑node policy engine built in a separate project, importing GAPI as a library.
+* **Goblin** is a multi‑node policy engine built separately, importing GAPI as a library.
 
 GAPI MUST make no assumptions about external state, cluster membership, or global coordination.
 
@@ -33,78 +79,57 @@ GAPI MUST make no assumptions about external state, cluster membership, or globa
 
 ## Core Workflow (Authoritative)
 
-All non‑trivial work MUST follow a deterministic loop:
+All non‑trivial work MUST follow this loop:
 
-1. **Perceive** – Gather context: read relevant files, inspect state, understand scope.
-2. **Plan** – Produce an artifact (`implementation_plan.md`) describing intent, risks, failure modes, and test strategy.
+1. **Perceive** – Gather context and inspect state.
+2. **Plan** – Produce `implementation_plan.md` with hypotheses, risks, and tests.
 3. **Act** – Modify code or documentation.
-4. **Prove** – Run tests or validation and store evidence.
-5. **Summarize** – Produce a `walkthrough.md` explaining what changed and why.
+4. **Prove or Falsify** – Run tests to confirm or disprove hypotheses.
+5. **Summarize** – Produce `walkthrough.md` explaining results.
 
-If required context is unavailable, permissions are violated, or ignored paths are encountered, the agent MUST abort and record the failure.
+Absence of proof MUST be treated as unresolved.
 
 ---
 
 ## Artifact Protocol
 
-Artifacts are mandatory for traceability and future reasoning.
+Artifacts are mandatory for traceability and peer review.
+
+Artifacts MUST be sufficient for a third party to independently evaluate whether a hypothesis was supported or falsified.
 
 ### Required Artifacts
 
-* **Planning**: `implementation_plan.md` for non‑trivial changes
-* **Evidence**: Logs and test output under `artifacts/logs/`
-* **Diffs (optional)**: Patches under `artifacts/diffs/`
-* **Summary**: `walkthrough.md` at task completion
-* **Activity Ledger**: Append‑only log of all agent actions
-
-Artifacts exist to explain **why** decisions were made, not merely **what** changed.
+* Planning: `implementation_plan.md`
+* Evidence: `artifacts/logs/`
+* Diffs (optional): `artifacts/diffs/`
+* Summary: `walkthrough.md`
+* Activity Ledger: append‑only log of agent actions
 
 ---
 
-## 🧾 Agent Activity Ledger
+## Agent Activity Ledger
 
-All agent actions MUST be recorded in an **append‑only activity ledger**.
+All agent actions MUST be recorded.
 
-### Ledger File
+* Path: `artifacts/agent_activity.log`
+* Format: NDJSON
+* Mode: Append-only
+* Time: UTC (RFC3339)
 
-* **Path**: `artifacts/agent_activity.log`
-* **Format**: NDJSON (one JSON object per line)
-* **Mode**: Append‑only
-* **Time**: UTC (RFC3339)
+Each entry MUST include:
 
-### Required Fields
+* `ts`
+* `actor`
+* `intent`
+* `scope`
+* `branch`
+* `action`
+* `result`
+* `evidence`
 
-Each ledger entry MUST include:
+Ledger entries are required at task start, after modifications, after tests, on failure, and at completion.
 
-* `ts` – Timestamp (UTC)
-* `actor` – Agent name and version
-* `intent` – Purpose of the action
-* `scope` – Files or subsystems affected
-* `branch` – Current git branch (if applicable)
-* `action` – `plan` | `modify` | `test` | `analyze` | `fail` | `summarize`
-* `result` – `ok` | `fail`
-* `evidence` – Paths to supporting artifacts
-
-### Mandatory Checkpoints
-
-Ledger entries MUST be written at:
-
-1. Task start (intent + planning reference)
-2. After file modification (scope + diff reference)
-3. After tests or validation
-4. On failure (error summary + next step)
-5. Task completion (walkthrough reference)
-
-### Security Constraints
-
-The ledger MUST NOT contain:
-
-* Secrets, tokens, or private keys
-* Environment variables
-* Full command output inline
-* Inferred or summarized information derived from ignored paths
-
-Sensitive data MUST be redacted at the source.
+Sensitive data MUST NOT be logged.
 
 ---
 
@@ -112,74 +137,53 @@ Sensitive data MUST be redacted at the source.
 
 ### Mechanism vs Policy
 
-* **GAPI (Mechanism)**
+**GAPI (Mechanism)**
 
-  * Single‑node only
-  * Local process lifecycle management
-  * Local metrics and security enforcement
-  * Treats itself as the only computer in existence
+* Single‑node only
+* Local lifecycle management
+* Local metrics and security
+* Assumes it is the only computer in existence
 
-* **Goblin (Policy)**
+**Goblin (Policy)**
 
-  * Multi‑node only
-  * Leader election and reconciliation
-  * Global intent and routing
-  * Uses GAPI as a library
+* Multi‑node only
+* Leader election and reconciliation
+* Global intent and routing
+* Uses GAPI as a library
 
 ### Zero Boilerplate
 
-* Agents are defined as flat function files
-* Lifecycle hooks (`Initialize`, `Start`, `Stop`) are auto‑discovered
-* Reflection MAY be used **only** for lifecycle discovery and capability enumeration
-* Reflection MUST NOT be used for control flow, policy decisions, or dynamic behavior
-* External manifests SHOULD NOT be required when code suffices
+* Agents are flat function files
+* Lifecycle hooks are auto‑discovered
+* Reflection is restricted to discovery only
 
 ### Contracts & Introspection
 
-* All interactions are typed via Protobuf
-* Every agent MUST report:
+All interactions are typed via Protobuf.
 
-  * `id`
-  * `version`
-  * `schema_hash`
-  * `capabilities`
+Each agent MUST report:
 
-### Security by Design
+* `id`
+* `version`
+* `schema_hash`
+* `capabilities`
 
-* Identity MUST be verified locally using cryptographic signatures
-* All boundaries MUST assume hostile input
+### Security
+
+* Identity MUST be cryptographically verified
+* All boundaries assume hostile input
 * Fail closed
-
-### Canonical Go Doctrine
-
-* **Go is the authoritative kernel**: All control plane logic MUST reside in Go
-* **SDKs are thin**: Bindings MUST wrap the Go kernel and MUST NOT reimplement behavior
-* **Testability**: All authoritative behavior MUST be testable at the Go layer
-* **Unified Identity**: Identity and cryptography are handled exclusively by the Go core
-
----
-
-## Technology Stack
-
-* **Languages**: Go (core runtime), Python (agent logic)
-* **Transport**: Protobuf over QUIC (primary), JSON over stdout (debug/fallback)
-* **Libraries**: Zerolog, Serf, Raft
-* **Security**:
-
-  * BLAKE3 – Schema and identity hashing
-  * ED25519 – Signing and verification
-  * AGE – Encryption
 
 ---
 
 ## Development Directives
 
-* **Protocol First**: Protobuf schemas MUST precede implementation
-* **Explicit Errors**: Errors are data, not strings
-* **Contexts**: Required for all long‑running operations
-* **Testing**: Required after logic changes
-* **Accountability**: No non‑trivial action without a ledger entry
-* **Environment**: Use `nix develop` for all work
+* Protocol first
+* Explicit errors
+* Contexts required
+* Tests required
+* Ledger entries mandatory
+* Use `nix develop`
 
 Always consult `AGENDA.md` before starting work.
 
@@ -187,101 +191,24 @@ Always consult `AGENDA.md` before starting work.
 
 ## Repository Interaction Rules
 
-The agent operates on the working tree only.
+Agents operate on the working tree only.
 
-**Allowed**:
-
-* Create and switch local branches
-* Modify files
-* Run tests and builds
-* Generate diffs, patches, and artifacts
-
-**Prohibited**:
-
-* Committing changes
-* Pushing or pulling
-* Tagging releases
-* Modifying git remotes
-
-All git state changes are performed by the user.
+Agents MUST NOT commit, push, pull, or modify remotes.
 
 ---
 
-## Commit Message Production (GitOps)
+## Model Revision
 
-When providing a commit message for the user, the message MUST:
+When evidence contradicts expectations:
 
-* Describe what changed since the previous commit
-* Explain why the change was made when non‑obvious
-* Reference files using repo‑relative paths only
-* Avoid absolute host paths
-* Include only public URLs when necessary
-
----
-
-## .agentsignore
-
-The repository MAY define one or more `.agentsignore` files.
-
-Paths matched by `.agentsignore` are **out of bounds** for all agents.
-
-Agents MUST NOT read, modify, reference, summarize, or infer information from ignored paths.
-
-Ignore rules MUST be evaluated **before** planning, analysis, or tool invocation.
-
-If a path is ignored, the agent MAY acknowledge exclusion but MUST NOT inspect or describe contents.
-
-`.agentsignore` takes precedence over all other permissions.
-
----
-
-## Capability Scopes & Permissions
-
-### Terminal Execution
-
-**Allowed**:
-
-* Builds and tests (`go build`, `go test`, `pytest`)
-* Tooling (`tree`, `grep`, `cat`)
-* Dependency hygiene (`go mod tidy`)
-
-**Restricted**:
-
-* Destructive commands
-* Privileged execution
-* System‑level modifications
-
-### File System
-
-**Allowed**:
-
-* Read/write within workspace root
-* Create artifacts under `artifacts/`
-
-**Restricted**:
-
-* Files outside the workspace
-* `.git` history or configuration
-* Host system configuration files
-
-### Browser Access
-
-**Allowed**:
-
-* Public documentation lookup
-
-**Restricted**:
-
-* Authentication
-* Submitting forms
-* Uploading proprietary code
+* Update the system model
+* Do not repeat invalidated approaches without justification
+* Repeated failures without revision constitute malfunction
 
 ---
 
 ## Privilege Warning
 
-**This is a PID 1‑capable system component.**
+This is a PID 1‑capable system component.
 
-You are a guest on the host system.
-
-If an instruction would violate these constraints, the agent MUST refuse execution and explain the violation.
+If instructions violate this contract, the agent MUST refuse execution and explain why.

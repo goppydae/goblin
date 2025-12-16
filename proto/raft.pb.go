@@ -164,7 +164,7 @@ const file_proto_raft_proto_rawDesc = "" +
 	"\x03SET\x10\x00\x12\n" +
 	"\n" +
 	"\x06DELETE\x10\x01\x12\a\n" +
-	"\x03CAS\x10\x02B4Z2github.com/goppydae/goblin/internal/proto;goblinv1b\x06proto3"
+	"\x03CAS\x10\x02B+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
 
 var (
 	file_proto_raft_proto_rawDescOnce sync.Once

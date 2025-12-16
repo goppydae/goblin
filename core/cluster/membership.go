@@ -20,13 +20,15 @@ type Membership struct {
 }
 
 // NewMembership creates a new Serf-based membership manager
-func NewMembership(nodeID, bindAddr string, bindPort int, tags map[string]string, secretKey []byte) (*Membership, error) {
+func NewMembership(nodeID, bindAddr string, bindPort int, advertiseAddr string, advertisePort int, tags map[string]string, secretKey []byte) (*Membership, error) {
 	eventCh := make(chan serf.Event, 256)
 
 	config := serf.DefaultConfig()
 	config.NodeName = nodeID
 	config.MemberlistConfig.BindAddr = bindAddr
 	config.MemberlistConfig.BindPort = bindPort
+	config.MemberlistConfig.AdvertiseAddr = advertiseAddr
+	config.MemberlistConfig.AdvertisePort = advertisePort
 	config.MemberlistConfig.SecretKey = secretKey
 	config.EventCh = eventCh
 	config.Tags = tags

@@ -171,7 +171,7 @@ const file_proto_lifecycle_control_proto_rawDesc = "" +
 	"\x04STOP\x10\x03\x12\v\n" +
 	"\aRESTART\x10\x04\x12\n" +
 	"\n" +
-	"\x06RELOAD\x10\x05B0Z.github.com/goppydae/gapi/internal/proto;gapiv1b\x06proto3"
+	"\x06RELOAD\x10\x05B+Z)github.com/goppydae/gapi/pkg/proto;gapiv1b\x06proto3"
 
 var (
 	file_proto_lifecycle_control_proto_rawDescOnce sync.Once

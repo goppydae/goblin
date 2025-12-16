@@ -1,6 +1,6 @@
 package tui
 
-import protopkg "github.com/goppydae/gapi/internal/proto"
+import protopkg "github.com/goppydae/gapi/pkg/proto"
 
 func actionToEnum(action string) protopkg.LifecycleControl_Action {
 	switch action {

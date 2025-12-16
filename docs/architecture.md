@@ -36,6 +36,25 @@ The `DistributedEventBus` wraps the local GAPI `EventBus` and routes messages ba
 | **Cluster** | `PublishCluster()` | Serf Gossip | Eventual | `node.joined`, `cache.invalidate` |
 | **Leader** | `PublishLeader()` | Raft Log | Strong | `global.config`, `job.assign` |
 
+### 4. RPC Transport (QUIC)
+
+**Purpose**: Provides secure, multiplexed RPC communication between CLI and cluster nodes.
+
+- **Technology**: QUIC (HTTP/3 transport) with Protobuf serialization
+- **Port**: 9000 (default)
+- **Security**: TLS 1.3 (auto-generated self-signed certs for development)
+- **Protocol**: Custom framing - 1-byte stream type + 4-byte length + protobuf payload
+- **ALPN**: `goblin-rpc`
+- **Methods**: SchedulerRPC (`SubmitJob`, `DrainNode`, `MigrateJob`, `ListJobs`, `Members`)
+- **Clients**: `goblinctl` CLI, future web dashboard
+
+**Why QUIC**:
+- Unified transport with GAPI
+- Built-in TLS 1.3 (no separate TLS configuration)
+- Stream multiplexing over single connection
+- Better performance than HTTP/1.1
+- Modern, extensible protocol
+
 ## Data Flow
 
 1. **Member Join**:

@@ -1,22 +1,16 @@
 package cli
 
 import (
-	"context"
-	"crypto/tls"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io"
-	"log"
+	"net/rpc"
 	"os"
+	"strings"
 
-	"github.com/quic-go/quic-go"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 
 	"github.com/goppydae/gapi/core/tui"
 	gapicli "github.com/goppydae/gapi/pkg/cli"
-	"github.com/goppydae/goblin/core/scheduler"
 	"github.com/goppydae/goblin/internal/supervisor"
 )
 
@@ -68,158 +62,153 @@ func init() {
 
 	RootCmd.AddCommand(startCmd)
 	RootCmd.AddCommand(statusCmd)
-	RootCmd.AddCommand(tuiCmd)
 	RootCmd.AddCommand(publishCmd)
-	RootCmd.AddCommand(runCmd)
-
-	publishCmd.Flags().StringVar(&publishNamespace, "namespace", "", "Event namespace")
-	publishCmd.Flags().StringSliceVar(&publishTags, "tags", []string{}, "Event tags")
-
-	RootCmd.AddCommand(kvCmd)
-	kvCmd.AddCommand(kvSetCmd)
-	kvCmd.AddCommand(kvGetCmd)
-	kvCmd.AddCommand(kvDelCmd)
-	// Add Watch command
-	kvCmd.AddCommand(kvWatchCmd)
-
-	// Scheduler
-	RootCmd.AddCommand(scheduleCmd)
+	RootCmd.AddCommand(tuiCmd)
 	RootCmd.AddCommand(jobCmd)
-	jobCmd.AddCommand(migrateJobCmd)
+	jobCmd.AddCommand(runCmd)
+	jobCmd.AddCommand(drainCmd)
+	jobCmd.AddCommand(migrateCmd)
 
-	// Shared KV flags
-	kvCmd.PersistentFlags().StringVar(&kvNamespace, "namespace", "default", "KV Namespace")
+	// Global flags
 	RootCmd.PersistentFlags().StringVar(&apiAddr, "api-addr", "127.0.0.1:9000", "API address")
-	runCmd.Flags().StringVarP(&runFile, "file", "f", "", "Job spec file (YAML/JSON)")
-	runCmd.MarkFlagRequired("file")
 
-	// Mount GAPI Commands
+	// Create agent subcommand for GAPI operations
+	agentCmd := &cobra.Command{
+		Use:   "agent",
+		Short: "Local agent management operations",
+	}
+	RootCmd.AddCommand(agentCmd)
+
+	// Mount GAPI Commands under agent subcommand
 	for _, cmd := range gapicli.GetRoot().Commands() {
 		if cmd.Use == "tui" {
-			cmd.Use = "agent-tui"
+			cmd.Use = "tui"
 			cmd.Short = "Local Agent TUI"
 		}
 		if cmd.Name() == "version" {
 			continue // Avoid conflict
 		}
-		RootCmd.AddCommand(cmd)
+		agentCmd.AddCommand(cmd)
 	}
 }
 
 var runFile string
 
+var (
+	apiAddr string
+)
+
 var runCmd = &cobra.Command{
-	Use:   "run",
-	Short: "Run a job from a spec file",
+	Use:   "run <job-file.yaml>",
+	Short: "Submit a job to the cluster",
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		data, err := os.ReadFile(runFile)
+		// Read job spec from YAML file
+		data, err := os.ReadFile(args[0])
 		if err != nil {
-			return fmt.Errorf("failed to read file: %w", err)
+			return fmt.Errorf("failed to read job file: %w", err)
 		}
 
-		var job scheduler.Job
-		if err := yaml.Unmarshal(data, &job); err != nil {
+		// Parse YAML (assuming JSON for simplicity, YAML is superset)
+		var job map[string]interface{}
+		if err := json.Unmarshal(data, &job); err != nil {
 			return fmt.Errorf("failed to parse job spec: %w", err)
 		}
 
-		if job.ID == "" {
-			return fmt.Errorf("job spec must have an ID")
+		// Connect to Serf RPC
+		host := apiAddr
+		if idx := strings.LastIndex(apiAddr, ":"); idx > 0 {
+			host = apiAddr[:idx]
+		}
+		serfRPCAddr := fmt.Sprintf("%s:7373", host)
+
+		client, err := rpc.Dial("tcp", serfRPCAddr)
+		if err != nil {
+			return fmt.Errorf("failed to connect to Serf RPC: %w", err)
+		}
+		defer client.Close()
+
+		// Call SchedulerRPC.SubmitJob
+		var resp string
+		if err := client.Call("SchedulerRPC.SubmitJob", job, &resp); err != nil {
+			return fmt.Errorf("job submission failed: %w", err)
 		}
 
-		fmt.Printf("🚀 Submitting Job %s (Agent: %s, Type: %s)...\n", job.ID, job.AgentID, job.AgentType)
-		if job.Resources.CPU > 0 || job.Resources.Memory > 0 {
-			fmt.Printf("   Requested: %.1f CPU, %d MB RAM\n", job.Resources.CPU, job.Resources.Memory/1024/1024)
-		}
-
-		// 1. Write Job Spec
-		specBytes, _ := json.Marshal(job)
-		if _, err := quicRequest(1, "default", "/jobs/specs/"+job.ID, specBytes); err != nil {
-			return fmt.Errorf("failed to write job spec: %w", err)
-		}
-
-		// 2. Trigger Scheduling (add to pending)
-		if _, err := quicRequest(1, "default", "/jobs/pending/"+job.ID, []byte(job.ID)); err != nil {
-			return fmt.Errorf("failed to submit job: %w", err)
-		}
-
-		fmt.Printf("✅ Job %s submitted successfully\n", job.ID)
+		fmt.Println(resp)
 		return nil
 	},
 }
 
-var (
-	kvNamespace string
-	apiAddr     string
-)
-
 var jobCmd = &cobra.Command{
 	Use:   "job",
-	Short: "Job management",
+	Short: "Job management operations",
 }
 
-var migrateJobCmd = &cobra.Command{
-	Use:   "migrate <job-id> <from-node> <to-node>",
-	Short: "Manually migrate a job between nodes",
-	Args:  cobra.ExactArgs(3),
-	Run: func(cmd *cobra.Command, args []string) {
-		jobID, fromNode, toNode := args[0], args[1], args[2]
+var drainCmd = &cobra.Command{
+	Use:   "drain <node-id>",
+	Short: "Drain all jobs from a node",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		nodeID := args[0]
 
-		// 1. Assign to new node
-		// Key: /jobs/assignments/<node>/<jobID>
-		// Value: <jobID>
-		newKey := fmt.Sprintf("/jobs/assignments/%s/%s", toNode, jobID)
-		if _, err := quicRequest(1, "default", newKey, []byte(jobID)); err != nil {
-			log.Fatalf("Failed to assign to new node: %v", err)
+		// Connect to Serf RPC
+		host := apiAddr
+		if idx := strings.LastIndex(apiAddr, ":"); idx > 0 {
+			host = apiAddr[:idx]
 		}
-		fmt.Printf("✅ Assigned job %s to %s\n", jobID, toNode)
+		serfRPCAddr := fmt.Sprintf("%s:7373", host)
 
-		// 2. Remove from old node
-		oldKey := fmt.Sprintf("/jobs/assignments/%s/%s", fromNode, jobID)
-		if _, err := quicRequest(3, "default", oldKey, nil); err != nil {
-			log.Printf("⚠️ Failed to remove from old node: %v", err)
-		} else {
-			fmt.Printf("🗑️ Removed job %s from %s\n", jobID, fromNode)
+		client, err := rpc.Dial("tcp", serfRPCAddr)
+		if err != nil {
+			return fmt.Errorf("failed to connect to Serf RPC: %w", err)
+		}
+		defer client.Close()
+
+		// Call SchedulerRPC.DrainNode
+		var migratedJobs []string
+		if err := client.Call("SchedulerRPC.DrainNode", &nodeID, &migratedJobs); err != nil {
+			return fmt.Errorf("drain failed: %w", err)
 		}
 
-		fmt.Printf("🔄 Migration of %s complete.\n", jobID)
+		fmt.Printf("✅ Drained %d jobs from node %s\n", len(migratedJobs), nodeID)
+		for _, jobID := range migratedJobs {
+			fmt.Printf("  - %s\n", jobID)
+		}
+		return nil
 	},
 }
 
-var scheduleCmd = &cobra.Command{
-	Use:   "schedule <job-id> <agent-id> <agent-type>",
-	Short: "Schedule a job to the cluster",
-	Args:  cobra.ExactArgs(3),
-	Run: func(cmd *cobra.Command, args []string) {
-		jobID, agentID, agentType := args[0], args[1], args[2] // e.g. job-1 my-agent service
-
-		// Connect to KV to Schedule
-		// For now we just use a direct QUIC call if we had a proper API for it.
-		// BUT wait, `goblinctl` is a client. It needs to talk to `goblind`.
-		// We haven't implemented a "Schedule" RPC yet.
-		// For MVP, we can treat "Schedule" as writing to /jobs/request/<id> via KV Set?
-		// Or we can just use the KV store directly if the client supports it.
-		// Let's reuse quicRequest to write the job spec to keys.
-
-		// 1. Write Job Spec
-		spec := map[string]string{
-			"id":         jobID,
-			"agent_id":   agentID,
-			"agent_type": agentType,
-		}
-		specBytes, _ := json.Marshal(spec) // naive marshal
-		if _, err := quicRequest(1, "default", "/jobs/specs/"+jobID, specBytes); err != nil {
-			log.Fatalf("Failed to write job spec: %v", err)
+var migrateCmd = &cobra.Command{
+	Use:   "migrate <job-id> <to-node>",
+	Short: "Migrate a job to another node",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		req := map[string]string{
+			"JobID":  args[0],
+			"ToNode": args[1],
 		}
 
-		// 2. Trigger Scheduling?
-		// Ideally, the leader watches /jobs/specs and schedules them.
-		// For this MVP, we will do client-side scheduling or just write a "pending" key.
-		// Let's write to /jobs/pending/<jobID> and have the leader pick it up.
-		if _, err := quicRequest(1, "default", "/jobs/pending/"+jobID, []byte(jobID)); err != nil {
-			log.Fatalf("Failed to submit job: %v", err)
+		// Connect to Serf RPC
+		host := apiAddr
+		if idx := strings.LastIndex(apiAddr, ":"); idx > 0 {
+			host = apiAddr[:idx]
+		}
+		serfRPCAddr := fmt.Sprintf("%s:7373", host)
+
+		client, err := rpc.Dial("tcp", serfRPCAddr)
+		if err != nil {
+			return fmt.Errorf("failed to connect to Serf RPC: %w", err)
+		}
+		defer client.Close()
+
+		// Call SchedulerRPC.MigrateJob
+		var resp string
+		if err := client.Call("SchedulerRPC.MigrateJob", req, &resp); err != nil {
+			return fmt.Errorf("migration failed: %w", err)
 		}
 
-		fmt.Printf("✅ Job %s submitted\n", jobID)
+		fmt.Println(resp)
+		return nil
 	},
 }
 
@@ -227,202 +216,89 @@ var scheduleCmd = &cobra.Command{
 
 // ... quicRequest ...
 
-// kvWatchCmd
-var kvWatchCmd = &cobra.Command{
-	Use:   "watch <key>",
-	Short: "Watch for changes",
-	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		key := args[0]
+// TODO: statusCmd and publishCmd still use legacy OpCode protocol
+// These should be migrated to use Serf API or GAPI EventBus
 
-		tlsConf := &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"goblin-kv"}}
-		conn, err := quic.DialAddr(context.Background(), apiAddr, tlsConf, nil)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		stream, err := conn.OpenStreamSync(context.Background())
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		// Op 4
-		stream.Write([]byte{4})
-
-		// Write Strings helper (duplicated from quicRequest for now or reusable?)
-		// Let's copy-paste specifically for simplicity in this edit block
-		writeString := func(s string) {
-			var lenBuf [4]byte
-			binary.BigEndian.PutUint32(lenBuf[:], uint32(len(s)))
-			stream.Write(lenBuf[:])
-			stream.Write([]byte(s))
-		}
-		writeString(kvNamespace)
-		writeString(key)
-
-		fmt.Println("👀 Watching...")
-		// Read loop
-		for {
-			var status [1]byte
-			if _, err := io.ReadFull(stream, status[:]); err != nil {
-				log.Fatal(err)
-			}
-			var lenBuf [4]byte
-			if _, err := io.ReadFull(stream, lenBuf[:]); err != nil {
-				log.Fatal(err)
-			}
-			l := binary.BigEndian.Uint32(lenBuf[:])
-			val := make([]byte, l)
-			if _, err := io.ReadFull(stream, val); err != nil {
-				log.Fatal(err)
-			}
-			fmt.Printf("Event: %s\n", string(val))
-		}
-	},
-}
-
-// ... existing commands ...
-
-// generateDocsCert generates a self-signed cert for QUIC
-
-// --- Client Helpers ---
-
-func quicRequest(op byte, namespace, key string, val []byte) ([]byte, error) {
-	tlsConf := &tls.Config{
-		InsecureSkipVerify: true,
-		NextProtos:         []string{"goblin-kv"},
-	}
-	conn, err := quic.DialAddr(context.Background(), apiAddr, tlsConf, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.CloseWithError(0, "done")
-
-	stream, err := conn.OpenStreamSync(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	defer stream.Close()
-
-	// Write Request
-	stream.Write([]byte{op})
-
-	writeString := func(s string) {
-		var lenBuf [4]byte
-		binary.BigEndian.PutUint32(lenBuf[:], uint32(len(s)))
-		stream.Write(lenBuf[:])
-		stream.Write([]byte(s))
-	}
-	writeBytes := func(b []byte) {
-		var lenBuf [4]byte
-		binary.BigEndian.PutUint32(lenBuf[:], uint32(len(b)))
-		stream.Write(lenBuf[:])
-		stream.Write(b)
-	}
-
-	writeString(namespace)
-	writeString(key)
-	if op == 1 { // SET
-		writeBytes(val)
-	}
-
-	// Read Response
-	var status [1]byte
-	if _, err := io.ReadFull(stream, status[:]); err != nil {
-		return nil, err
-	}
-
-	var lenBuf [4]byte
-	if _, err := io.ReadFull(stream, lenBuf[:]); err != nil {
-		return nil, err
-	}
-	l := binary.BigEndian.Uint32(lenBuf[:])
-	respVal := make([]byte, l)
-	if _, err := io.ReadFull(stream, respVal); err != nil {
-		return nil, err
-	}
-
-	if status[0] != 0 {
-		return nil, fmt.Errorf("remote error (%d): %s", status[0], string(respVal))
-	}
-	return respVal, nil
-}
-
-var kvCmd = &cobra.Command{
-	Use:   "kv",
-	Short: "Key-Value store operations (QUIC)",
-}
-
-var kvSetCmd = &cobra.Command{
-	Use:   "set <key> <value>",
-	Short: "Set a value",
-	Args:  cobra.ExactArgs(2),
-	Run: func(cmd *cobra.Command, args []string) {
-		key, val := args[0], args[1]
-		if _, err := quicRequest(1, kvNamespace, key, []byte(val)); err != nil {
-			log.Fatalf("Set failed: %v", err)
-		}
-		fmt.Println("✅ OK")
-	},
-}
-
-var kvGetCmd = &cobra.Command{
-	Use:   "get <key>",
-	Short: "Get a value",
-	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		key := args[0]
-		val, err := quicRequest(2, kvNamespace, key, nil)
-		if err != nil {
-			log.Fatalf("Get failed: %v", err)
-		}
-		fmt.Println(string(val))
-	},
-}
-
-var kvDelCmd = &cobra.Command{
-	Use:   "delete <key>",
-	Short: "Delete a key",
-	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		key := args[0]
-		if _, err := quicRequest(3, kvNamespace, key, nil); err != nil {
-			log.Fatalf("Delete failed: %v", err)
-		}
-		fmt.Println("✅ Deleted")
-	},
-}
-
+// publishCmd broadcasts events to cluster using Serf UserEvent API
 var publishCmd = &cobra.Command{
 	Use:   "publish <topic> [payload_json]",
-	Short: "Publish a distributed event",
+	Short: "Publish a distributed event via Serf",
 	Args:  cobra.MinimumNArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		topic := args[0]
-		payloadStr := "{}"
+		payload := []byte("{}")
 		if len(args) > 1 {
-			payloadStr = args[1]
+			payload = []byte(args[1])
 		}
 
-		fmt.Printf("📢 Publishing to '%s' (Namespace: '%s', Tags: %v, Payload: %s)...\n", topic, publishNamespace, publishTags, payloadStr)
-		// Logic to join cluster and publish would go here
-		// For now, verified flags are plumbed.
+		// Connect to Serf RPC
+		host := apiAddr
+		if idx := strings.LastIndex(apiAddr, ":"); idx > 0 {
+			host = apiAddr[:idx]
+		}
+		serfRPCAddr := fmt.Sprintf("%s:7373", host)
+
+		client, err := rpc.Dial("tcp", serfRPCAddr)
+		if err != nil {
+			return fmt.Errorf("failed to connect to Serf RPC at %s: %w", serfRPCAddr, err)
+		}
+		defer client.Close()
+
+		// Send UserEvent
+		req := map[string]interface{}{
+			"Name":     topic,
+			"Payload":  payload,
+			"Coalesce": false,
+		}
+		var resp interface{}
+		if err := client.Call("Serf.UserEvent", req, &resp); err != nil {
+			return fmt.Errorf("failed to publish event: %w", err)
+		}
+
+		fmt.Printf("✅ Published event '%s' to cluster\n", topic)
+		return nil
 	},
 }
 
+// statusCmd queries cluster status via Serf RPC
 var statusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show Goblin supervisor status",
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("Goblin status: all systems nominal.")
+	Short: "Show Goblin cluster status",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Connect to QUIC RPC (using apiAddr which defaults to 9000)
+		client, err := NewQUICRPCClient(apiAddr)
+		if err != nil {
+			return fmt.Errorf("failed to connect to QUIC RPC at %s: %w", apiAddr, err)
+		}
+		defer client.Close()
+
+		// Call SchedulerRPC.Members
+		var members []supervisor.MemberInfo
+		if err := client.Call("SchedulerRPC.Members", struct{}{}, &members); err != nil {
+			return fmt.Errorf("failed to get members: %w", err)
+		}
+
+		fmt.Printf("✅ Connected to %s (QUIC)\n", apiAddr)
+		fmt.Printf("Cluster Members: %d\n", len(members))
+		fmt.Println("NAME\t\tADDRESS\t\t\tSTATUS\t\tTAGS")
+		fmt.Println("----\t\t-------\t\t\t------\t\t----")
+		for _, m := range members {
+			tags := ""
+			for k, v := range m.Tags {
+				tags += fmt.Sprintf("%s=%s ", k, v)
+			}
+			fmt.Printf("%s\t%s\t\t%s\t%s\n", m.Name, m.Addr, m.Status, tags)
+		}
+		return nil
 	},
 }
 
 var tuiCmd = &cobra.Command{
 	Use:   "tui",
-	Short: "Cluster TUI",
+	Short: "Unified cluster and agent TUI",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctrl := NewClusterController(apiAddr)
+		// Use apiAddr for both GAPI and Cluster RPC since they now share the same QUIC endpoint
+		ctrl := NewUnifiedController(apiAddr, apiAddr)
 		return tui.Run(ctrl)
 	},
 }

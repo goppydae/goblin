@@ -19,16 +19,16 @@ import (
 //   - GAPI_DEV_AGENTS: Adds development path (highest priority)
 //   - GAPI_SKIP_SYSTEM_AGENTS: Skip system paths if set to "1" or "true"
 func AgentSearchPaths() []string {
-	// If GAPI_AGENT_PATH is set, use it exclusively
-	if customPath := os.Getenv("GAPI_AGENT_PATH"); customPath != "" {
+	// If RUNTIME_AGENT_PATH is set, use it exclusively
+	if customPath := os.Getenv("RUNTIME_AGENT_PATH"); customPath != "" {
 		return strings.Split(customPath, ":")
 	}
 
 	var paths []string
-	skipSystem := os.Getenv("GAPI_SKIP_SYSTEM_AGENTS") == "1" || os.Getenv("GAPI_SKIP_SYSTEM_AGENTS") == "true"
+	skipSystem := os.Getenv("RUNTIME_SKIP_SYSTEM_AGENTS") == "1" || os.Getenv("RUNTIME_SKIP_SYSTEM_AGENTS") == "true"
 
 	// 1. Development paths (highest priority)
-	if devPath := os.Getenv("GAPI_DEV_AGENTS"); devPath != "" {
+	if devPath := os.Getenv("RUNTIME_DEV_AGENTS"); devPath != "" {
 		paths = append(paths, devPath)
 	}
 
@@ -102,7 +102,7 @@ func ClassifyPath(path string) PathType {
 		}
 	}
 
-	if devPath := os.Getenv("GAPI_DEV_AGENTS"); devPath != "" {
+	if devPath := os.Getenv("RUNTIME_DEV_AGENTS"); devPath != "" {
 		if strings.HasPrefix(absPath, devPath) {
 			return PathTypeDevelopment
 		}

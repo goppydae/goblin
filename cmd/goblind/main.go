@@ -13,19 +13,21 @@ import (
 )
 
 var (
-	nodeID        string
-	serfAddr      string
-	serfPort      int
-	raftAddr      string
-	raftDir       string
-	joinAddr      string
-	apiAddr       string
-	runtimeAddr   string
-	encryptionKey string
-	certFile      string
-	keyFile       string
-	caFile        string
-	metricsAddr   string
+	nodeID            string
+	serfAddr          string
+	serfPort          int
+	serfAdvertiseAddr string
+	serfAdvertisePort int
+	raftAddr          string
+	raftDir           string
+	joinAddr          string
+	apiAddr           string
+	runtimeAddr       string
+	encryptionKey     string
+	certFile          string
+	keyFile           string
+	caFile            string
+	metricsAddr       string
 )
 
 var rootCmd = &cobra.Command{
@@ -47,6 +49,8 @@ var rootCmd = &cobra.Command{
 			NodeID:        nodeID,
 			SerfAddr:      serfAddr,
 			SerfPort:      serfPort,
+			AdvertiseAddr: serfAdvertiseAddr,
+			AdvertisePort: serfAdvertisePort,
 			RaftAddr:      raftAddr,
 			RaftDir:       raftDir,
 			JoinAddr:      joinAddr,
@@ -87,6 +91,8 @@ func init() {
 	rootCmd.Flags().StringVar(&nodeID, "id", "", "Unique Node ID (default: hostname)")
 	rootCmd.Flags().StringVar(&serfAddr, "serf-addr", "127.0.0.1", "Serf bind address")
 	rootCmd.Flags().IntVar(&serfPort, "serf-port", 9001, "Serf bind port")
+	rootCmd.Flags().StringVar(&serfAdvertiseAddr, "serf-advertise-addr", "", "Serf advertise address (if different from bind)")
+	rootCmd.Flags().IntVar(&serfAdvertisePort, "serf-advertise-port", 0, "Serf advertise port (if different from bind)")
 	rootCmd.Flags().StringVar(&raftAddr, "raft-addr", "127.0.0.1:9002", "Raft bind address (host:port)")
 	rootCmd.Flags().StringVar(&raftDir, "data", "./data/raft", "Data directory for Raft log")
 	rootCmd.Flags().StringVar(&joinAddr, "join", "", "Join existing cluster peer (host:port)")

@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package goblin.v1.proto;
+
+option go_package = "github.com/goppydae/goblin/proto;goblinv1";
+
+// RPC Request message
+message RPCRequest {
+  uint32 request_id = 1;
+  string method = 2;      // e.g. "SchedulerRPC.ListJobs"
+  bytes payload = 3;     // Protobuf-encoded request
+}
+
+// RPC Response message
+message RPCResponse {
+  uint32 request_id = 1;
+  bool success = 2;
+  bytes payload = 3;     // Protobuf-encoded response or error message
+  string error = 4;      // Error message if success=false
+}
+
+// Stream type enum
+enum StreamType {
+  RPC_REQUEST = 0;
+  RPC_RESPONSE = 1;
+  EVENT_STREAM = 2;     // Future: Serf events
+}

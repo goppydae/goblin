@@ -26,6 +26,11 @@ func NewScheduler(s *store.Store, c *cluster.Membership) *Scheduler {
 	}
 }
 
+// Store returns the underlying KV store
+func (s *Scheduler) Store() *store.Store {
+	return s.store
+}
+
 // Schedule selects a node for the job based on strategy.
 func (s *Scheduler) Schedule(job *Job, strategy Strategy) (string, error) {
 	members := s.cluster.Members()
@@ -303,4 +308,111 @@ func selectBinPack(nodes []serf.Member, usage map[string]nodeUsage) string {
 		}
 	}
 	return bestNode
+}
+
+// SubmitJob registers and schedules a job
+func (s *Scheduler) SubmitJob(ctx context.Context, job *Job) error {
+	// Register the job spec
+	if err := s.RegisterJob(ctx, job); err != nil {
+		return fmt.Errorf("failed to register job: %w", err)
+	}
+
+	// Schedule the job
+	nodeID, err := s.Schedule(job, StrategyLeastLoaded)
+	if err != nil {
+		return fmt.Errorf("failed to schedule job: %w", err)
+	}
+
+	// Assign to the selected node
+	if err := s.Assign(ctx, job.ID, nodeID); err != nil {
+		return fmt.Errorf("failed to assign job: %w", err)
+	}
+
+	fmt.Printf("✅ Job %s scheduled on node %s\n", job.ID, nodeID)
+	return nil
+}
+
+// DrainNode migrates all jobs from a node to other nodes
+func (s *Scheduler) DrainNode(ctx context.Context, nodeID string) ([]string, error) {
+	prefix := fmt.Sprintf("/jobs/assignments/%s/", nodeID)
+	assignments, err := s.store.Scan(ctx, "default", prefix)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan assignments: %w", err)
+	}
+
+	if len(assignments) == 0 {
+		return []string{}, nil
+	}
+
+	var migratedJobs []string
+	fmt.Printf("🔄 Draining %d jobs from node %s...\n", len(assignments), nodeID)
+
+	for _, jobIDBytes := range assignments {
+		jobID := string(jobIDBytes)
+
+		// Fetch job spec
+		specKey := fmt.Sprintf("/jobs/specs/%s", jobID)
+		specData, found, err := s.store.Get(ctx, "default", specKey)
+		var job *Job
+		if err == nil && found {
+			_ = json.Unmarshal(specData, &job)
+		}
+		if job == nil {
+			job = &Job{ID: jobID}
+		}
+
+		// Schedule to a different node
+		newNode, err := s.Schedule(job, StrategyLeastLoaded)
+		if err != nil {
+			fmt.Printf("❌ Failed to find new node for job %s: %v\n", jobID, err)
+			continue
+		}
+
+		// Don't migrate to the same node
+		if newNode == nodeID {
+			fmt.Printf("⚠️ No alternative node available for job %s\n", jobID)
+			continue
+		}
+
+		if err := s.Migrate(ctx, jobID, nodeID, newNode); err != nil {
+			fmt.Printf("❌ Migration failed for job %s: %v\n", jobID, err)
+			continue
+		}
+
+		migratedJobs = append(migratedJobs, jobID)
+	}
+
+	fmt.Printf("✅ Drained %d jobs from node %s\n", len(migratedJobs), nodeID)
+	return migratedJobs, nil
+}
+
+// MigrateJob moves a specific job to a target node
+func (s *Scheduler) MigrateJob(ctx context.Context, jobID, toNode string) error {
+	// Find current assignment
+	prefix := "/jobs/assignments/"
+	assignments, err := s.store.Scan(ctx, "default", prefix)
+	if err != nil {
+		return fmt.Errorf("failed to scan assignments: %w", err)
+	}
+
+	var fromNode string
+	for key, val := range assignments {
+		if string(val) == jobID {
+			parts := strings.Split(key, "/")
+			if len(parts) >= 4 {
+				fromNode = parts[3]
+				break
+			}
+		}
+	}
+
+	if fromNode == "" {
+		return fmt.Errorf("job %s not found in any assignment", jobID)
+	}
+
+	if fromNode == toNode {
+		return fmt.Errorf("job %s is already on node %s", jobID, toNode)
+	}
+
+	return s.Migrate(ctx, jobID, fromNode, toNode)
 }

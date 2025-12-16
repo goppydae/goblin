@@ -10,7 +10,7 @@ import (
 
 	"github.com/goppydae/gapi/core/client"
 	"github.com/goppydae/gapi/core/config"
-	protopkg "github.com/goppydae/gapi/internal/proto"
+	protopkg "github.com/goppydae/gapi/pkg/proto"
 )
 
 // sendLifecycleCommand sends control commands in parallel to multiple agents

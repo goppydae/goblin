@@ -108,7 +108,7 @@ const file_proto_lifecycle_transition_proto_rawDesc = "" +
 	"\x04from\x18\x02 \x01(\tR\x04from\x12\x0e\n" +
 	"\x02to\x18\x03 \x01(\tR\x02to\x12\x1a\n" +
 	"\bhostname\x18\x04 \x01(\tR\bhostname\x12.\n" +
-	"\x04time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x04timeB0Z.github.com/goppydae/gapi/internal/proto;gapiv1b\x06proto3"
+	"\x04time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x04timeB+Z)github.com/goppydae/gapi/pkg/proto;gapiv1b\x06proto3"
 
 var (
 	file_proto_lifecycle_transition_proto_rawDescOnce sync.Once

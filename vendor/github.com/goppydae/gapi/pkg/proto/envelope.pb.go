@@ -126,7 +126,7 @@ const file_proto_envelope_proto_rawDesc = "" +
 	"\x06source\x18\x04 \x01(\tR\x06source\x12\x1c\n" +
 	"\tnamespace\x18\x05 \x01(\tR\tnamespace\x12.\n" +
 	"\apayload\x18\x06 \x01(\v2\x14.google.protobuf.AnyR\apayload\x12\x12\n" +
-	"\x04tags\x18\a \x03(\tR\x04tagsB0Z.github.com/goppydae/gapi/internal/proto;gapiv1b\x06proto3"
+	"\x04tags\x18\a \x03(\tR\x04tagsB+Z)github.com/goppydae/gapi/pkg/proto;gapiv1b\x06proto3"
 
 var (
 	file_proto_envelope_proto_rawDescOnce sync.Once

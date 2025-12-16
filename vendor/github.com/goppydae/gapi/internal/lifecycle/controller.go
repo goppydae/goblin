@@ -12,7 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/goppydae/gapi/internal/eventbus"
-	protopkg "github.com/goppydae/gapi/internal/proto"
+	protopkg "github.com/goppydae/gapi/pkg/proto"
 )
 
 type Action string
@@ -98,6 +98,7 @@ func NewController(id, host string, r Runner, bus *TypedBus, deps DependencyReso
 		if m := reRunID.FindStringSubmatch(msg); len(m) == 2 {
 			runID = m[1]
 		}
+
 		select {
 		case c.stateCh <- statusEvt{state: got, when: when, runID: runID}:
 		default:

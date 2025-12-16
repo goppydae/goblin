@@ -331,7 +331,7 @@ const file_proto_agent_status_proto_rawDesc = "" +
 	"\n" +
 	"Supervisor\x12S\n" +
 	"\n" +
-	"ListAgents\x12!.gapi.v1.proto.AgentStatusRequest\x1a\".gapi.v1.proto.AgentStatusResponseB0Z.github.com/goppydae/gapi/internal/proto;gapiv1b\x06proto3"
+	"ListAgents\x12!.gapi.v1.proto.AgentStatusRequest\x1a\".gapi.v1.proto.AgentStatusResponseB+Z)github.com/goppydae/gapi/pkg/proto;gapiv1b\x06proto3"
 
 var (
 	file_proto_agent_status_proto_rawDescOnce sync.Once

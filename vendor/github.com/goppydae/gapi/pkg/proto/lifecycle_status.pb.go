@@ -118,7 +118,7 @@ const file_proto_lifecycle_status_proto_rawDesc = "" +
 	"\x04time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x1a\n" +
 	"\bhostname\x18\x05 \x01(\tR\bhostname\x12\x1f\n" +
 	"\vschema_hash\x18\x06 \x01(\tR\n" +
-	"schemaHashB0Z.github.com/goppydae/gapi/internal/proto;gapiv1b\x06proto3"
+	"schemaHashB+Z)github.com/goppydae/gapi/pkg/proto;gapiv1b\x06proto3"
 
 var (
 	file_proto_lifecycle_status_proto_rawDescOnce sync.Once

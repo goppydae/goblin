@@ -6,7 +6,7 @@ import (
 	"io"
 	"sync"
 
-	pb "github.com/goppydae/goblin/internal/proto"
+	goblinv1 "github.com/goppydae/goblin/proto"
 	"github.com/hashicorp/raft"
 	"google.golang.org/protobuf/proto"
 )
@@ -27,7 +27,7 @@ func NewFSM() *FSM {
 
 // Apply applies a Raft log entry to the FSM
 func (f *FSM) Apply(log *raft.Log) interface{} {
-	var cmd pb.LogEntry
+	var cmd goblinv1.LogEntry
 	if err := proto.Unmarshal(log.Data, &cmd); err != nil {
 		return fmt.Errorf("failed to unmarshal log entry: %w", err)
 	}
@@ -41,9 +41,9 @@ func (f *FSM) Apply(log *raft.Log) interface{} {
 	}
 
 	switch cmd.Type {
-	case pb.CommandType_SET:
+	case goblinv1.CommandType_SET:
 		f.state[cmd.Namespace][cmd.Key] = cmd.Value
-	case pb.CommandType_DELETE:
+	case goblinv1.CommandType_DELETE:
 		delete(f.state[cmd.Namespace], cmd.Key)
 		// Clean up empty namespace? Optional.
 		if len(f.state[cmd.Namespace]) == 0 {
