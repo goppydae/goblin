@@ -1,19 +1,71 @@
-# Binaries
-/goblinctl
-/goblind
-*.so
-*.test
-bin/
-
-# Build artifacts
-data/
-site/
-man/
-.bin/
-
-# IDE
+# --- IDE / Editor ---
 .idea/
 .vscode/
+*.iml
+*.ipr
+*.iws
+*~
 
-# Logs
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+
+# --- Binaries / build outputs ---
+/goblinctl
+/goblind
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+
+# Go build caches (repo-local only; $GOCACHE is elsewhere)
+_go-build/
+
+# --- Temporary / runtime state ---
+tmp/
+test/tmp/
 *.log
+*.pid
+*.sock
+
+# Databases (common local state)
+*.db
+*.sqlite
+
+# --- Docs / generated site outputs ---
+site/
+man/
+docs/_build/
+docs/build/
+docs/generated/
+
+# --- Tooling outputs ---
+# Mage build artifacts
+mage_output/
+
+# Air live reload
+.air/
+
+# Buf/protobuf tool artifacts (not generated code)
+buf.lock
+buf.gen.yaml.lock
+.bufbuild/
+
+# Nix build outputs
+result/
+
+# --- Local config overrides ---
+config/*.local.*
+config/*.backup.*
+*.env.local
+*.env.development.local
+*.env.test.local
+*.env.production.local
+
+# --- Coverage / test reports ---
+cover.out
+coverage.txt
+coverage.xml
+test-results.xml
