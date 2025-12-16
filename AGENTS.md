@@ -139,6 +139,12 @@ Sensitive data MUST be redacted at the source.
 - Assume hostile inputs at all boundaries
 - Fail closed
 
+### Canonical Go Doctrine
+
+- **Go is the authoritative kernel**: All control plane logic resides in Go.
+- **SDKs are thin**: Python/Rust/etc. bindings must wrap the Go kernel, never reimplement behavior.
+- **Unified Identity**: Identity and crypto are handled exclusively by the Go core.
+
 ---
 
 ## Technology Stack
