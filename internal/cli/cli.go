@@ -1,13 +1,13 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/rpc"
 	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/goppydae/gapi/core/tui"
 	gapicli "github.com/goppydae/gapi/pkg/cli"
@@ -100,31 +100,25 @@ var (
 
 var runCmd = &cobra.Command{
 	Use:   "run <job-file.yaml>",
-	Short: "Submit a job to the cluster",
+	Short: "Submit a job to the cluster (YAML or JSON)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Read job spec from YAML file
+		// Read job spec from YAML/JSON file
 		data, err := os.ReadFile(args[0])
 		if err != nil {
 			return fmt.Errorf("failed to read job file: %w", err)
 		}
 
-		// Parse YAML (assuming JSON for simplicity, YAML is superset)
+		// Parse YAML/JSON
 		var job map[string]interface{}
-		if err := json.Unmarshal(data, &job); err != nil {
+		if err := yaml.Unmarshal(data, &job); err != nil {
 			return fmt.Errorf("failed to parse job spec: %w", err)
 		}
 
-		// Connect to Serf RPC
-		host := apiAddr
-		if idx := strings.LastIndex(apiAddr, ":"); idx > 0 {
-			host = apiAddr[:idx]
-		}
-		serfRPCAddr := fmt.Sprintf("%s:7373", host)
-
-		client, err := rpc.Dial("tcp", serfRPCAddr)
+		// Connect to QUIC RPC
+		client, err := NewQUICRPCClient(apiAddr)
 		if err != nil {
-			return fmt.Errorf("failed to connect to Serf RPC: %w", err)
+			return fmt.Errorf("failed to connect to QUIC RPC at %s: %w", apiAddr, err)
 		}
 		defer client.Close()
 
@@ -151,16 +145,10 @@ var drainCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		nodeID := args[0]
 
-		// Connect to Serf RPC
-		host := apiAddr
-		if idx := strings.LastIndex(apiAddr, ":"); idx > 0 {
-			host = apiAddr[:idx]
-		}
-		serfRPCAddr := fmt.Sprintf("%s:7373", host)
-
-		client, err := rpc.Dial("tcp", serfRPCAddr)
+		// Connect to QUIC RPC
+		client, err := NewQUICRPCClient(apiAddr)
 		if err != nil {
-			return fmt.Errorf("failed to connect to Serf RPC: %w", err)
+			return fmt.Errorf("failed to connect to QUIC RPC at %s: %w", apiAddr, err)
 		}
 		defer client.Close()
 
@@ -188,16 +176,10 @@ var migrateCmd = &cobra.Command{
 			"ToNode": args[1],
 		}
 
-		// Connect to Serf RPC
-		host := apiAddr
-		if idx := strings.LastIndex(apiAddr, ":"); idx > 0 {
-			host = apiAddr[:idx]
-		}
-		serfRPCAddr := fmt.Sprintf("%s:7373", host)
-
-		client, err := rpc.Dial("tcp", serfRPCAddr)
+		// Connect to QUIC RPC
+		client, err := NewQUICRPCClient(apiAddr)
 		if err != nil {
-			return fmt.Errorf("failed to connect to Serf RPC: %w", err)
+			return fmt.Errorf("failed to connect to QUIC RPC at %s: %w", apiAddr, err)
 		}
 		defer client.Close()
 
@@ -280,14 +262,18 @@ var statusCmd = &cobra.Command{
 
 		fmt.Printf("✅ Connected to %s (QUIC)\n", apiAddr)
 		fmt.Printf("Cluster Members: %d\n", len(members))
-		fmt.Println("NAME\t\tADDRESS\t\t\tSTATUS\t\tTAGS")
-		fmt.Println("----\t\t-------\t\t\t------\t\t----")
+		fmt.Println("NAME\t\tADDRESS\t\t\tSTATUS\t\tROLE\t\tTAGS")
+		fmt.Println("----\t\t-------\t\t\t------\t\t----\t\t----")
 		for _, m := range members {
 			tags := ""
 			for k, v := range m.Tags {
 				tags += fmt.Sprintf("%s=%s ", k, v)
 			}
-			fmt.Printf("%s\t%s\t\t%s\t%s\n", m.Name, m.Addr, m.Status, tags)
+			role := "follower"
+			if m.Leader {
+				role = "LEADER"
+			}
+			fmt.Printf("%s\t%s\t\t%s\t%s\t\t%s\n", m.Name, m.Addr, m.Status, role, tags)
 		}
 		return nil
 	},

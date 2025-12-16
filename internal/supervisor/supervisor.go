@@ -127,8 +127,28 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	}
 
 	// Create Serf membership
+	// Resolve Raft Address to ensure consistency with Consensus.Leader()
+	raftAddr := s.cfg.RaftAddr
+	if host, port, err := net.SplitHostPort(raftAddr); err == nil {
+		if ips, err := net.LookupIP(host); err == nil && len(ips) > 0 {
+			// Prefer IPv4
+			resolved := false
+			for _, ip := range ips {
+				if ip4 := ip.To4(); ip4 != nil {
+					raftAddr = fmt.Sprintf("%s:%s", ip4.String(), port)
+					resolved = true
+					break
+				}
+			}
+			if !resolved {
+				raftAddr = fmt.Sprintf("%s:%s", ips[0].String(), port)
+			}
+			fmt.Printf("ℹ️ Resolved raft address '%s' to '%s'\n", s.cfg.RaftAddr, raftAddr)
+		}
+	}
+
 	tags := map[string]string{
-		"raft_addr":   s.cfg.RaftAddr,
+		"raft_addr":   raftAddr,
 		"schema_hash": "v1-proto-hash",
 		"version":     "0.3.3",
 	}
@@ -181,37 +201,94 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	// Create distributed event bus
 	bus := eventbus.NewDistributedEventBus(nodeID, membership, consensus)
 
-	// Subscribe to cluster events
-	bus.Subscribe("cluster.node.joined", func(e eventbus.Event) {
-		log.Printf("[cluster] Node joined: %v", e.Payload)
+	// Bridge Serf events to EventBus
+	membership.SetEventHandler(func(e serf.Event) {
+		switch ev := e.(type) {
+		case serf.MemberEvent:
+			for _, member := range ev.Members {
+				var topic string
+				switch ev.EventType() {
+				case serf.EventMemberJoin:
+					topic = "cluster.node.joined"
+				case serf.EventMemberLeave:
+					topic = "cluster.node.left"
+				case serf.EventMemberFailed:
+					topic = "cluster.node.failed"
+				case serf.EventMemberUpdate:
+					topic = "cluster.node.updated"
+				case serf.EventMemberReap:
+					topic = "cluster.node.reaped"
+				}
+
+				if topic != "" {
+					payload := map[string]interface{}{
+						"name":   member.Name,
+						"addr":   member.Addr.String(),
+						"port":   member.Port,
+						"status": member.Status.String(),
+						"tags":   member.Tags,
+					}
+					bus.PublishLocal("system", topic, payload, []string{"cluster", member.Name})
+				}
+			}
+		}
 	})
-
-	bus.Subscribe("global.alert", func(e eventbus.Event) {
-		log.Printf("[alert] %v", e.Payload)
-	})
-
-	// Publish local event
-	bus.PublishLocal("system", "cluster.node.announce", map[string]interface{}{
-		"node_id": nodeID,
-		"address": fmt.Sprintf("%s:%d", s.cfg.SerfAddr, s.cfg.SerfPort),
-	}, []string{"announce"})
-
-	fmt.Println("✅ Distributed event bus initialized")
 
 	// Create Store
 	kvStore := store.NewStore(consensus, bus)
 	fmt.Println("✅ Distributed KV Store initialized")
 
 	// Create Scheduler
-	sched := scheduler.NewScheduler(kvStore, membership)
+	sched := scheduler.NewScheduler(kvStore, membership, bus)
 	fmt.Println("✅ Scheduler initialized")
 
 	// Register Scheduler RPC for CLI operations
 	schedulerRPC := &SchedulerRPC{
 		scheduler:  sched,
 		membership: membership,
+		consensus:  consensus,
 	}
 	fmt.Println("✅ Scheduler RPC created")
+
+	// Subscribe to cluster events (After RPC init so we can log to history)
+	clusterEvents := []string{
+		"cluster.node.joined",
+		"cluster.node.left",
+		"cluster.node.failed",
+		"cluster.node.updated",
+		"job.submitted",
+		"job.assigned",
+		"job.migrated",
+	}
+
+	for _, topic := range clusterEvents {
+		bus.Subscribe(topic, func(e eventbus.Event) {
+			var msg string
+			if strings.HasPrefix(e.Topic, "cluster.node.") {
+				action := strings.TrimPrefix(e.Topic, "cluster.node.")
+				name, _ := e.Payload["name"].(string)
+				msg = fmt.Sprintf("Node %s: %s", action, name)
+			} else if strings.HasPrefix(e.Topic, "job.") {
+				action := strings.TrimPrefix(e.Topic, "job.")
+				jobID, _ := e.Payload["job_id"].(string)
+				msg = fmt.Sprintf("Job %s: %s", action, jobID)
+				if nodeID, ok := e.Payload["node_id"].(string); ok {
+					msg = fmt.Sprintf("%s (on %s)", msg, nodeID)
+				}
+			}
+
+			if msg != "" {
+				log.Printf("[cluster] %s", msg)
+				schedulerRPC.AddEvent(msg)
+			}
+		})
+	}
+
+	bus.Subscribe("global.alert", func(e eventbus.Event) {
+		msg := fmt.Sprintf("Alert: %v", e.Payload)
+		log.Printf("[alert] %s", msg)
+		schedulerRPC.AddEvent(msg)
+	})
 
 	// Create QUIC RPC Handler
 	quicServer := NewQUICRPCServer()
@@ -277,55 +354,81 @@ func (s *Supervisor) Run(ctx context.Context) error {
 				log.Printf("⚠️ Metrics server failed: %v", err)
 			}
 		}()
-
-		// Start Metrics Collector
-		go func() {
-			ticker := time.NewTicker(5 * time.Second)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					// Update Raft Stats
-					stats := consensus.Stats()
-					if term, ok := stats["term"]; ok {
-						val, _ := strconv.ParseFloat(term, 64)
-						metrics.RaftTerm.Set(val)
-					}
-
-					state := stats["state"]
-					var stateVal float64
-					switch state {
-					case "Leader":
-						stateVal = 2
-					case "Candidate":
-						stateVal = 1
-					default:
-						stateVal = 0
-					}
-					metrics.RaftState.Set(stateVal)
-
-					// Update Cluster Members
-					members := membership.Members()
-					alive, failed, left := 0, 0, 0
-					for _, m := range members {
-						switch m.Status {
-						case serf.StatusAlive:
-							alive++
-						case serf.StatusFailed:
-							failed++
-						case serf.StatusLeft:
-							left++
-						}
-					}
-					metrics.ClusterMembers.WithLabelValues("alive").Set(float64(alive))
-					metrics.ClusterMembers.WithLabelValues("failed").Set(float64(failed))
-					metrics.ClusterMembers.WithLabelValues("left").Set(float64(left))
-				}
-			}
-		}()
 	}
+
+	// Start Cluster Monitor (stats & events)
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+
+		var lastRaftState string
+		var lastLeaderID string
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				// Update Raft Stats
+				stats := consensus.Stats()
+				if term, ok := stats["term"]; ok {
+					val, _ := strconv.ParseFloat(term, 64)
+					metrics.RaftTerm.Set(val)
+				}
+
+				state := stats["state"]
+
+				// Log state changes
+				if lastRaftState != "" && state != lastRaftState {
+					schedulerRPC.AddEvent(fmt.Sprintf("Raft State Change: %s -> %s", lastRaftState, state))
+				}
+				lastRaftState = state
+
+				// Log Leader changes
+				leaderID := consensus.LeaderID()
+				if leaderID != lastLeaderID {
+					if leaderID == "" {
+						msg := "Leader Election: Lost leader"
+						log.Printf("[cluster] %s", msg)
+						schedulerRPC.AddEvent(msg)
+					} else {
+						msg := fmt.Sprintf("Leader Election: New Leader is %s", leaderID)
+						log.Printf("[cluster] %s", msg)
+						schedulerRPC.AddEvent(msg)
+					}
+				}
+				lastLeaderID = leaderID
+
+				var stateVal float64
+				switch state {
+				case "Leader":
+					stateVal = 2
+				case "Candidate":
+					stateVal = 1
+				default:
+					stateVal = 0
+				}
+				metrics.RaftState.Set(stateVal)
+
+				// Update Cluster Members
+				members := membership.Members()
+				alive, failed, left := 0, 0, 0
+				for _, m := range members {
+					switch m.Status {
+					case serf.StatusAlive:
+						alive++
+					case serf.StatusFailed:
+						failed++
+					case serf.StatusLeft:
+						left++
+					}
+				}
+				metrics.ClusterMembers.WithLabelValues("alive").Set(float64(alive))
+				metrics.ClusterMembers.WithLabelValues("failed").Set(float64(failed))
+				metrics.ClusterMembers.WithLabelValues("left").Set(float64(left))
+			}
+		}
+	}()
 
 	fmt.Println("📡 Listening for cluster events...")
 

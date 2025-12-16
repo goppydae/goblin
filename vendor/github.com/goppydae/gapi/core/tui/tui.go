@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -19,9 +20,17 @@ type AgentControl interface {
 type ViewMode int
 
 const (
-	ViewList ViewMode = iota
-	ViewLogs
-	ViewDetail
+	ViewOverview ViewMode = iota // Tab 1: Cluster + Jobs + Agents
+	ViewLogs                     // Tab 2: Unified log stream
+	ViewDetail                   // Detail view for specific agent
+)
+
+type LogFilter int
+
+const (
+	LogFilterAll LogFilter = iota
+	LogFilterAgents
+	LogFilterCluster
 )
 
 type AgentStatus struct {
@@ -35,9 +44,11 @@ type AgentStatus struct {
 
 type Model struct {
 	view        ViewMode
+	currentTab  int // 0 = Overview, 1 = Logs
 	agents      []AgentStatus
 	selectedIdx int
-	logs        []string
+	logBuffer   []LogEntry // Ring buffer (max 1000) - defined in logs.go
+	logFilter   LogFilter
 	logViewer   LogViewer
 	filter      Filter
 	width       int
@@ -50,10 +61,12 @@ type Model struct {
 
 func NewModel(ctrl AgentControl) Model {
 	return Model{
-		view:        ViewList,
+		view:        ViewOverview,
+		currentTab:  0,
 		agents:      []AgentStatus{},
 		selectedIdx: 0,
-		logs:        []string{},
+		logBuffer:   make([]LogEntry, 0, 1000),
+		logFilter:   LogFilterAll,
 		logViewer:   LogViewer{},
 		filter:      NewFilter(),
 		ctrl:        ctrl,
@@ -138,9 +151,45 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case errMsg:
-		m.err = msg
-		return m, nil
+	case logMsg:
+		// Parse log message and add to viewer
+		line := string(msg)
+
+		// Parse format: "[CLUSTER] message" or "[AGENT] message"
+		var source, level, message string
+		if strings.HasPrefix(line, "[CLUSTER]") {
+			source = "cluster"
+			level = "INFO"
+			message = strings.TrimPrefix(line, "[CLUSTER] ")
+		} else if strings.HasPrefix(line, "[AGENT]") {
+			source = "agent"
+			level = "INFO"
+			message = strings.TrimPrefix(line, "[AGENT] ")
+		} else if strings.HasPrefix(line, "[ERROR]") {
+			source = "cluster"
+			level = "ERROR"
+			message = strings.TrimPrefix(line, "[ERROR] ")
+		} else {
+			source = "cluster"
+			level = "INFO"
+			message = line
+		}
+
+		entry := LogEntry{
+			Timestamp: time.Now(),
+			Source:    source,
+			Type:      "cluster",
+			Level:     level,
+			Message:   message,
+		}
+
+		m.logViewer.logs = append(m.logViewer.logs, entry)
+		m.logViewer.ready = true
+
+		// Update viewport content
+		m.logViewer.viewport.SetContent(m.logViewer.renderLogs())
+
+		return m, waitForLog(m.logViewer.sub)
 	}
 
 	return m, nil
@@ -148,7 +197,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.view {
-	case ViewList:
+	case ViewOverview:
 		return m.handleListKeys(msg)
 	case ViewLogs:
 		return m.handleLogsKeys(msg)
@@ -170,6 +219,40 @@ func (m Model) handleListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "ctrl+c":
 		m.quitting = true
 		return m, tea.Quit
+
+	case "tab":
+		// Switch between Overview and Logs tabs
+		if m.view == ViewOverview {
+			m.view = ViewLogs
+			m.currentTab = 1
+
+			// Initialize log viewer for cluster logs
+			m.logViewer = NewLogViewer("cluster", m.width, m.height)
+
+			// Start streaming cluster logs
+			ctx, cancel := context.WithCancel(context.Background())
+			m.logCancel = cancel
+
+			logsCh, err := m.ctrl.GetLogs(ctx, "cluster")
+			if err != nil {
+				m.err = err
+				cancel()
+				m.logCancel = nil
+				return m, nil
+			}
+			m.logViewer.sub = logsCh
+			return m, waitForLog(logsCh)
+
+		} else if m.view == ViewLogs {
+			m.view = ViewOverview
+			m.currentTab = 0
+
+			// Cancel log streaming
+			if m.logCancel != nil {
+				m.logCancel()
+				m.logCancel = nil
+			}
+		}
 
 	case "/":
 		// Activate name search
@@ -279,8 +362,25 @@ func (m Model) handleLogsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 
+	case "tab":
+		// Switch back to Overview tab
+		m.view = ViewOverview
+		m.currentTab = 0
+
+		// Cancel log streaming
+		if m.logCancel != nil {
+			m.logCancel()
+			m.logCancel = nil
+		}
+
 	case "esc":
-		m.view = ViewList
+		m.view = ViewOverview
+
+		// Cancel log streaming
+		if m.logCancel != nil {
+			m.logCancel()
+			m.logCancel = nil
+		}
 	}
 
 	return m, nil
@@ -293,7 +393,7 @@ func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case "esc":
-		m.view = ViewList
+		m.view = ViewOverview
 	}
 
 	return m, nil
@@ -305,7 +405,7 @@ func (m Model) View() string {
 	}
 
 	switch m.view {
-	case ViewList:
+	case ViewOverview:
 		return m.renderList()
 	case ViewLogs:
 		return m.logViewer.View()
@@ -318,6 +418,28 @@ func (m Model) View() string {
 
 func (m Model) renderList() string {
 	var s string
+
+	// Tab Headers
+	tabStyle := lipgloss.NewStyle().
+		Padding(0, 2).
+		Bold(true)
+
+	activeTabStyle := tabStyle.Copy().
+		Foreground(lipgloss.Color("205")).
+		Background(lipgloss.Color("63"))
+
+	inactiveTabStyle := tabStyle.Copy().
+		Foreground(lipgloss.Color("241"))
+
+	overviewTab := "[Overview]"
+	logsTab := "[Logs]"
+
+	if m.view == ViewOverview {
+		s += activeTabStyle.Render(overviewTab) + inactiveTabStyle.Render(logsTab)
+	} else {
+		s += inactiveTabStyle.Render(overviewTab) + activeTabStyle.Render(logsTab)
+	}
+	s += "\n\n"
 
 	// Header
 	headerStyle := lipgloss.NewStyle().

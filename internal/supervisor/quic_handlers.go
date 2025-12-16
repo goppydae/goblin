@@ -83,6 +83,22 @@ func RegisterSchedulerHandlers(server *QUICRPCServer, rpc *SchedulerRPC) {
 
 		return json.Marshal(resp)
 	})
+
+	// Register new GetEvents handler
+	server.RegisterHandler("SchedulerRPC.GetEvents", func(payload []byte) ([]byte, error) {
+		var req GetEventsRequest
+		// If payload is empty, use default request (cursor 0)
+		if len(payload) > 0 {
+			if err := json.Unmarshal(payload, &req); err != nil {
+				return nil, fmt.Errorf("invalid request: %w", err)
+			}
+		}
+		var resp []LogEvent
+		if err := rpc.GetEvents(&req, &resp); err != nil {
+			return nil, err
+		}
+		return json.Marshal(resp)
+	})
 }
 
 // Unused function removed - client-side logic will go in CLI

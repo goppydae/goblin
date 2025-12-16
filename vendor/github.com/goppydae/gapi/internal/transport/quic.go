@@ -158,7 +158,7 @@ func (q *QUIC) PublishRemote(e eventbus.Event[*anypb.Any]) error {
 
 	// Async publish to prevent preventing blocking on dead clients
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		s, err := conn.OpenStreamSync(ctx)
 		if err != nil {

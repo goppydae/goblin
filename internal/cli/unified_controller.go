@@ -82,15 +82,10 @@ func (u *UnifiedController) Lifecycle(ctx context.Context, id, action string) (b
 
 // GetLogs streams logs from agents or cluster
 func (u *UnifiedController) GetLogs(ctx context.Context, id string) (<-chan string, error) {
-	ch := make(chan string, 100) // Buffered channel
-
-	// For now, implement basic cluster event streaming
-	// Future: detect if id is agent or cluster entity
-
+	ch := make(chan string, 100)
 	go func() {
 		defer close(ch)
 
-		// Connect to QUIC RPC (using the same address as FetchStatus)
 		client, err := NewQUICRPCClient(u.rpcAddr)
 		if err != nil {
 			ch <- fmt.Sprintf("[ERROR] Failed to connect to QUIC RPC: %v", err)
@@ -98,56 +93,64 @@ func (u *UnifiedController) GetLogs(ctx context.Context, id string) (<-chan stri
 		}
 		defer client.Close()
 
-		// Stream cluster membership events
 		ch <- "[CLUSTER] Connected to cluster event stream (QUIC)"
+		ch <- "--- Initial Cluster State ---"
 
-		// Poll for member changes every 2 seconds
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-
-		var lastMemberCount int
-		// Initial fetch to set baseline
-		type MemberShort struct {
-			Name   string
-			Status string
-		}
-		var members []MemberShort
+		// 1. Dump Initial State (Context only)
+		var members []supervisor.MemberInfo // Reusing struct from supervisor if available or defining local
+		// Note: MemberInfo is in supervisor/scheduler_rpc.go
 		if err := client.Call("SchedulerRPC.Members", struct{}{}, &members); err == nil {
-			lastMemberCount = len(members)
+			for _, m := range members {
+				role := "follower"
+				if m.Leader {
+					role = "leader"
+				}
+				ch <- fmt.Sprintf("[MEMBER] %s (%s) - %s", m.Name, m.Status, role)
+			}
 		}
+
+		var jobs []supervisor.JobInfo
+		if err := client.Call("SchedulerRPC.ListJobs", struct{}{}, &jobs); err == nil {
+			for _, j := range jobs {
+				ch <- fmt.Sprintf("[JOB] %s: %s (on %s)", j.JobID, j.Status, j.AssignedNode)
+			}
+		}
+
+		ch <- "-----------------------------"
+		ch <- "--- Event Stream ---"
+
+		// 2. Poll for Events (Cursor-based)
+		var lastCursor uint64 = 0
+
+		// Initial fetch to get history buffer (cursor 0)
+		// Then poll continuously
+		timer := time.NewTimer(0) // Start immediately
+		defer timer.Stop()
 
 		for {
 			select {
 			case <-ctx.Done():
 				ch <- "[CLUSTER] Log stream closed"
 				return
-			case <-ticker.C:
-				var currentMembers []MemberShort
-				if err := client.Call("SchedulerRPC.Members", struct{}{}, &currentMembers); err != nil {
-					ch <- fmt.Sprintf("[ERROR] Failed to fetch members: %v", err)
-					continue
-				}
+			case <-timer.C:
+				req := supervisor.GetEventsRequest{Cursor: lastCursor}
+				var events []supervisor.LogEvent
 
-				if len(currentMembers) != lastMemberCount {
-					ch <- fmt.Sprintf("[CLUSTER] Member count changed: %d nodes", len(currentMembers))
-					lastMemberCount = len(currentMembers)
+				if err := client.Call("SchedulerRPC.GetEvents", &req, &events); err != nil {
+					ch <- fmt.Sprintf("[ERROR] Failed to fetch events: %v", err)
+				} else {
+					for _, event := range events {
+						// Format: [HH:MM:SS.000] Message
+						timestamp := event.Timestamp.Format("15:04:05.000")
+						ch <- fmt.Sprintf("[%s] %s", timestamp, event.Message)
 
-					// List changes
-					for _, m := range currentMembers {
-						ch <- fmt.Sprintf("[CLUSTER] Member Node: %s (%s)", m.Name, m.Status)
+						if event.Index > lastCursor {
+							lastCursor = event.Index
+						}
 					}
 				}
 
-				// Also check for job updates
-				var jobs []supervisor.JobInfo
-				if err := client.Call("SchedulerRPC.ListJobs", struct{}{}, &jobs); err == nil {
-					// Simple summary for now to avoid spamming logs
-					// In a real implementation we would track diffs
-					if len(jobs) > 0 {
-						// Only log occasionally or on change - for now just debug
-						// ch <- fmt.Sprintf("[CLUSTER] %d jobs running", len(jobs))
-					}
-				}
+				timer.Reset(1 * time.Second)
 			}
 		}
 	}()

@@ -4,17 +4,73 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/rpc"
 	"reflect"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/goppydae/goblin/core/consensus"
 	"github.com/goppydae/goblin/core/scheduler"
 )
+
+// LogEvent represents a single event in the history
+type LogEvent struct {
+	Index     uint64
+	Timestamp time.Time
+	Message   string
+}
 
 // SchedulerRPC exposes scheduler operations via RPC
 type SchedulerRPC struct {
 	scheduler  *scheduler.Scheduler
 	membership interface{} // cluster.Membership
+	consensus  *consensus.Consensus
+
+	eventsMu  sync.RWMutex
+	events    []LogEvent
+	lastIndex uint64
+}
+
+const maxEvents = 50
+
+// AddEvent appends a regular log message to the history
+func (s *SchedulerRPC) AddEvent(msg string) {
+	s.eventsMu.Lock()
+	defer s.eventsMu.Unlock()
+
+	s.lastIndex++
+	event := LogEvent{
+		Index:     s.lastIndex,
+		Timestamp: time.Now(),
+		Message:   msg,
+	}
+
+	s.events = append(s.events, event)
+	if len(s.events) > maxEvents {
+		s.events = s.events[len(s.events)-maxEvents:]
+	}
+}
+
+// GetEventsRequest defines the cursor for fetching events
+type GetEventsRequest struct {
+	Cursor uint64
+}
+
+// GetEvents returns events occurring after the given cursor
+func (s *SchedulerRPC) GetEvents(req *GetEventsRequest, resp *[]LogEvent) error {
+	s.eventsMu.RLock()
+	defer s.eventsMu.RUnlock()
+
+	var result []LogEvent
+	for _, event := range s.events {
+		if event.Index > req.Cursor {
+			result = append(result, event)
+		}
+	}
+	*resp = result
+	return nil
 }
 
 // MigrateRequest contains parameters for job migration
@@ -114,6 +170,7 @@ type MemberInfo struct {
 	Addr   string
 	Status string
 	Tags   map[string]string
+	Leader bool
 }
 
 // Members returns the list of cluster members
@@ -121,6 +178,11 @@ func (s *SchedulerRPC) Members(req *struct{}, resp *[]MemberInfo) error {
 	// Define interface for membership with Members() method
 	type membershipInterface interface {
 		Members() []interface{}
+	}
+
+	leaderAddr := ""
+	if s.consensus != nil {
+		leaderAddr = s.consensus.Leader()
 	}
 
 	// Try type assertion - membership should be *cluster.Membership
@@ -137,12 +199,47 @@ func (s *SchedulerRPC) Members(req *struct{}, resp *[]MemberInfo) error {
 					member := members.Index(i)
 
 					// Extract Name and Status fields from serf.Member
-					name := member.FieldByName("Name")
-					status := member.FieldByName("Status")
+					name := member.FieldByName("Name").String()
+					statusVal := member.FieldByName("Status").Int()
+					status := "unknown"
+					switch statusVal {
+					case 1: // StatusAlive
+						status = "alive"
+					case 2: // StatusLeft
+						status = "left"
+					case 3: // StatusFailed
+						status = "failed"
+					case 4: // StatusLeaving
+						status = "leaving"
+					}
+					addr := member.FieldByName("Addr").Bytes() // Addr is likely net.IP slice []byte
+					port := int(member.FieldByName("Port").Uint())
+
+					// Need to format Addr
+					ip := net.IP(addr)
+
+					// Extract Tags
+					tagsFunc := member.FieldByName("Tags")
+					tags := make(map[string]string)
+					iter := tagsFunc.MapRange()
+					for iter.Next() {
+						tags[iter.Key().String()] = iter.Value().String()
+					}
+
+					// Check Leadership
+					isLeader := false
+					if raftAddr, ok := tags["raft_addr"]; ok {
+						if raftAddr == leaderAddr {
+							isLeader = true
+						}
+					}
 
 					info := MemberInfo{
-						Name:   name.String(),
-						Status: status.String(),
+						Name:   name,
+						Addr:   fmt.Sprintf("%s:%d", ip.String(), port),
+						Status: status,
+						Tags:   tags,
+						Leader: isLeader,
 					}
 					*resp = append(*resp, info)
 				}
@@ -154,6 +251,6 @@ func (s *SchedulerRPC) Members(req *struct{}, resp *[]MemberInfo) error {
 }
 
 // RegisterSchedulerRPC registers the scheduler RPC service
-func RegisterSchedulerRPC(sched *scheduler.Scheduler, membership interface{}) error {
-	return rpc.Register(&SchedulerRPC{scheduler: sched, membership: membership})
+func RegisterSchedulerRPC(sched *scheduler.Scheduler, membership interface{}, consensus *consensus.Consensus) error {
+	return rpc.Register(&SchedulerRPC{scheduler: sched, membership: membership, consensus: consensus})
 }

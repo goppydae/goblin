@@ -11,8 +11,9 @@ import (
 
 type LogEntry struct {
 	Timestamp time.Time
-	Level     string
-	AgentID   string
+	Source    string // agent ID or "cluster"
+	Type      string // "agent" or "cluster"
+	Level     string // INFO, WARN, ERROR, DEBUG
 	Message   string
 }
 
@@ -55,8 +56,9 @@ func (l LogViewer) Update(msg tea.Msg, agents []AgentStatus, selectedIdx int) (L
 	case logMsg:
 		l.logs = append(l.logs, LogEntry{
 			Timestamp: time.Now(),
-			Level:     "INFO", // Parse from msg likely?
-			AgentID:   l.agentID,
+			Source:    l.agentID,
+			Type:      "agent",
+			Level:     "INFO",
 			Message:   string(msg),
 		})
 

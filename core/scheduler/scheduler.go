@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/goppydae/goblin/core/cluster"
+	"github.com/goppydae/goblin/core/eventbus"
 	"github.com/goppydae/goblin/core/store"
 	"github.com/hashicorp/serf/serf"
 )
@@ -17,12 +18,14 @@ import (
 type Scheduler struct {
 	store   *store.Store
 	cluster *cluster.Membership
+	bus     eventbus.EventBus
 }
 
-func NewScheduler(s *store.Store, c *cluster.Membership) *Scheduler {
+func NewScheduler(s *store.Store, c *cluster.Membership, b eventbus.EventBus) *Scheduler {
 	return &Scheduler{
 		store:   s,
 		cluster: c,
+		bus:     b,
 	}
 }
 
@@ -109,11 +112,10 @@ func (s *Scheduler) Assign(ctx context.Context, jobID, nodeID string) error {
 		return fmt.Errorf("assignment failed: %w", err)
 	}
 
-	// Also store resource claim so checking is easier?
-	// Currently we just store assignment. To calculate usage, we need to read Job Spec.
-	// So we must ensure Job Spec is registered.
-	// Should we check if job spec is registered?
-	// For MVP, we assume RegisterJob was called.
+	if s.bus != nil {
+		payload := map[string]interface{}{"job_id": jobID, "node_id": nodeID}
+		s.bus.PublishLocal("system", "job.assigned", payload, []string{"job", jobID})
+	}
 	return nil
 }
 
@@ -139,6 +141,10 @@ func (s *Scheduler) Migrate(ctx context.Context, jobID, fromNode, toNode string)
 	}
 
 	fmt.Printf("🔄 Job %s migrated from %s to %s\n", jobID, fromNode, toNode)
+	if s.bus != nil {
+		payload := map[string]interface{}{"job_id": jobID, "from_node": fromNode, "to_node": toNode}
+		s.bus.PublishLocal("system", "job.migrated", payload, []string{"job", jobID})
+	}
 	return nil
 }
 
@@ -329,6 +335,10 @@ func (s *Scheduler) SubmitJob(ctx context.Context, job *Job) error {
 	}
 
 	fmt.Printf("✅ Job %s scheduled on node %s\n", job.ID, nodeID)
+	if s.bus != nil {
+		payload := map[string]interface{}{"job_id": job.ID, "node_id": nodeID}
+		s.bus.PublishLocal("system", "job.submitted", payload, []string{"job", job.ID})
+	}
 	return nil
 }
 

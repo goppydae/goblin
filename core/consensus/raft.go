@@ -118,6 +118,12 @@ func (c *Consensus) Leader() string {
 	return string(addr)
 }
 
+// LeaderID returns the current leader ID
+func (c *Consensus) LeaderID() string {
+	_, id := c.raft.LeaderWithID()
+	return string(id)
+}
+
 // VerifyLeader checks if this node is the leader and has a quorum
 func (c *Consensus) VerifyLeader() error {
 	future := c.raft.VerifyLeader()
