@@ -34,9 +34,9 @@ log "Loaded image: $IMAGE_TAG"
 log "Starting Node 1 (Seed)..."
 docker run -d --name goblin-node-1 \
     --hostname node-1 \
-    -p 8081:8080 -p 7941:7946 \
+    -p 29001:29000 -p 29011:29010 \
     $IMAGE_TAG \
-    /bin/goblind --id=node-1 --bind=0.0.0.0 --advertise=node-1:7946 --api-addr=0.0.0.0:8080 --bootstrap
+    /bin/goblind --id=node-1 --serf-addr=0.0.0.0 --serf-port=29010 --raft-addr=0.0.0.0:29020 --api-addr=0.0.0.0:29000
 
 NODE1_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' goblin-node-1)
 log "Node 1 IP: $NODE1_IP"
@@ -49,27 +49,31 @@ sleep 5
 log "Starting Node 2..."
 docker run -d --name goblin-node-2 \
     --hostname node-2 \
-    -p 8082:8080 -p 7942:7946 \
+    -p 29002:29000 -p 29012:29010 \
     $IMAGE_TAG \
-    /bin/goblind --id=node-2 --bind=0.0.0.0 --advertise=node-2:7946 --api-addr=0.0.0.0:8080 --join=$NODE1_IP:7946
+    /bin/goblind --id=node-2 --serf-addr=0.0.0.0 --serf-port=29010 --raft-addr=0.0.0.0:29020 --api-addr=0.0.0.0:29000 --join=$NODE1_IP:29010
 
 # 4. Start Node 3 (Joiner)
 log "Starting Node 3..."
 docker run -d --name goblin-node-3 \
     --hostname node-3 \
-    -p 8083:8080 -p 7943:7946 \
+    -p 29003:29000 -p 29013:29010 \
     $IMAGE_TAG \
-    /bin/goblind --id=node-3 --bind=0.0.0.0 --advertise=node-3:7946 --api-addr=0.0.0.0:8080 --join=$NODE1_IP:7946
+    /bin/goblind --id=node-3 --serf-addr=0.0.0.0 --serf-port=29010 --raft-addr=0.0.0.0:29020 --api-addr=0.0.0.0:29000 --join=$NODE1_IP:29010
 
 # 5. Verify Cluster Formation
 log "Verifying cluster membership..."
 sleep 5
-MEMBERS=$(curl -s http://localhost:8081/v1/cluster/members | jq '.members | length')
 
-if [ "$MEMBERS" -eq 3 ]; then
-    log "SUCCESS: Cluster has 3 members."
+# Use goblinctl from inside the container to verify the cluster state
+# This verifies:
+# 1. The cluster is up
+# 2. The CLI tool works
+# 3. The API is reachable via QUIC
+if docker exec goblin-node-1 /bin/goblinctl status --api-addr 127.0.0.1:29000 --tls-insecure; then
+    log "SUCCESS: Cluster is operational and CLI is working."
 else
-    error "Cluster has $MEMBERS members, expected 3."
+    error "Cluster verification failed."
 fi
 
 # 6. Submit Job

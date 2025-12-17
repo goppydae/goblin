@@ -2,13 +2,14 @@ package cli
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
 	"sync/atomic"
+	"time"
 
+	"github.com/goppydae/gapi/core/transport"
 	goblinv1 "github.com/goppydae/goblin/proto"
 	"github.com/quic-go/quic-go"
 	"google.golang.org/protobuf/proto"
@@ -21,15 +22,17 @@ type QUICRPCClient struct {
 }
 
 // NewQUICRPCClient creates a new QUIC RPC client
-func NewQUICRPCClient(addr string) (*QUICRPCClient, error) {
-	tlsConf := &tls.Config{
-		InsecureSkipVerify: true, // TODO: proper cert validation
-		NextProtos:         []string{"goblin-rpc"},
+func NewQUICRPCClient(addr string, tlsConfig transport.TLSConfig) (*QUICRPCClient, error) {
+	tlsConf, err := transport.CreateClientTLSConfig(tlsConfig)
+	if err != nil {
+		return nil, err
 	}
+	// Override NextProtos for Goblin RPC
+	tlsConf.NextProtos = []string{"goblin-rpc"}
 
 	quicConfig := &quic.Config{
-		MaxIdleTimeout:  60000000000, // 60 seconds
-		KeepAlivePeriod: 10000000000, // 10 seconds
+		MaxIdleTimeout:  60 * time.Second,
+		KeepAlivePeriod: 10 * time.Second,
 	}
 
 	conn, err := quic.DialAddr(context.Background(), addr, tlsConf, quicConfig)

@@ -4,13 +4,12 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/goppydae/goblin/core/transport"
 	"github.com/hashicorp/raft"
-	raftboltdb "github.com/hashicorp/raft-boltdb"
 )
 
 // Consensus manages cluster consensus using Raft
@@ -35,19 +34,19 @@ func NewConsensus(nodeID, dataDir, bindAddr string, tlsCfg *tls.Config) (*Consen
 	config.HeartbeatTimeout = 1 * time.Second
 	config.ElectionTimeout = 1 * time.Second
 	config.CommitTimeout = 50 * time.Millisecond
-	config.LogOutput = io.Discard // Disable logging
+	config.LogOutput = io.Discard
 
 	// Create FSM
 	fsm := NewFSM()
 
 	// Create log store
-	logStore, err := raftboltdb.NewBoltStore(filepath.Join(dataDir, "raft-log.db"))
+	logStore, err := NewBoltStore(filepath.Join(dataDir, "raft-log.db"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create log store: %w", err)
 	}
 
 	// Create stable store
-	stableStore, err := raftboltdb.NewBoltStore(filepath.Join(dataDir, "raft-stable.db"))
+	stableStore, err := NewBoltStore(filepath.Join(dataDir, "raft-stable.db"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create stable store: %w", err)
 	}
@@ -59,28 +58,32 @@ func NewConsensus(nodeID, dataDir, bindAddr string, tlsCfg *tls.Config) (*Consen
 	}
 
 	// Create transport
-	var transport raft.Transport
+	var raftTransport raft.Transport
 
-	if tlsCfg != nil {
-		stream, err := NewTLSStreamLayer(bindAddr, tlsCfg)
+	if tlsCfg == nil {
+		tlsCfg = &tls.Config{InsecureSkipVerify: true}
+	}
+	if len(tlsCfg.Certificates) == 0 && tlsCfg.GetCertificate == nil {
+		fmt.Println("⚠️  Generating self-signed certificate for Raft QUIC transport")
+		cert, err := transport.GenerateInsecureSelfSignedCert()
 		if err != nil {
-			return nil, fmt.Errorf("failed to create TLS stream: %w", err)
+			return nil, fmt.Errorf("failed to generate self-signed cert: %w", err)
 		}
-		transport = raft.NewNetworkTransport(stream, 3, 10*time.Second, os.Stderr)
-	} else {
-		addr, err := net.ResolveTCPAddr("tcp", bindAddr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve address: %w", err)
-		}
-
-		transport, err = raft.NewTCPTransport(bindAddr, addr, 3, 10*time.Second, os.Stderr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create transport: %w", err)
-		}
+		tlsCfg.Certificates = []tls.Certificate{cert}
 	}
 
+	// Enforce ALPN for Raft
+	tlsCfg.NextProtos = []string{"raft-quic"}
+
+	stream, err := transport.NewQUICStreamLayer(bindAddr, tlsCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create QUIC stream layer: %w", err)
+	}
+
+	raftTransport = raft.NewNetworkTransport(stream, 3, 10*time.Second, os.Stderr)
+
 	// Create Raft
-	r, err := raft.NewRaft(config, fsm, logStore, stableStore, snapshotStore, transport)
+	r, err := raft.NewRaft(config, fsm, logStore, stableStore, snapshotStore, raftTransport)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create raft: %w", err)
 	}
@@ -88,7 +91,7 @@ func NewConsensus(nodeID, dataDir, bindAddr string, tlsCfg *tls.Config) (*Consen
 	c := &Consensus{
 		raft:      r,
 		fsm:       fsm,
-		transport: transport,
+		transport: raftTransport,
 		nodeID:    nodeID,
 		dataDir:   dataDir,
 	}
@@ -98,7 +101,7 @@ func NewConsensus(nodeID, dataDir, bindAddr string, tlsCfg *tls.Config) (*Consen
 		Servers: []raft.Server{
 			{
 				ID:      config.LocalID,
-				Address: transport.LocalAddr(),
+				Address: raftTransport.LocalAddr(),
 			},
 		},
 	}

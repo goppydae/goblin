@@ -3,14 +3,14 @@ package client
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/goppydae/gapi/core/config"
-	"github.com/goppydae/gapi/internal/eventbus"
-	"github.com/goppydae/gapi/internal/transport"
+	"github.com/goppydae/gapi/core/eventbus"
+	"github.com/goppydae/gapi/internal/statewatch"
+	"github.com/goppydae/gapi/core/transport"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
 )
 
@@ -155,7 +155,9 @@ func (c *Client) LifecycleWithOpts(ctx context.Context, agentIDs []string, actio
 			}
 
 			// Await transition
-			st, err := c.waitForPendingThenTerminal(ctx, agentID, config.ClientPendingTimeout, config.ClientTerminalTimeout)
+			st, err := statewatch.WaitForPendingThenTerminal(
+				ctx, c.bus, agentID, config.ClientPendingTimeout, config.ClientTerminalTimeout,
+			)
 			results <- Result{AgentID: agentID, Status: st, Err: err}
 		}()
 	}
@@ -180,84 +182,6 @@ func (c *Client) StartWithOpts(ctx context.Context, agentIDs []string, opts Life
 // Stop triggers the STOP action for the given agents.
 func (c *Client) Stop(ctx context.Context, agentIDs []string) []Result {
 	return c.Lifecycle(ctx, agentIDs, protopkg.LifecycleControl_STOP)
-}
-
-func (c *Client) waitForPendingThenTerminal(
-	ctx context.Context,
-	agentID string,
-	pendingTimeout time.Duration,
-	finalTimeout time.Duration,
-) (*protopkg.LifecycleStatus, error) {
-
-	statusCh := make(chan *protopkg.LifecycleStatus, 8)
-
-	// Subscribe with context-aware cleanup
-	c.bus.SubscribePrefixWithContext(ctx, "system", "", "agent/lifecycle.status", func(e eventbus.Event[*anypb.Any]) {
-		var st protopkg.LifecycleStatus
-		if err := eventbus.UnmarshalAnyPayload(e, &st); err != nil {
-			return
-		}
-		if st.GetAgentId() != agentID {
-			return
-		}
-		select {
-		case statusCh <- &st:
-		default:
-		}
-	})
-
-	isTerminal := func(state string) bool {
-		s := strings.ToUpper(strings.TrimSpace(state))
-		switch s {
-		case "PENDING", "STARTING", "STOPPING", "RELOADING", "INITIALIZING", "":
-			return false
-		default:
-			return true
-		}
-	}
-
-	pendingTimer := time.NewTimer(pendingTimeout)
-	defer pendingTimer.Stop()
-
-	finalTimer := time.NewTimer(finalTimeout)
-	if !finalTimer.Stop() {
-		select {
-		case <-finalTimer.C:
-		default:
-		}
-	}
-	activeTimer := pendingTimer.C
-	seenPending := false
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-
-		case <-activeTimer:
-			if !seenPending {
-				return nil, fmt.Errorf("timeout waiting for PENDING")
-			}
-			return nil, fmt.Errorf("timeout waiting for terminal state")
-
-		case st := <-statusCh:
-			if isTerminal(st.GetState()) {
-				return st, nil
-			}
-			if !seenPending && st.GetState() == "PENDING" {
-				seenPending = true
-				if !pendingTimer.Stop() {
-					select {
-					case <-pendingTimer.C:
-					default:
-					}
-				}
-				finalTimer.Reset(finalTimeout)
-				activeTimer = finalTimer.C
-				continue
-			}
-		}
-	}
 }
 
 // GetLogs subscribes to the logs for a specific agent and returns a channel of log lines.

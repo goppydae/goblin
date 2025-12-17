@@ -99,6 +99,128 @@ func RegisterSchedulerHandlers(server *QUICRPCServer, rpc *SchedulerRPC) {
 		}
 		return json.Marshal(resp)
 	})
+
+	// RegisterGlobalAgent handler
+	server.RegisterHandler("SchedulerRPC.RegisterGlobalAgent", func(payload []byte) ([]byte, error) {
+		var spec goblinv1.AgentSpec
+		if err := proto.Unmarshal(payload, &spec); err != nil {
+			// Try JSON fallback if Proto fails (CLI sends JSON usually, but let's see)
+			// Actually, existing handlers use JSON unmarshal.
+			// Let's stick to JSON for consistency with other handlers in this file.
+			if jsonErr := json.Unmarshal(payload, &spec); jsonErr != nil {
+				return nil, fmt.Errorf("invalid request (json): %w", jsonErr)
+			}
+		}
+
+		var resp string
+		if err := rpc.RegisterGlobalAgent(&spec, &resp); err != nil {
+			return nil, err
+		}
+		return json.Marshal(resp)
+	})
+
+	// ListGlobalAgents handler
+	server.RegisterHandler("SchedulerRPC.ListGlobalAgents", func(payload []byte) ([]byte, error) {
+		var req struct{}
+		// payload empty
+		var resp []*goblinv1.AgentSpec
+		if err := rpc.ListGlobalAgents(&req, &resp); err != nil {
+			return nil, err
+		}
+		return json.Marshal(resp)
+	})
+
+	// GetGlobalAgent handler
+	server.RegisterHandler("SchedulerRPC.GetGlobalAgent", func(payload []byte) ([]byte, error) {
+		var agentID string
+		if err := json.Unmarshal(payload, &agentID); err != nil {
+			return nil, fmt.Errorf("invalid request: %w", err)
+		}
+		var resp goblinv1.AgentSpec
+		if err := rpc.GetGlobalAgent(&agentID, &resp); err != nil {
+			return nil, err
+		}
+		return json.Marshal(&resp)
+	})
+
+	// ScaleAgent handler
+	server.RegisterHandler("SchedulerRPC.ScaleAgent", func(payload []byte) ([]byte, error) {
+		var req ScaleAgentRequest
+		if err := json.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("invalid request: %w", err)
+		}
+		var resp string
+		if err := rpc.ScaleAgent(&req, &resp); err != nil {
+			return nil, err
+		}
+		return json.Marshal(resp)
+	})
+
+	// DeleteGlobalAgent handler
+	server.RegisterHandler("SchedulerRPC.DeleteGlobalAgent", func(payload []byte) ([]byte, error) {
+		var agentID string
+		if err := json.Unmarshal(payload, &agentID); err != nil {
+			return nil, fmt.Errorf("invalid request: %w", err)
+		}
+		var resp string
+		if err := rpc.DeleteGlobalAgent(&agentID, &resp); err != nil {
+			return nil, err
+		}
+		return json.Marshal(resp)
+	})
+
+	// PublishEvent handler
+	server.RegisterHandler("SchedulerRPC.PublishEvent", func(payload []byte) ([]byte, error) {
+		var req PublishRequest
+		if err := json.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("invalid request: %w", err)
+		}
+		var resp string
+		if err := rpc.PublishEvent(&req, &resp); err != nil {
+			return nil, err
+		}
+		return json.Marshal(resp)
+	})
+
+	// ListLocalAgents handler
+	server.RegisterHandler("SchedulerRPC.ListLocalAgents", func(payload []byte) ([]byte, error) {
+		var req struct{}
+		if err := json.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("invalid request: %w", err)
+		}
+		var resp []LocalAgentInfo
+		if err := rpc.ListLocalAgents(&req, &resp); err != nil {
+			return nil, err
+		}
+		return json.Marshal(resp)
+	})
+}
+
+// RegisterNodeHandlers registers node RPC methods
+func RegisterNodeHandlers(server *QUICRPCServer, rpc *NodeRPC) {
+	server.RegisterHandler("NodeRPC.StartAgentInstance", func(payload []byte) ([]byte, error) {
+		var req StartAgentRequest
+		if err := json.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("invalid request: %w", err)
+		}
+		var resp string
+		if err := rpc.StartAgentInstance(&req, &resp); err != nil {
+			return nil, err
+		}
+		return json.Marshal(resp)
+	})
+
+	server.RegisterHandler("NodeRPC.StopAgentInstance", func(payload []byte) ([]byte, error) {
+		var req StopAgentRequest
+		if err := json.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("invalid request: %w", err)
+		}
+		var resp string
+		if err := rpc.StopAgentInstance(&req, &resp); err != nil {
+			return nil, err
+		}
+		return json.Marshal(resp)
+	})
 }
 
 // Unused function removed - client-side logic will go in CLI

@@ -3,10 +3,13 @@ package cli
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
+	"github.com/goppydae/gapi/core/transport"
 	"github.com/goppydae/gapi/core/tui"
 	"github.com/goppydae/goblin/internal/supervisor"
+	goblinv1 "github.com/goppydae/goblin/proto"
 )
 
 // UnifiedController provides a unified view of cluster and local state
@@ -28,7 +31,7 @@ func (u *UnifiedController) FetchStatus(ctx context.Context) ([]tui.AgentStatus,
 	var statuses []tui.AgentStatus
 
 	// Connect to QUIC RPC
-	client, err := NewQUICRPCClient(u.rpcAddr)
+	client, err := NewQUICRPCClient(u.rpcAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to QUIC RPC: %w", err)
 	}
@@ -67,8 +70,54 @@ func (u *UnifiedController) FetchStatus(ctx context.Context) ([]tui.AgentStatus,
 		})
 	}
 
-	// TODO: Section 3: Local agents via GAPI (not yet implemented)
-	// This can be done by mounting GAPI CLI commands or creating a local controller
+	// Section 3: Local GAPI Agents (via embedded core)
+	var localAgents []supervisor.LocalAgentInfo
+	if err := client.Call("SchedulerRPC.ListLocalAgents", struct{}{}, &localAgents); err != nil {
+		// Log warning but continue - local agents may not be enabled
+		log.Printf("Warning: Could not fetch local agents: %v", err)
+	} else {
+		for _, agent := range localAgents {
+			statuses = append(statuses, tui.AgentStatus{
+				ID:    agent.ID,
+				Type:  agent.Type,
+				State: agent.State,
+			})
+		}
+	}
+
+	// Section 2.5: Global Agents (Specs)
+	var globalSpecs []*goblinv1.AgentSpec
+	if err := client.Call("SchedulerRPC.ListGlobalAgents", struct{}{}, &globalSpecs); err != nil {
+		log.Printf("[Warning] Failed to list global agents: %v", err)
+	} else {
+		for _, spec := range globalSpecs {
+			// Format state to show replicas
+			// We don't have real-time health of spec here easily without aggregating instances,
+			// so just show "Registered" or similar, maybe with Replicas count.
+			state := fmt.Sprintf("REPLICAS:%d", spec.Replicas)
+
+			// Columns mapping:
+			// ID -> spec.Id
+			// Type -> "global-spec" (Special type for filter)
+			// CPU -> resources
+			// Memory -> resources
+
+			cpu := "0"
+			mem := "0"
+			if spec.Resources != nil {
+				cpu = fmt.Sprintf("%.1f", spec.Resources.Cpu)
+				mem = fmt.Sprintf("%d", spec.Resources.Memory)
+			}
+
+			statuses = append(statuses, tui.AgentStatus{
+				ID:     spec.Id,
+				Type:   "global-spec",
+				State:  state,
+				CPU:    cpu,
+				Memory: mem,
+			})
+		}
+	}
 
 	return statuses, nil
 }
@@ -86,7 +135,7 @@ func (u *UnifiedController) GetLogs(ctx context.Context, id string) (<-chan stri
 	go func() {
 		defer close(ch)
 
-		client, err := NewQUICRPCClient(u.rpcAddr)
+		client, err := NewQUICRPCClient(u.rpcAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
 		if err != nil {
 			ch <- fmt.Sprintf("[ERROR] Failed to connect to QUIC RPC: %v", err)
 			return

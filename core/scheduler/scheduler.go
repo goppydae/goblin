@@ -9,28 +9,56 @@ import (
 	"strings"
 	"time"
 
-	"github.com/goppydae/goblin/core/cluster"
 	"github.com/goppydae/goblin/core/eventbus"
-	"github.com/goppydae/goblin/core/store"
 	"github.com/hashicorp/serf/serf"
 )
 
-type Scheduler struct {
-	store   *store.Store
-	cluster *cluster.Membership
-	bus     eventbus.EventBus
+// RPCClient defines a generic RPC client
+type RPCClient interface {
+	Call(serviceMethod string, args interface{}, reply interface{}) error
+	Close() error
 }
 
-func NewScheduler(s *store.Store, c *cluster.Membership, b eventbus.EventBus) *Scheduler {
-	return &Scheduler{
-		store:   s,
-		cluster: c,
-		bus:     b,
+// ClientFactory creates an RPC client for a given address
+type ClientFactory func(addr string) (RPCClient, error)
+
+// KVStore defines the interface for key-value storage operations
+type KVStore interface {
+	Set(ctx context.Context, namespace, key string, value []byte) error
+	Get(ctx context.Context, namespace, key string) ([]byte, bool, error)
+	Scan(ctx context.Context, namespace, prefix string) (map[string][]byte, error)
+	Delete(ctx context.Context, namespace, key string) error
+}
+
+// Cluster defines the interface for cluster membership operations
+type Cluster interface {
+	Members() []serf.Member
+}
+
+type Scheduler struct {
+	store   KVStore
+	cluster Cluster
+	bus     eventbus.EventBus
+
+	clientFactory ClientFactory
+
+	placement *PlacementEngine
+}
+
+// NewScheduler creates a new Scheduler instance
+func NewScheduler(store KVStore, c Cluster, bus eventbus.EventBus, clientFactory ClientFactory) *Scheduler {
+	s := &Scheduler{
+		store:         store,
+		cluster:       c,
+		bus:           bus,
+		clientFactory: clientFactory,
 	}
+	s.placement = NewPlacementEngine()
+	return s
 }
 
 // Store returns the underlying KV store
-func (s *Scheduler) Store() *store.Store {
+func (s *Scheduler) Store() KVStore {
 	return s.store
 }
 

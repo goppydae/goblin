@@ -56,12 +56,17 @@ type TimeoutConfig struct {
 	SupervisorShutdown string `mapstructure:"supervisorShutdown"`
 }
 
+type SupervisorConfig struct {
+	ProductionMode bool `mapstructure:"productionMode"`
+}
+
 type Config struct {
-	Transport TransportConfig `mapstructure:"transport"`
-	Security  SecurityConfig  `mapstructure:"security"`
-	Metrics   MetricsConfig   `mapstructure:"metrics"`
-	Logging   LoggingConfig   `mapstructure:"logging"`
-	Timeouts  TimeoutConfig   `mapstructure:"timeouts"`
+	Transport  TransportConfig  `mapstructure:"transport"`
+	Security   SecurityConfig   `mapstructure:"security"`
+	Metrics    MetricsConfig    `mapstructure:"metrics"`
+	Logging    LoggingConfig    `mapstructure:"logging"`
+	Timeouts   TimeoutConfig    `mapstructure:"timeouts"`
+	Supervisor SupervisorConfig `mapstructure:"supervisor"`
 }
 
 func Load() (*Config, error) {

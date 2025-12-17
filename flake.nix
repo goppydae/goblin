@@ -111,6 +111,8 @@
             protoc-gen-go-grpc
             # Documentation
             pandoc
+            python3
+            python3Packages.protobuf
             python3Packages.mkdocs
             python3Packages.mkdocs-material
           ];

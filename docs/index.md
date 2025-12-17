@@ -8,6 +8,6 @@
 - **Consensus**: Raft-based leader election.
 - **Distributed Events**: Unified event bus across the cluster.
 
-## Getting Started
-
-See the [Usage Guide](usage.md) to start a cluster.
+See the following guides:
+- [Usage Guide](usage.md) - Start a cluster
+- [CLI Reference](cli.md) - TUI and commands

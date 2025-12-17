@@ -1,6 +1,36 @@
 # Goblin Architecture
 
-Goblin transforms GAPI into a distributed system. It layers clustering capabilities on top of the local GAPI supervisor.
+Goblin is the **distributed supervisor** within the GoPPydae ecosystem. It provides cluster coordination, global scheduling, and multi-node resilience on top of GAPI's local supervision capabilities.
+
+## Design Philosophy
+
+**Goblin = GAPI + Clustering**
+
+Goblin does not reinvent agent supervision. Instead, it:
+1. Imports GAPI core libraries (`gapi/core/*`) for local agent management
+2. Adds distributed primitives: consensus (Raft), membership (Serf), event bus
+3. Provides global scheduling with redundancy and failover
+
+## Relationship to GAPI
+
+```
+┌─────────────────────────────────┐
+│      Goblin Node (goblind)      │
+├─────────────────────────────────┤
+│  Cluster Components             │
+│  • Serf (membership/gossip)     │
+│  • Raft (consensus/leader)      │
+│  • Distributed Event Bus        │
+│  • Global Scheduler             │
+├─────────────────────────────────┤
+│  GAPI Core (imported libs)      │
+│  • agentmgr  • lifecycle        │  ← From gapi/core/*
+├─────────────────────────────────┤
+│  Local Agents (ADK)             │
+└─────────────────────────────────┘
+```
+
+**Key Insight**: Each Goblin node uses GAPI's agent manager **in-process**. No separate GAPI daemon needed.
 
 ## Core Components
 
@@ -78,29 +108,61 @@ The `DistributedEventBus` wraps the local GAPI `EventBus` and routes messages ba
 ```mermaid
 graph TD
     subgraph Node A [Leader]
-        GAPI_A[GAPI Supervisor]
+        GAPI_A[GAPI Core Libs]
+        AgentMgr_A[Agent Manager]
         EB_A[Event Bus]
         Serf_A[Serf Agent]
         Raft_A[Raft Leader]
         FSM_A[FSM]
+        Sched_A[Scheduler]
         
-        GAPI_A --> EB_A
+        GAPI_A --> AgentMgr_A
+        AgentMgr_A --> EB_A
         EB_A -- "Cluster Event" --> Serf_A
         EB_A -- "Leader Event" --> Raft_A
         Raft_A --> FSM_A
         Serf_A --> EB_A
+        Sched_A --> AgentMgr_A
     end
 
     subgraph Node B [Follower]
-        GAPI_B[GAPI Supervisor]
+        GAPI_B[GAPI Core Libs]
+        AgentMgr_B[Agent Manager]
         EB_B[Event Bus]
         Serf_B[Serf Agent]
         Raft_B[Raft Follower]
         FSM_B[FSM]
         
+        GAPI_B --> AgentMgr_B
+        AgentMgr_B --> EB_B
         Serf_A <.. Gossip ..> Serf_B
         Raft_A == "AppendEntries" ==> Raft_B
         Raft_B --> FSM_B
         Serf_B --> EB_B
     end
 ```
+
+## Transport Architecture
+
+**Single QUIC Port (29000) with ALPN Multiplexing:**
+
+```
+QUIC Listener :29000
+├─ ALPN: "goblin-rpc"
+│  └─ Goblin RPC (SchedulerRPC, cluster ops)
+│
+└─ ALPN: "gapi-quic"
+   └─ GAPI Events (agent lifecycle, logs)
+```
+
+**Why Single Port:**
+- Simplifies firewall rules
+- Unified TLS certificate management
+- Stream multiplexing over one connection
+- ALPN provides protocol routing
+
+**Local Agent Communication:**
+- GAPI core runs **in-process** (no network needed)
+- Agent → GAPI core: Direct function calls
+- GAPI core → Scheduler: Event bus (memory)
+

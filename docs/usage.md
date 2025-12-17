@@ -12,7 +12,7 @@ This guide covers how to run Goblin in various configurations.
 Start a single node with default settings:
 
 ```bash
-# Uses hostname as ID, listening on 127.0.0.1:7946 (Serf) and :8300 (Raft)
+# Uses hostname as ID, listening on 127.0.0.1:29010 (Serf) and :29020 (Raft)
 ./bin/goblind
 ```
 
@@ -26,8 +26,8 @@ Starts the first node.
 ```bash
 ./bin/goblind \
   --id node1 \
-  --serf-port 7946 \
-  --raft-addr 127.0.0.1:8300 \
+  --serf-addr 127.0.0.1:29010 \
+  --raft-addr 127.0.0.1:29020 \
   --data ./data/node1
 ```
 
@@ -37,10 +37,10 @@ Joins Node 1.
 ```bash
 ./bin/goblind \
   --id node2 \
-  --serf-port 7947 \
-  --raft-addr 127.0.0.1:8301 \
+  --serf-addr 127.0.0.1:29011 \
+  --raft-addr 127.0.0.1:29021 \
   --data ./data/node2 \
-  --join 127.0.0.1:7946
+  --join 127.0.0.1:29010
 ```
 
 ### Node 3
@@ -49,10 +49,10 @@ Joins cluster via Node 1.
 ```bash
 ./bin/goblind \
   --id node3 \
-  --serf-port 7948 \
-  --raft-addr 127.0.0.1:8302 \
+  --serf-addr 127.0.0.1:29012 \
+  --raft-addr 127.0.0.1:29022 \
   --data ./data/node3 \
-  --join 127.0.0.1:7946
+  --join 127.0.0.1:29010
 ```
 
 ## Command Line Reference
@@ -60,11 +60,13 @@ Joins cluster via Node 1.
 | Flag | Default | Description |
 |---|---|---|
 | `--id` | `hostname` | Unique identifier for the node. Must be stable across restarts. |
-| `--serf-addr` | `127.0.0.1` | Bind address for Serf gossip. |
-| `--serf-port` | `7946` | Bind port for Serf gossip (UDP/TCP). |
-| `--raft-addr` | `127.0.0.1:8300`| Bind address for Raft consensus (TCP). |
+| `--serf-addr` | `127.0.0.1:29010` | Bind address for Serf gossip (host:port, UDP/TCP). |
+| `--raft-addr` | `127.0.0.1:29020`| Bind address for Raft consensus (host:port, QUIC). |
+| `--api-addr` | `127.0.0.1:29000`| Bind address for QUIC API (host:port, UDP). |
+| `--tls-ca` | `""` | Path to CA certificate for API TLS verification. |
+| `--tls-insecure` | `false` | Skip API TLS verification (INSECURE). |
 | `--data` | `./data/raft` | Directory to store Raft logs and snapshots. |
-| `--join` | `""` | Address of an existing cluster member to join (e.g., `192.168.1.10:7946`). |
+| `--join` | `""` | Address of an existing cluster member to join (e.g., `192.168.1.10:29010`). |
 
 ## Monitoring
 
@@ -73,5 +75,7 @@ The distributed event bus will log `[cluster]` events.
 
 To check local status:
 ```bash
-./bin/goblinctl status
+./bin/goblinctl status --tls-insecure
 ```
+
+> **Note**: Default `goblind` uses self-signed certs. Use `--tls-insecure` locally. For production, provide a CA via `--tls-ca`.

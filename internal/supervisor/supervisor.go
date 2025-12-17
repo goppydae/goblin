@@ -24,7 +24,11 @@ import (
 	"github.com/hashicorp/serf/serf"
 	"github.com/quic-go/quic-go"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 
+	gapiagentmgr "github.com/goppydae/gapi/core/agentmgr"
+	gapieventbus "github.com/goppydae/gapi/core/eventbus"
+	gapilifecycle "github.com/goppydae/gapi/core/lifecycle"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
 	"github.com/goppydae/goblin/core/cluster"
 	"github.com/goppydae/goblin/core/consensus"
@@ -32,6 +36,7 @@ import (
 	"github.com/goppydae/goblin/core/metrics"
 	"github.com/goppydae/goblin/core/scheduler"
 	"github.com/goppydae/goblin/core/store"
+	"github.com/goppydae/goblin/core/transport"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -39,7 +44,6 @@ import (
 type Config struct {
 	NodeID        string
 	SerfAddr      string
-	SerfPort      int
 	AdvertiseAddr string
 	AdvertisePort int
 	RaftAddr      string
@@ -52,12 +56,12 @@ type Config struct {
 	KeyFile       string
 	CAFile        string
 	MetricsAddr   string
-	RuntimeAddr   string
 }
 
 // Supervisor manages the Goblin daemon components
 type Supervisor struct {
-	cfg Config
+	cfg      Config
+	agentMgr *gapiagentmgr.AgentManager // GAPI agent manager (optional)
 }
 
 // New creates a new Supervisor
@@ -122,8 +126,19 @@ func (s *Supervisor) Run(ctx context.Context) error {
 			fmt.Println("⚠️ TLS enabled but no CA provided - mTLS disabled")
 		}
 	} else {
-		// Default to insecure
-		fmt.Println("⚠️ Security warning: Encryption disabled")
+		// Default to insecure: Generate ephemeral cert for QUIC
+		// QUIC requires a certificate even if we don't verify it (TLS 1.3)
+		var err error
+		cert, err := generateDocsCert()
+		if err != nil {
+			return fmt.Errorf("failed to generate ephemeral TLS cert: %w", err)
+		}
+		tlsCfg = &tls.Config{
+			Certificates:       []tls.Certificate{cert},
+			InsecureSkipVerify: true,
+			NextProtos:         []string{"gapi-quic", "goblin-rpc", "serf-quic"},
+		}
+		fmt.Println("⚠️ Security warning: Encryption disabled (using ephemeral self-signed cert)")
 	}
 
 	// Create Serf membership
@@ -149,6 +164,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 
 	tags := map[string]string{
 		"raft_addr":   raftAddr,
+		"api_addr":    s.cfg.APIAddr, // Broadcast API address
 		"schema_hash": "v1-proto-hash",
 		"version":     "0.3.3",
 	}
@@ -172,13 +188,32 @@ func (s *Supervisor) Run(ctx context.Context) error {
 			fmt.Printf("ℹ️ Resolved advertise address '%s' to '%s'\n", s.cfg.AdvertiseAddr, advAddr)
 		}
 	}
-	membership, err := cluster.NewMembership(nodeID, s.cfg.SerfAddr, s.cfg.SerfPort, advAddr, s.cfg.AdvertisePort, tags, secretKey)
+	// Create QUIC Serf Transport
+	// Important: We use 0.0.0.0 or bind address.
+	serfHost, serfPortStr, err := net.SplitHostPort(s.cfg.SerfAddr)
 	if err != nil {
+		return fmt.Errorf("invalid serf address %q: %w", s.cfg.SerfAddr, err)
+	}
+	serfPort, err := strconv.Atoi(serfPortStr)
+	if err != nil {
+		return fmt.Errorf("invalid serf port: %w", err)
+	}
+
+	serfTransport, err := transport.NewQUICSerfTransport(s.cfg.SerfAddr, tlsCfg)
+	if err != nil {
+		return fmt.Errorf("failed to create QUIC serf transport: %w", err)
+	}
+
+	// ... (Wait, need to pass transport to NewMembership)
+
+	membership, err := cluster.NewMembership(nodeID, serfHost, serfPort, advAddr, s.cfg.AdvertisePort, tags, secretKey, serfTransport)
+	if err != nil {
+		serfTransport.Shutdown() // Cleanup on failure
 		return fmt.Errorf("failed to create membership: %w", err)
 	}
 	defer membership.Shutdown()
 
-	fmt.Printf("✅ Serf membership initialized (%s:%d)\n", s.cfg.SerfAddr, s.cfg.SerfPort)
+	fmt.Printf("✅ Serf membership initialized (%s) [QUIC]\n", s.cfg.SerfAddr)
 
 	// Join if requested
 	if s.cfg.JoinAddr != "" {
@@ -210,6 +245,19 @@ func (s *Supervisor) Run(ctx context.Context) error {
 				switch ev.EventType() {
 				case serf.EventMemberJoin:
 					topic = "cluster.node.joined"
+					// Auto-join Raft if Leader
+					if consensus.IsLeader() {
+						raftAddr, ok := member.Tags["raft_addr"]
+						if ok {
+							log.Printf("Cluster: Adding Raft voter %s at %s", member.Name, raftAddr)
+							// Run in goroutine to avoid blocking Serf handler
+							go func(name, addr string) {
+								if err := consensus.AddVoter(name, addr); err != nil {
+									log.Printf("Failed to add voter %s: %v", name, err)
+								}
+							}(member.Name, raftAddr)
+						}
+					}
 				case serf.EventMemberLeave:
 					topic = "cluster.node.left"
 				case serf.EventMemberFailed:
@@ -239,14 +287,60 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	fmt.Println("✅ Distributed KV Store initialized")
 
 	// Create Scheduler
-	sched := scheduler.NewScheduler(kvStore, membership, bus)
+	sched := scheduler.NewScheduler(kvStore, membership, bus, func(addr string) (scheduler.RPCClient, error) {
+		// Use the same QUIC client logic as CLI (but internal)
+		// We need to access tlsCfg here.
+		// Note: addr should be "host:port" of the QUIC listener (APIAddr)
+		// But s.getNodeAddress returns "host:port" from Serf.
+		// Serf port != API port usually?
+		// Goblin architecture: APIAddr is for RPC. Serf is for Gossip.
+		// We need to know the API Addr of the target node.
+		// Currently Serf tags don't explicitly broadcast API Addr?
+		// Wait, Config.APIAddr is local.
+		// We should add "api_addr" to Serf tags!
+		//
+		// For MVP, let's assume API Port is standard or same as Serf+offset?
+		// Or assume the address in Serf Member.Addr is usable if we use default API port?
+		//
+		// Let's use the address passed in.
+		return NewQUICRPCClient(addr, tlsCfg)
+	})
 	fmt.Println("✅ Scheduler initialized")
+
+	// Initialize local agent manager (always enabled)
+	var agentMgr *gapiagentmgr.AgentManager
+
+	// Create local event bus for GAPI (node-scoped, not distributed)
+	localBus := gapieventbus.NewInprocBus[*anypb.Any]()
+
+	// Create lifecycle event bus (aliased type)
+	lifecycleBus := (*gapilifecycle.TypedBus)(localBus)
+
+	// Initialize agent manager with standard Python runner
+	pyRunnerPath := os.Getenv("RUNTIME_PY_RUNNER")
+	if pyRunnerPath == "" {
+		pyRunnerPath = "/usr/local/bin/gapi-runner"
+	}
+	productionMode := false // TODO: Make configurable
+
+	agentMgr = gapiagentmgr.NewAgentManager(localBus, lifecycleBus, pyRunnerPath, productionMode)
+
+	// Discover agents using GAPI's standard search paths
+	discovered, err := agentMgr.DiscoverFromPaths()
+	if err != nil {
+		log.Printf("⚠️  Agent discovery warning: %v", err)
+	} else {
+		log.Printf("✅ Local agent manager initialized (%d agents discovered)", len(discovered))
+	}
+
+	s.agentMgr = agentMgr
 
 	// Register Scheduler RPC for CLI operations
 	schedulerRPC := &SchedulerRPC{
 		scheduler:  sched,
 		membership: membership,
 		consensus:  consensus,
+		agentMgr:   agentMgr, // Wire agent manager to RPC
 	}
 	fmt.Println("✅ Scheduler RPC created")
 
@@ -295,17 +389,36 @@ func (s *Supervisor) Run(ctx context.Context) error {
 
 	// Register all scheduler handlers
 	RegisterSchedulerHandlers(quicServer, schedulerRPC)
-	fmt.Println("✅ Scheduler RPC handlers registered")
 
-	// Generate TLS for QUIC
-	cert, err := generateDocsCert()
-	if err != nil {
-		return fmt.Errorf("failed to generate TLS cert: %w", err)
-	}
-	tlsConf := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		NextProtos:   []string{"gapi-quic", "goblin-rpc"}, // ALPNs for both protocols
-	}
+	// Register Node handlers
+	nodeRPC := &NodeRPC{agentMgr: agentMgr}
+	RegisterNodeHandlers(quicServer, nodeRPC)
+
+	fmt.Println("✅ Scheduler & Node RPC handlers registered")
+
+	// Prepare TLS for QUIC API
+	// tlsCfg is now guaranteed to be non-nil (loaded from file or generated ephemeral)
+	// We ensure API protocols are present.
+
+	// Ensure ALPN is set on the loaded config
+	// We create a clone to avoid concurrent modification issues if shared
+	cfgCopy := *tlsCfg
+
+	// Append API protocols if not present
+	// We just reset NextProtos to be safe, ensuring all are there including API ones.
+	// Actually, we should merge.
+	// But let's just ensure gapi-quic and goblin-rpc are there.
+	// Since we set "serf-quic" earlier for Serf, we should keep it or just ensure API ones are added?
+	// QUIC listener for API uses "gapi-quic" and "goblin-rpc".
+	// The shared tlsCfg might be used by Serf? Serf uses its own clone in NewQUICSerfTransport.
+	// So we can just set NextProtos for this specific listener.
+	cfgCopy.NextProtos = []string{"gapi-quic", "goblin-rpc"}
+
+	// API listener should NOT require client certificates (unlike likely Raft/Serf mTLS in secure mode)
+	// Unless we want mutual auth for API? Usually not for CLI.
+	cfgCopy.ClientAuth = tls.NoClientCert
+	cfgCopy.ClientCAs = nil
+	tlsCfg = &cfgCopy
 
 	// Start QUIC Server (Single Listener)
 	go func() {
@@ -315,7 +428,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 			KeepAlivePeriod: 10 * time.Second,
 		}
 
-		listener, err := quic.ListenAddr(s.cfg.APIAddr, tlsConf, quicConfig)
+		listener, err := quic.ListenAddr(s.cfg.APIAddr, tlsCfg, quicConfig)
 		if err != nil {
 			log.Fatalf("QUIC listen failed: %v", err)
 		}
@@ -579,7 +692,27 @@ func generateDocsCert() (tls.Certificate, error) {
 	if err != nil {
 		return tls.Certificate{}, err
 	}
-	template := x509.Certificate{SerialNumber: big.NewInt(1)}
+
+	// Valid for 1 year
+	notBefore := time.Now().Add(-1 * time.Minute)
+	notAfter := time.Now().Add(365 * 24 * time.Hour)
+
+	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+
+	template := x509.Certificate{
+		SerialNumber: serialNumber,
+		NotBefore:    notBefore,
+		NotAfter:     notAfter,
+		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("0.0.0.0")},
+		DNSNames:     []string{"localhost", "node-1", "node-2", "node-3", "node-4", "node-5", "controller"},
+	}
+
 	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
 	if err != nil {
 		return tls.Certificate{}, err

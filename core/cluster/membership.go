@@ -5,6 +5,7 @@ import (
 	"log"
 	"sync"
 
+	"github.com/hashicorp/memberlist"
 	"github.com/hashicorp/serf/serf"
 )
 
@@ -20,7 +21,7 @@ type Membership struct {
 }
 
 // NewMembership creates a new Serf-based membership manager
-func NewMembership(nodeID, bindAddr string, bindPort int, advertiseAddr string, advertisePort int, tags map[string]string, secretKey []byte) (*Membership, error) {
+func NewMembership(nodeID, bindAddr string, bindPort int, advertiseAddr string, advertisePort int, tags map[string]string, secretKey []byte, transport memberlist.Transport) (*Membership, error) {
 	eventCh := make(chan serf.Event, 256)
 
 	config := serf.DefaultConfig()
@@ -30,6 +31,7 @@ func NewMembership(nodeID, bindAddr string, bindPort int, advertiseAddr string, 
 	config.MemberlistConfig.AdvertiseAddr = advertiseAddr
 	config.MemberlistConfig.AdvertisePort = advertisePort
 	config.MemberlistConfig.SecretKey = secretKey
+	config.MemberlistConfig.Transport = transport // Inject Custom Transport
 	config.EventCh = eventCh
 	config.Tags = tags
 

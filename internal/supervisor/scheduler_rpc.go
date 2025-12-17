@@ -11,8 +11,11 @@ import (
 	"sync"
 	"time"
 
+	gapiagentmgr "github.com/goppydae/gapi/core/agentmgr"
 	"github.com/goppydae/goblin/core/consensus"
 	"github.com/goppydae/goblin/core/scheduler"
+	goblinv1 "github.com/goppydae/goblin/proto"
+	"google.golang.org/protobuf/proto"
 )
 
 // LogEvent represents a single event in the history
@@ -27,6 +30,7 @@ type SchedulerRPC struct {
 	scheduler  *scheduler.Scheduler
 	membership interface{} // cluster.Membership
 	consensus  *consensus.Consensus
+	agentMgr   *gapiagentmgr.AgentManager // GAPI agent manager (optional)
 
 	eventsMu  sync.RWMutex
 	events    []LogEvent
@@ -245,6 +249,146 @@ func (s *SchedulerRPC) Members(req *struct{}, resp *[]MemberInfo) error {
 				}
 			}
 		}
+	}
+
+	return nil
+}
+
+// PublishRequest defines the payload for publishing events
+type PublishRequest struct {
+	Topic   string
+	Payload []byte // JSON payload
+}
+
+// PublishEvent publishes an event to the cluster via the EventBus
+func (s *SchedulerRPC) PublishEvent(req *PublishRequest, resp *string) error {
+	// Forward to membership (Serf) UserEvent for now, or preferably use the EventBus directly
+	// The EventBus wraps Serf, so we should publish "user" type events.
+	// However, SchedulerRPC has access to s.membership (interface{}) and s.consensus.
+	// It doesn't hold the 'bus' explicitly in the struct definition in supervisor.go,
+	// but supervisor.go initializes it with `membership`.
+	// Wait, `membership` in SchedulerRPC is `interface{}` to avoid cycles.
+	// To use UserEvent, we need to cast it or add UserEvent to the interface.
+
+	// Let's check if we can cast to an interface with UserEvent
+	type eventPublisher interface {
+		UserEvent(name string, payload []byte) error
+	}
+
+	if publisher, ok := s.membership.(eventPublisher); ok {
+		// Topic needs to be namespaced for Serf if we are mimicking `goblinctl publish`
+		// which usually sends user events.
+		// The CLI previously did: client.UserEvent(topic, payload, false)
+		if err := publisher.UserEvent(req.Topic, req.Payload); err != nil {
+			*resp = fmt.Sprintf("failed to publish: %v", err)
+			return err
+		}
+		*resp = fmt.Sprintf("event '%s' published", req.Topic)
+		return nil
+	}
+
+	*resp = "membership does not support UserEvent"
+	return fmt.Errorf("membership implementation does not support UserEvent")
+}
+
+// LocalAgentInfo represents a local GAPI agent
+type LocalAgentInfo struct {
+	ID       string
+	Type     string
+	State    string
+	Language string
+	Uptime   int64 // nanoseconds
+}
+
+// Global Agent RPC Methods
+
+// RegisterGlobalAgent registers a new global agent
+func (s *SchedulerRPC) RegisterGlobalAgent(spec *goblinv1.AgentSpec, resp *string) error {
+	if err := s.scheduler.RegisterAgent(context.Background(), spec); err != nil {
+		*resp = fmt.Sprintf("failed: %v", err)
+		return err
+	}
+	*resp = fmt.Sprintf("agent %s registered successfully", spec.Id)
+	return nil
+}
+
+// ListGlobalAgents returns all global agents
+func (s *SchedulerRPC) ListGlobalAgents(req *struct{}, resp *[]*goblinv1.AgentSpec) error {
+	specs, err := s.scheduler.ListAgents(context.Background())
+	if err != nil {
+		return err
+	}
+	*resp = specs
+	return nil
+}
+
+// GetGlobalAgent returns a specific global agent by ID
+func (s *SchedulerRPC) GetGlobalAgent(agentID *string, resp *goblinv1.AgentSpec) error {
+	spec, err := s.scheduler.GetAgent(context.Background(), *agentID)
+	if err != nil {
+		return err
+	}
+	proto.Merge(resp, spec)
+	return nil
+}
+
+// ScaleAgentRequest defines the payload for scaling an agent
+type ScaleAgentRequest struct {
+	AgentID  string
+	Replicas int32
+}
+
+// ScaleAgent updates the replica count for an agent
+func (s *SchedulerRPC) ScaleAgent(req *ScaleAgentRequest, resp *string) error {
+	// 1. Get existing spec
+	spec, err := s.scheduler.GetAgent(context.Background(), req.AgentID)
+	if err != nil {
+		return fmt.Errorf("failed to get agent: %w", err)
+	}
+
+	// 2. Update replicas
+	spec.Replicas = req.Replicas
+
+	// 3. Update spec (Register overwrites)
+	if err := s.scheduler.RegisterAgent(context.Background(), spec); err != nil {
+		return fmt.Errorf("failed to update agent: %w", err)
+	}
+
+	*resp = fmt.Sprintf("agent %s scaled to %d replicas", req.AgentID, req.Replicas)
+	return nil
+}
+
+// DeleteGlobalAgent removes a global agent
+func (s *SchedulerRPC) DeleteGlobalAgent(agentID *string, resp *string) error {
+	if err := s.scheduler.DeleteAgent(context.Background(), *agentID); err != nil {
+		*resp = fmt.Sprintf("failed: %v", err)
+		return err
+	}
+	*resp = fmt.Sprintf("agent %s deleted", *agentID)
+	return nil
+}
+
+// ListLocalAgents returns agents managed by the local GAPI agent manager
+func (s *SchedulerRPC) ListLocalAgents(req *struct{}, resp *[]LocalAgentInfo) error {
+	if s.agentMgr == nil {
+		// Local agents not enabled
+		*resp = []LocalAgentInfo{}
+		return nil
+	}
+
+	// Get all agents from GAPI agent manager
+	agents := s.agentMgr.All()
+
+	for _, agent := range agents {
+		info := LocalAgentInfo{
+			ID:       agent.ID(),
+			Type:     agent.Type(),
+			Language: agent.Lang(),
+			State:    agent.Controller().State(),
+			Uptime:   int64(agent.(interface{ Uptime() time.Duration }).Uptime()),
+		}
+
+		*resp = append(*resp, info)
 	}
 
 	return nil

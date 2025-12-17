@@ -13,20 +13,19 @@ import (
 )
 
 var (
-	nodeID            string
-	serfAddr          string
-	serfPort          int
+	nodeID   string
+	serfAddr string
+	// serfPort          int - Removed, now part of serfAddr
 	serfAdvertiseAddr string
 	serfAdvertisePort int
 	raftAddr          string
 	raftDir           string
 	joinAddr          string
 	apiAddr           string
-	runtimeAddr       string
 	encryptionKey     string
-	certFile          string
-	keyFile           string
-	caFile            string
+	tlsCertFile       string
+	tlsKeyFile        string
+	tlsCAFile         string
 	metricsAddr       string
 )
 
@@ -48,7 +47,6 @@ var rootCmd = &cobra.Command{
 		cfg := supervisor.Config{
 			NodeID:        nodeID,
 			SerfAddr:      serfAddr,
-			SerfPort:      serfPort,
 			AdvertiseAddr: serfAdvertiseAddr,
 			AdvertisePort: serfAdvertisePort,
 			RaftAddr:      raftAddr,
@@ -57,11 +55,10 @@ var rootCmd = &cobra.Command{
 			APIAddr:       apiAddr,
 			Tags:          tags,
 			EncryptionKey: encryptionKey,
-			CertFile:      certFile,
-			KeyFile:       keyFile,
-			CAFile:        caFile,
+			CertFile:      tlsCertFile,
+			KeyFile:       tlsKeyFile,
+			CAFile:        tlsCAFile,
 			MetricsAddr:   metricsAddr,
-			RuntimeAddr:   runtimeAddr,
 		}
 		return supervisor.New(cfg).Run(cmd.Context())
 	},
@@ -89,21 +86,20 @@ func getTotalMemory() uint64 {
 
 func init() {
 	rootCmd.Flags().StringVar(&nodeID, "id", "", "Unique Node ID (default: hostname)")
-	rootCmd.Flags().StringVar(&serfAddr, "serf-addr", "127.0.0.1", "Serf bind address")
-	rootCmd.Flags().IntVar(&serfPort, "serf-port", 9001, "Serf bind port")
+	rootCmd.Flags().StringVar(&serfAddr, "serf-addr", "127.0.0.1:29010", "Serf bind address (host:port)")
+	// --serf-port flag removed, now part of --serf-addr
 	rootCmd.Flags().StringVar(&serfAdvertiseAddr, "serf-advertise-addr", "", "Serf advertise address (if different from bind)")
 	rootCmd.Flags().IntVar(&serfAdvertisePort, "serf-advertise-port", 0, "Serf advertise port (if different from bind)")
-	rootCmd.Flags().StringVar(&raftAddr, "raft-addr", "127.0.0.1:9002", "Raft bind address (host:port)")
+	rootCmd.Flags().StringVar(&raftAddr, "raft-addr", "127.0.0.1:29020", "Raft bind address (host:port)")
 	rootCmd.Flags().StringVar(&raftDir, "data", "./data/raft", "Data directory for Raft log")
 	rootCmd.Flags().StringVar(&joinAddr, "join", "", "Join existing cluster peer (host:port)")
-	rootCmd.Flags().StringVar(&apiAddr, "api-addr", "127.0.0.1:9000", "API address")
-	rootCmd.Flags().StringVar(&runtimeAddr, "runtime-addr", "", "Embedded Runtime bind address (default: 127.0.0.1:4242)")
+	rootCmd.Flags().StringVar(&apiAddr, "api-addr", "127.0.0.1:29000", "API address")
 
 	// Security Flags
 	rootCmd.Flags().StringVar(&encryptionKey, "encrypt", "", "Base64 encoded 32-byte secret key for Serf encryption")
-	rootCmd.Flags().StringVar(&certFile, "cert", "", "Path to TLS certificate")
-	rootCmd.Flags().StringVar(&keyFile, "key", "", "Path to TLS private key")
-	rootCmd.Flags().StringVar(&caFile, "ca", "", "Path to CA certificate for mTLS")
+	rootCmd.Flags().StringVar(&tlsCertFile, "tls-cert", "", "Path to TLS certificate")
+	rootCmd.Flags().StringVar(&tlsKeyFile, "tls-key", "", "Path to TLS private key")
+	rootCmd.Flags().StringVar(&tlsCAFile, "tls-ca", "", "Path to CA certificate for mTLS")
 }
 
 func main() {

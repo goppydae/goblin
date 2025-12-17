@@ -65,3 +65,17 @@ Status    → State
 Port 9000 now speaks QUIC+TLS1.3+Protobuf. Unified with GAPI architecture. HTTP server removed entirely.
 
 **Stats**: 45+ tool calls, 130k tokens, 100% success rate (eventually).
+
+## Serf & Memberlist QUIC Migration (Dec 2024)
+
+### ALPN is Mandatory
+**Symptom**: `CRYPTO_ERROR 0x178 (remote): tls: no application protocol` when nodes try to join.
+**Cause**: `quic-go` strictly enforces ALPN negotiation. If `NextProtos` is empty or mismatched, the handshake fails immediately.
+**Fix**: Explicitly set `NextProtos: []string{"serf-quic"}` on both the Server listener and the Client dialer `tls.Config`. You cannot rely on default TLS configs or empty values.
+
+### Packet vs Stream Semantics
+**Challenge**: `memberlist.Transport` expects both `WriteTo` (UDP-ish) and `DialTimeout` (TCP-ish).
+**Solution**:
+- `WriteTo`: Check for cached active QUIC connection. If none, Dial (short timeout). Send `Datagram` (RFC 9221).
+- `DialTimeout`: Open a `Stream` on the QUIC connection.
+- **Trap**: Do not open a new connection for every "Packet". Memberlist gossips *a lot*. Connection caching is critical.

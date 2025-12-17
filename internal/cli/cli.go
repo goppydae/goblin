@@ -2,13 +2,12 @@ package cli
 
 import (
 	"fmt"
-	"net/rpc"
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/goppydae/gapi/core/transport"
 	"github.com/goppydae/gapi/core/tui"
 	gapicli "github.com/goppydae/gapi/pkg/cli"
 	"github.com/goppydae/goblin/internal/supervisor"
@@ -24,10 +23,14 @@ var RootCmd = &cobra.Command{
 var (
 	nodeID   string
 	serfAddr string
-	serfPort int
+	// serfPort int - Removed
 	raftAddr string
 	raftDir  string
 	joinAddr string
+	apiAddr  string
+
+	tlsCA       string
+	tlsInsecure bool
 
 	publishNamespace string
 	publishTags      []string
@@ -40,7 +43,6 @@ var startCmd = &cobra.Command{
 		cfg := supervisor.Config{
 			NodeID:   nodeID,
 			SerfAddr: serfAddr,
-			SerfPort: serfPort,
 			RaftAddr: raftAddr,
 			RaftDir:  raftDir,
 			JoinAddr: joinAddr,
@@ -54,9 +56,9 @@ var startCmd = &cobra.Command{
 
 func init() {
 	startCmd.Flags().StringVar(&nodeID, "id", "", "Unique Node ID (default: hostname)")
-	startCmd.Flags().StringVar(&serfAddr, "serf-addr", "127.0.0.1", "Serf bind address")
-	startCmd.Flags().IntVar(&serfPort, "serf-port", 9001, "Serf bind port")
-	startCmd.Flags().StringVar(&raftAddr, "raft-addr", "127.0.0.1:9002", "Raft bind address (host:port)")
+	startCmd.Flags().StringVar(&serfAddr, "serf-addr", "127.0.0.1:29010", "Serf bind address (host:port)")
+	// startCmd.Flags().IntVar(&serfPort, "serf-port", 29010, "Serf bind port") - Deprecated/Removed
+	startCmd.Flags().StringVar(&raftAddr, "raft-addr", "127.0.0.1:29020", "Raft bind address (host:port)")
 	startCmd.Flags().StringVar(&raftDir, "data", "./data/raft", "Data directory for Raft log")
 	startCmd.Flags().StringVar(&joinAddr, "join", "", "Join existing cluster peer (host:port)")
 
@@ -70,7 +72,9 @@ func init() {
 	jobCmd.AddCommand(migrateCmd)
 
 	// Global flags
-	RootCmd.PersistentFlags().StringVar(&apiAddr, "api-addr", "127.0.0.1:9000", "API address")
+	RootCmd.PersistentFlags().StringVar(&apiAddr, "api-addr", "127.0.0.1:29000", "API address")
+	RootCmd.PersistentFlags().StringVar(&tlsCA, "tls-ca", "", "Path to CA certificate for API TLS verification")
+	RootCmd.PersistentFlags().BoolVar(&tlsInsecure, "tls-insecure", false, "Skip API TLS verification (INSECURE)")
 
 	// Create agent subcommand for GAPI operations
 	agentCmd := &cobra.Command{
@@ -95,7 +99,7 @@ func init() {
 var runFile string
 
 var (
-	apiAddr string
+// apiAddr is now global
 )
 
 var runCmd = &cobra.Command{
@@ -116,7 +120,7 @@ var runCmd = &cobra.Command{
 		}
 
 		// Connect to QUIC RPC
-		client, err := NewQUICRPCClient(apiAddr)
+		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
 		if err != nil {
 			return fmt.Errorf("failed to connect to QUIC RPC at %s: %w", apiAddr, err)
 		}
@@ -146,7 +150,7 @@ var drainCmd = &cobra.Command{
 		nodeID := args[0]
 
 		// Connect to QUIC RPC
-		client, err := NewQUICRPCClient(apiAddr)
+		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
 		if err != nil {
 			return fmt.Errorf("failed to connect to QUIC RPC at %s: %w", apiAddr, err)
 		}
@@ -177,7 +181,7 @@ var migrateCmd = &cobra.Command{
 		}
 
 		// Connect to QUIC RPC
-		client, err := NewQUICRPCClient(apiAddr)
+		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
 		if err != nil {
 			return fmt.Errorf("failed to connect to QUIC RPC at %s: %w", apiAddr, err)
 		}
@@ -198,46 +202,35 @@ var migrateCmd = &cobra.Command{
 
 // ... quicRequest ...
 
-// TODO: statusCmd and publishCmd still use legacy OpCode protocol
-// These should be migrated to use Serf API or GAPI EventBus
-
-// publishCmd broadcasts events to cluster using Serf UserEvent API
 var publishCmd = &cobra.Command{
-	Use:   "publish <topic> [payload_json]",
-	Short: "Publish a distributed event via Serf",
-	Args:  cobra.MinimumNArgs(1),
+	Use:   "publish [event-name] [payload]",
+	Short: "Publish user event to cluster",
+	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		topic := args[0]
-		payload := []byte("{}")
-		if len(args) > 1 {
-			payload = []byte(args[1])
-		}
-
-		// Connect to Serf RPC
-		host := apiAddr
-		if idx := strings.LastIndex(apiAddr, ":"); idx > 0 {
-			host = apiAddr[:idx]
-		}
-		serfRPCAddr := fmt.Sprintf("%s:7373", host)
-
-		client, err := rpc.Dial("tcp", serfRPCAddr)
+		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
 		if err != nil {
-			return fmt.Errorf("failed to connect to Serf RPC at %s: %w", serfRPCAddr, err)
+			return err
 		}
 		defer client.Close()
 
-		// Send UserEvent
-		req := map[string]interface{}{
-			"Name":     topic,
-			"Payload":  payload,
-			"Coalesce": false,
+		topic := args[0]
+		payload := []byte(args[1])
+
+		// TODO: handle tags/namespace if we want to mimic Serf details precisely,
+		// but the new RPC method just takes topic and payload.
+		// Historically publishCmd used Serf directly.
+
+		// Call PublishEvent RPC
+		req := &supervisor.PublishRequest{
+			Topic:   topic,
+			Payload: payload,
 		}
-		var resp interface{}
-		if err := client.Call("Serf.UserEvent", req, &resp); err != nil {
-			return fmt.Errorf("failed to publish event: %w", err)
+		var resp string
+		if err := client.Call("SchedulerRPC.PublishEvent", req, &resp); err != nil {
+			return err
 		}
 
-		fmt.Printf("✅ Published event '%s' to cluster\n", topic)
+		fmt.Println(resp)
 		return nil
 	},
 }
@@ -245,12 +238,11 @@ var publishCmd = &cobra.Command{
 // statusCmd queries cluster status via Serf RPC
 var statusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show Goblin cluster status",
+	Short: "Show cluster status",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Connect to QUIC RPC (using apiAddr which defaults to 9000)
-		client, err := NewQUICRPCClient(apiAddr)
+		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
 		if err != nil {
-			return fmt.Errorf("failed to connect to QUIC RPC at %s: %w", apiAddr, err)
+			return err
 		}
 		defer client.Close()
 

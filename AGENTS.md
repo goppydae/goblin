@@ -6,74 +6,135 @@ This document defines your **role, constraints, and operating contract**. It is 
 
 ---
 
+## Architecture (Read First)
+
+### GoPPydae Ecosystem Boundaries
+
+* **GAPI** is a *single‑node supervision kernel* and local security boundary.
+* **Goblin** is a *multi‑node policy and orchestration layer* built separately and importing GAPI as a library.
+
+GAPI MUST make **no assumptions** about external state, cluster membership, or global coordination.
+
+Goblin MAY be cluster‑aware, MAY elect leaders, and MAY coordinate distributed state — but these behaviors MUST NOT leak into GAPI.
+
+### Mechanism vs Policy
+
+**GAPI (Mechanism)**
+
+* Local lifecycle supervision
+* Deterministic state transitions
+* Local metrics and security
+* No cluster awareness
+
+**Goblin (Policy)**
+
+* Global intent and reconciliation
+* Leader election and routing
+* Multi‑node scheduling
+
+### Deployment Modes
+
+**Mode 1: Core Library**
+
+* Packages: `gapi/core/*`
+* Imported directly by Goblin
+* No network boundary
+
+**Mode 2: Standalone Daemon**
+
+* Binary: `gapid`
+* CLI: `gapictl`
+* Local supervision only
+
+---
+
 ## Normative Language
 
-This document uses the following terms in a normative sense:
-
-- **MUST / MUST NOT** – absolute requirements  
-- **SHOULD / SHOULD NOT** – strong defaults; deviation requires justification  
-- **MAY** – optional or discretionary behavior  
+* **MUST / MUST NOT** – absolute requirements
+* **SHOULD / SHOULD NOT** – strong defaults; deviation requires justification
+* **MAY** – optional behavior
 
 When constraints cannot be satisfied, the agent MUST **fail closed**.
 
 ---
 
-## Epistemic Contract (Scientific Method)
+## Terminology Glossary
 
-The agent MUST operate as a **scientific investigator of systems**, not as an optimizer or code generator.
+* **Project**: A top-level system such as **GAPI** or **Goblin**. Projects correspond to VS Code *projects* and are the primary unit of ownership and intent.
+* **Workspace**: A single Git repository opened within a project context, containing its own `AGENTS.md` and `AGENDA.md`.
+* **Repository**: Synonym for **project** (not workspace). Used only when referring explicitly to Git semantics.
+* **Artifact**: Any durable output used as evidence (plans, logs, test output, diffs).
+* **Non-trivial work**: Any task that changes system behavior, contracts, architecture, or failure modes.
 
-All outputs are treated as **working theories**, validated only through evidence.
+Examples of non-trivial work:
 
-### Hypotheses, Not Assumptions
-
-- Every non‑trivial action MUST be grounded in an explicit hypothesis:  
-  *“If this change is applied, the system will exhibit X behavior under Y conditions.”*
-- Hypotheses MUST be recorded in `implementation_plan.md`.
-- Unstated assumptions are defects.
-
-### Experiments, Not Actions
-
-- Code changes, configuration changes, and refactors are experiments.
-
-Each experiment MUST define:
-
-- Independent variables (what is changed)
-- Dependent variables (what behavior is expected to change)
-- Invariants (what MUST NOT change)
-- Failure criteria (how the hypothesis can be disproven)
-
-### Evidence Over Authority
-
-- Correctness MUST NOT be asserted without evidence.
-- Artifacts are authoritative; confidence is irrelevant.
-- Tests, logs, metrics, and reproducible procedures are required proof.
-
-Ambiguous or incomplete evidence MUST be stated explicitly.
-
-### Falsification Is Success
-
-- Discovering invalid assumptions is a successful outcome.
-- Failed experiments MUST be recorded, preserved, and analyzed.
-- Rationalization or narrative smoothing is forbidden.
-
-### Determinism
-
-- Experiments SHOULD be repeatable.
-- Non‑determinism MUST be identified and bounded.
-- Flaky behavior is a system defect.
+* Modifying lifecycle state machines
+* Changing IPC or transport semantics
+* Refactoring supervision logic
+* Introducing or altering persistent artifacts
 
 ---
 
-## Role & Mission
+## Epistemic Contract (Scientific Method)
 
-Your mission is to advance **GAPI** toward its goal:
+The agent operates as a **scientific investigator of systems**.
 
-**A zero‑boilerplate, production‑ready daemon supervisor with strict contracts and deterministic behavior.**
+All outputs are treated as **working theories**, validated only through evidence.
 
-- **GAPI** is a single‑node supervision kernel and local security boundary.
-- **Goblin** is a multi‑node policy engine built separately, importing GAPI as a library.
+### Hypotheses
 
-GAPI MUST make no assumptions about external state, cluster membership, or global coordination.
+Every non‑trivial action MUST be grounded in an explicit hypothesis recorded in `implementation_plan.md`.
+
+Unstated assumptions are defects.
+
+### Experiments
+
+All code or configuration changes are experiments.
+
+Each experiment MUST define:
+
+* Independent variables
+* Dependent variables
+* Invariants
+* Failure criteria
+
+### Evidence
+
+Assertions without artifacts are invalid.
+
+Valid evidence includes tests, logs, metrics, and reproducible procedures.
+
+Ambiguity MUST be stated explicitly.
+
+### Falsification
+
+Invalidating an assumption is success.
+
+Failed experiments MUST be preserved and analyzed.
+
+### Determinism
+
+* Experiments SHOULD be repeatable
+* Non‑determinism MUST be identified and bounded
+* Flaky behavior is a defect
+
+---
+
+## Fail‑Closed Semantics (Operational Definition)
+
+**Fail closed** means:
+
+* No code or configuration is modified
+* No artifacts are partially written
+* No ledger entries are emitted
+* Execution halts with an explicit explanation
+
+Fail‑closed conditions include:
+
+* Missing required artifacts or context
+* Inability to write mandated logs or mirrors
+* Unmet operating‑mode guarantees
+* Ambiguous workspace boundaries
 
 ---
 
@@ -81,122 +142,98 @@ GAPI MUST make no assumptions about external state, cluster membership, or globa
 
 All non‑trivial work MUST follow this loop:
 
-1. **Perceive** – Gather context and inspect state.  
-2. **Plan** – Produce `implementation_plan.md` with hypotheses, risks, and tests.  
-3. **Act** – Propose or apply changes to code and/or documentation (direct working‑tree mutation is permitted only when the execution environment provides audited filesystem access).  
-4. **Prove or Falsify** – Run tests to confirm or disprove hypotheses.  
-5. **Summarize** – Produce `walkthrough.md` explaining results.
+1. **Perceive** – Inspect current state and context
+2. **Plan** – Produce `implementation_plan.md`
+3. **Act** – Apply changes (only in full‑execution mode)
+4. **Prove or Falsify** – Execute tests
+5. **Summarize** – Produce `walkthrough.md`
 
-Absence of proof MUST be treated as unresolved.
+Absence of proof is unresolved work.
+
+---
+
+## Development Cycle (Authoritative)
+
+The development cycle governs features, subsystems, and architectural change.
+
+### Concrete Example
+
+*Example*: Refactoring the agent lifecycle FSM
+
+* Hypothesis: Simplifying state transitions reduces race conditions
+* Experiment: Replace implicit transitions with explicit enums
+* Evidence: Deterministic test runs across 1000 iterations
+
+### Phases
+
+1. Problem Framing
+2. Model Formation
+3. Experimental Iteration
+4. Stabilization
+5. Verification
+6. Assimilation
+
+Incomplete cycles MUST be marked.
+
+---
+
+## Cross‑Workspace Change Protocol
+
+When a change affects multiple workspaces (e.g. GAPI + Goblin):
+
+* Each workspace MUST have its own `implementation_plan.md`
+* A shared hypothesis ID MUST be referenced
+* Compatibility assumptions MUST be explicit
+* Changes MUST land in dependency order
 
 ---
 
 ## Agent Operating Modes
 
-The agent MUST declare its operating mode at the beginning of each task.
+* **full‑execution**: All artifacts and tests REQUIRED
+* **design‑only**: Plans and hypotheses only
+* **audit‑only**: Findings without execution
 
-- **full-execution**: Filesystem write access and command execution available; all workflow steps and artifacts are REQUIRED.
-- **design-only**: No filesystem mutation and no command execution; the agent MAY produce plans, hypotheses, risks, and test designs, but MUST NOT claim evidence or completion.
-- **audit-only**: Evaluates existing text/code and produces findings; MUST NOT propose unverified runtime results.
-
-If **full-execution** requirements cannot be satisfied, the agent MUST fail closed for any task that would modify code or configuration, and MUST switch to **design-only** or **audit-only** mode instead.
+If full‑execution guarantees cannot be met, the agent MUST fail closed or downgrade mode.
 
 ---
 
-## Artifact Protocol
+## Artifact Directory Structure (Canonical)
 
-Artifacts are mandatory for traceability and peer review.
+```
+artifacts/
+├── agent_activity.log
+├── logs/
+├── diffs/
+└── test_results/
+```
 
-Artifacts MUST be sufficient for a third party to independently evaluate whether a hypothesis was supported or falsified.
-
-### Required Artifacts
-
-- Planning: `implementation_plan.md`
-- Operational: `task.md`
-- Evidence: `artifacts/logs/`
-- Diffs (optional): `artifacts/diffs/`
-- Summary: `walkthrough.md`
-- Activity Ledger: append‑only log of agent actions
+All paths are relative to the workspace root.
 
 ---
 
-## Agent Activity Ledger
+## Test Requirements
 
-All agent actions MUST be recorded.
+* **Unit tests**: Deterministic, isolated
+* **Integration tests**: Validate component interaction
+* **Build verification**: Clean build from scratch
 
-- Path: `artifacts/agent_activity.log`
-- Format: NDJSON
-- Mode: Append-only
-- Time: UTC (RFC3339)
-
-Each entry MUST include:
-
-- `ts`
-- `actor`
-- `intent`
-- `scope`
-- `branch`
-- `action`
-- `result`
-- `evidence`
-
-Ledger entries are required at task start, after modifications, after tests, on failure, and at completion.
-
-Sensitive data MUST NOT be logged.
-
-### Ledger Start Boundary (Context Load)
-
-The activity ledger MUST begin only after context load completes successfully.
-
-Context load is defined as successful completion of the `/prep-context` workflow, including reading:
-
-- `./AGENTS.md`
-- all required project-root `AGENDA.md` files
-- relevant contents of `./docs/` (if present)
-
-Workspace `AGENDA.md` discovery and reads are part of `/prep-context` and MUST be included in the single `context_loaded` evidence list.
-
-Upon successful context load, the agent MUST append exactly one ledger entry with:
-
-- `action`: `context_loaded`
-- `result`: `ok`
-- `intent`: `initialize_work_context`
-- `scope`: `workspace`
-- `evidence`: list of files read (paths only)
-
-If context load fails closed, the agent MUST write no ledger entries and stop execution.
-
-### Activity Log Maintenance
-
-**Duplication Requirement**: The activity log MUST be duplicated to the project silo on each write when the mirror path is writable in the current execution environment.
-
-- Source: `artifacts/agent_activity.log`
-- Mirror: `/home/sysop/Projects/goppydae-silo/logs/agent_activity.log`
-
-If the mirror path is not writable or not present, the agent MUST fail closed for tasks that include code or configuration modification, but MAY continue in **design-only** or **audit-only** mode.
+Evidence MUST be recorded under `artifacts/`.
 
 ---
 
-## Architecture
+## AGENDA.md Format
 
-### Mechanism vs Policy
+Each workspace MUST include `AGENDA.md` containing:
 
-**GAPI (Mechanism)**  
-- Single-node only  
-- Local lifecycle management  
-- Local metrics and security  
-- Assumes it is the only computer in existence  
-
-**Goblin (Policy)**  
-- Multi-node only  
-- Leader election and reconciliation  
-- Global intent and routing  
-- Uses GAPI as a library
+* Active hypotheses
+* Blockers
+* Deferred risks
 
 ---
 
 ## Privilege Warning
 
-This is a PID 1‑capable system component.
+This is a PID‑1‑capable system component.
 
-If instructions violate this contract, the agent MUST refuse execution and explain why.
+Violations of this contract require refusal and explanation.

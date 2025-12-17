@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package goblin.v1.proto;
+
+option go_package = "github.com/goppydae/goblin/proto;goblinv1";
+
+// AgentSpec defines the desired state of a global agent
+message AgentSpec {
+  string id = 1;
+  string type = 2; // e.g. "python-trader"
+  int32 replicas = 3;
+  map<string, string> constraints = 4; // Node tags requirements
+  ResourceReq resources = 5;
+  string strategy = 6; // "spread", "binpack", "affinity"
+}
+
+// ResourceReq defines resource requirements
+message ResourceReq {
+  double cpu = 1;
+  int64 memory = 2; // in bytes
+}
+
+// AgentInstance represents a scheduled instance of an agent
+message AgentInstance {
+  string instance_id = 1;
+  string spec_id = 2;
+  string node_id = 3;
+  string state = 4; // "pending", "running", "failed"
+  HealthStatus health = 5;
+}
+
+// HealthStatus
+message HealthStatus {
+  string status = 1; // "healthy", "degraded", "unhealthy"
+  string message = 2;
+  int64 failures = 3;
+}
+
+message RegisterAgentRequest {
+  AgentSpec spec = 1;
+}
+
+message RegisterAgentResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message ListAgentsRequest {}
+
+message ListAgentsResponse {
+  repeated AgentSpec agents = 1;
+}
+
+message GetAgentRequest {
+  string id = 1;
+}
+
+message GetAgentResponse {
+  AgentSpec spec = 1;
+}
