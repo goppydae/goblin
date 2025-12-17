@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -46,11 +47,21 @@ type LoggingConfig struct {
 	Loki   LokiOutputConfig `mapstructure:"loki"`
 }
 
+type TimeoutConfig struct {
+	QUICStream         string `mapstructure:"quicStream"`
+	QUICIdle           string `mapstructure:"quicIdle"`
+	ClientPending      string `mapstructure:"clientPending"`
+	ClientTerminal     string `mapstructure:"clientTerminal"`
+	SupervisorStart    string `mapstructure:"supervisorStart"`
+	SupervisorShutdown string `mapstructure:"supervisorShutdown"`
+}
+
 type Config struct {
 	Transport TransportConfig `mapstructure:"transport"`
 	Security  SecurityConfig  `mapstructure:"security"`
 	Metrics   MetricsConfig   `mapstructure:"metrics"`
 	Logging   LoggingConfig   `mapstructure:"logging"`
+	Timeouts  TimeoutConfig   `mapstructure:"timeouts"`
 }
 
 func Load() (*Config, error) {
@@ -82,6 +93,14 @@ func Load() (*Config, error) {
 	viper.SetDefault("logging.file.compress", true)
 	viper.SetDefault("logging.loki.enabled", false)
 
+	// Timeout defaults (string format for parsing)
+	viper.SetDefault("timeouts.quicStream", QUICStreamTimeout.String())
+	viper.SetDefault("timeouts.quicIdle", QUICIdleTimeout.String())
+	viper.SetDefault("timeouts.clientPending", ClientPendingTimeout.String())
+	viper.SetDefault("timeouts.clientTerminal", ClientTerminalTimeout.String())
+	viper.SetDefault("timeouts.supervisorStart", SupervisorStartDeadline.String())
+	viper.SetDefault("timeouts.supervisorShutdown", SupervisorShutdownTimeout.String())
+
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return nil, fmt.Errorf("read config error: %w", err)
@@ -94,5 +113,45 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("unmarshal error: %w", err)
 	}
 
+	// Update global timeouts from config
+	if err := updateTimeouts(cfg.Timeouts); err != nil {
+		return nil, fmt.Errorf("update timeouts error: %w", err)
+	}
+
 	return &cfg, nil
+}
+
+func updateTimeouts(t TimeoutConfig) error {
+	var err error
+	if v, e := time.ParseDuration(t.QUICStream); e == nil {
+		QUICStreamTimeout = v
+	} else {
+		err = e
+	}
+	if v, e := time.ParseDuration(t.QUICIdle); e == nil {
+		QUICIdleTimeout = v
+	} else {
+		err = e
+	}
+	if v, e := time.ParseDuration(t.ClientPending); e == nil {
+		ClientPendingTimeout = v
+	} else {
+		err = e
+	}
+	if v, e := time.ParseDuration(t.ClientTerminal); e == nil {
+		ClientTerminalTimeout = v
+	} else {
+		err = e
+	}
+	if v, e := time.ParseDuration(t.SupervisorStart); e == nil {
+		SupervisorStartDeadline = v
+	} else {
+		err = e
+	}
+	if v, e := time.ParseDuration(t.SupervisorShutdown); e == nil {
+		SupervisorShutdownTimeout = v
+	} else {
+		err = e
+	}
+	return err
 }

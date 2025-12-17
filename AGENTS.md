@@ -100,6 +100,7 @@ Artifacts MUST be sufficient for a third party to independently evaluate whether
 ### Required Artifacts
 
 - Planning: `implementation_plan.md`
+- Operational: `task.md`
 - Evidence: `artifacts/logs/`
 - Diffs (optional): `artifacts/diffs/`
 - Summary: `walkthrough.md`
@@ -130,6 +131,69 @@ Each entry MUST include:
 Ledger entries are required at task start, after modifications, after tests, on failure, and at completion.
 
 Sensitive data MUST NOT be logged.
+
+### Ledger Start Boundary (Context Load)
+
+The activity ledger MUST begin only after context load completes successfully.
+
+Context load is defined as successful completion of the `/prep-context` workflow,
+including reading:
+
+- `./AGENTS.md`
+- all required project-root `AGENDA.md` files (per Workspace Agenda Requirement)
+- relevant contents of `./docs/` (if present)
+
+Upon successful context load, the agent MUST append exactly one ledger entry with:
+
+- `action`: `context_loaded`
+- `result`: `ok`
+- `intent`: `initialize_work_context`
+- `scope`: workspace
+- `evidence`: list of files read (paths only; no content)
+
+The `/prep-context` workflow steps themselves MUST NOT be logged individually.
+
+If context load fails closed, the agent MUST:
+
+- write no ledger entries
+- stop execution and report the failure
+
+### Activity Log Maintenance
+
+**Duplication Requirement**: The activity log MUST be duplicated to the project silo on each write.
+
+- Source: `artifacts/agent_activity.log` (conversation-specific)
+- Mirror: `/home/sysop/Projects/goppydae-silo/logs/agent_activity.log`
+
+On each append to the activity log, the agent MUST also append the same entry to the silo mirror.
+
+This ensures activity logs persist beyond individual conversation sessions and provides a centralized audit trail.
+
+### Calculating Elapsed Time
+
+To calculate actual time spent on a task:
+
+1. Parse the `ts` field from each NDJSON entry (RFC3339 format, UTC)
+2. Compute delta between first and last timestamp
+3. Report elapsed time honestly
+
+**Example**:
+
+```python
+from datetime import datetime
+import json
+
+with open('artifacts/agent_activity.log') as f:
+    lines = [json.loads(line) for line in f if line.strip()]
+
+start = datetime.fromisoformat(lines[0]['ts'].replace('Z', '+00:00'))
+end = datetime.fromisoformat(lines[-1]['ts'].replace('Z', '+00:00'))
+elapsed_minutes = (end - start).total_seconds() / 60
+
+print(f"Actual time: {elapsed_minutes:.1f} minutes")
+```
+
+Estimates are helpful for planning, but **actual time must be calculated from timestamps**, not estimated retroactively.
 
 ---
 
@@ -183,7 +247,43 @@ Each agent MUST report:
 - Contexts required
 - Tests required
 - Ledger entries mandatory
-- Use `nix develop`
+
+### Development Environment
+
+**REQUIRED**: All commands MUST be executed within the Nix development shell.
+
+```bash
+nix develop
+```
+
+The Nix environment provides:
+
+- Correct compiler toolchains (gcc, go, python3)
+- Project dependencies
+- Consistent build environment across systems
+
+**Before running ANY build, test, or compilation command**, ensure you are in the `nix develop` shell. Commands run outside this environment will fail or produce incorrect results.
+
+**Example**:
+
+```bash
+# Correct
+nix develop -c mage test
+
+# Also correct (interactive)
+nix develop
+# (inside nix shell) mage test
+```
+
+### Standard Build Targets
+
+Use `mage` for all standard operations:
+
+- `mage build` : Build binaries
+- `mage test`  : Run tests
+- `mage lint`  : Run linters
+- `mage clean` : Remove artifacts
+- `mage proto` : Generate protobuf code
 
 ## Workspace Agenda Requirement
 
@@ -219,6 +319,16 @@ If `AGENDA.md` conflicts with other guidance, the agent MUST:
   with an auditable instruction.
 
 Always consult all project-root `AGENDA.md` files in the workspace before starting work.
+
+### Updates
+
+When a task listed in an `AGENDA.md` is successfully completed and verified:
+
+1. The agent SHOULD mark the item as checked `[x]`.
+2. The agent SHOULD update the status/notes if applicable.
+3. The agent MUST include a corresponding entry in the `agent_activity.log` (action: `modify` or `complete`) referencing the agenda item.
+
+Agenda updates and Activity Ledger entries SHOULD be performed in the same turn or sequence to ensure consistency.
 
 ---
 

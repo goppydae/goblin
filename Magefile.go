@@ -9,38 +9,12 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 
+	"github.com/goppydae/gapi/pkg/magelib"
 	"github.com/magefile/mage/mg"
 	"github.com/magefile/mage/sh"
 	"github.com/zeebo/blake3"
 )
-
-// checkHermetic ensures tools are running from Nix store
-func checkHermetic() error {
-	tools := []string{"go", "gcc", "protoc"}
-
-	if _, err := exec.LookPath("pandoc"); err == nil {
-		tools = append(tools, "pandoc")
-	}
-
-	for _, tool := range tools {
-		path, err := exec.LookPath(tool)
-		if err != nil {
-			return fmt.Errorf("%s not found. Run 'nix develop'", tool)
-		}
-
-		realPath, err := filepath.EvalSymlinks(path)
-		if err != nil {
-			realPath = path // fallback
-		}
-
-		if len(realPath) < 10 || realPath[:10] != "/nix/store" {
-			fmt.Printf("⚠️  Warning: %s is not running from Nix store (%s). Hermetic build not guaranteed.\n", tool, realPath)
-		}
-	}
-	return nil
-}
 
 // Build builds the goblind and goblinctl binaries
 func Build() error {
@@ -152,62 +126,23 @@ func Clean() error {
 // Proto generates protobuf code
 func Proto() error {
 	mg.Deps(checkHermetic)
-	fmt.Println("Generating protobuf code...")
-
-	protoFiles, err := filepath.Glob("proto/*.proto")
-	if err != nil {
-		return err
-	}
-
-	if len(protoFiles) == 0 {
-		fmt.Println("No local proto files found. Skipping.")
-		return nil
-	}
-
-	for _, file := range protoFiles {
-		args := []string{
-			"--go_out=.",
-			"--go_opt=paths=source_relative",
-			"--go-grpc_out=.",
-			"--go-grpc_opt=paths=source_relative",
-			file,
-		}
-		if err := sh.Run("protoc", args...); err != nil {
-			return fmt.Errorf("protoc failed for %s: %w", file, err)
-		}
-	}
-
-	// Copy generated files to internal/proto/
-	if err := os.MkdirAll("internal/proto", 0755); err != nil {
-		return fmt.Errorf("failed to create internal/proto directory: %w", err)
-	}
-
-	pbFiles, err := filepath.Glob("proto/*.pb.go")
-	if err != nil {
-		return err
-	}
-
-	for _, src := range pbFiles {
-		dst := filepath.Join("internal/proto", filepath.Base(src))
-		if err := sh.Copy(dst, src); err != nil {
-			return fmt.Errorf("failed to copy %s to %s: %w", src, dst, err)
-		}
-	}
-
-	fmt.Println("✅ Protobuf generation complete")
-	return nil
+	// Goblin puts generated protos in internal/proto instead of pkg/proto
+	return magelib.GenerateProto("proto/*.proto", "internal/proto")
 }
 
 // Fmt formats all Go code
 func Fmt() error {
-	fmt.Println("Formatting code...")
-	return sh.RunV("go", "fmt", "./...")
+	return magelib.Fmt()
 }
 
 // Tidy runs go mod tidy
 func Tidy() error {
-	fmt.Println("Tidying go.mod...")
-	return sh.Run("go", "mod", "tidy")
+	return magelib.Tidy()
+}
+
+// checkHermetic ensures tools are running from Nix store
+func checkHermetic() error {
+	return magelib.CheckHermetic()
 }
 
 // All runs fmt, tidy, build, and test

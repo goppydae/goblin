@@ -7,12 +7,11 @@ import (
 	"time"
 
 	"google.golang.org/protobuf/types/known/anypb"
-	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/goppydae/gapi/core/config"
 	"github.com/goppydae/gapi/internal/eventbus"
-	protopkg "github.com/goppydae/gapi/pkg/proto"
 	"github.com/goppydae/gapi/internal/transport"
+	protopkg "github.com/goppydae/gapi/pkg/proto"
 )
 
 // Client provides a programmatic interface to interact with a running GAPI daemon.
@@ -156,7 +155,7 @@ func (c *Client) LifecycleWithOpts(ctx context.Context, agentIDs []string, actio
 			}
 
 			// Await transition
-			st, err := c.waitForPendingThenTerminal(ctx, agentID, 2*time.Second, 20*time.Second)
+			st, err := c.waitForPendingThenTerminal(ctx, agentID, config.ClientPendingTimeout, config.ClientTerminalTimeout)
 			results <- Result{AgentID: agentID, Status: st, Err: err}
 		}()
 	}
@@ -192,8 +191,8 @@ func (c *Client) waitForPendingThenTerminal(
 
 	statusCh := make(chan *protopkg.LifecycleStatus, 8)
 
-	// Subscribe
-	c.bus.SubscribePrefix("system", "", "agent/lifecycle.status", func(e eventbus.Event[*anypb.Any]) {
+	// Subscribe with context-aware cleanup
+	c.bus.SubscribePrefixWithContext(ctx, "system", "", "agent/lifecycle.status", func(e eventbus.Event[*anypb.Any]) {
 		var st protopkg.LifecycleStatus
 		if err := eventbus.UnmarshalAnyPayload(e, &st); err != nil {
 			return
@@ -262,55 +261,28 @@ func (c *Client) waitForPendingThenTerminal(
 }
 
 // GetLogs subscribes to the logs for a specific agent and returns a channel of log lines.
+// The subscription is automatically cleaned up when the context is cancelled.
 func (c *Client) GetLogs(ctx context.Context, agentID string) (<-chan string, error) {
 	ch := make(chan string, 100)
 
-	err := c.bus.SubscribePrefix("system", "", "logs", func(e eventbus.Event[*anypb.Any]) {
-		// e.Payload is Any, wrapping a Struct (from map)
-		// We unpacked it in python_agent as Struct -> Any
-		// We need to unpack it here.
-		// It's a bit dynamic.
-
-		m := e.Payload
-		// Reflection or unmarshal to structpb?
-		// We need to unmarshal Any -> Struct
-
-		st := &structpb.Struct{}
-		if err := m.UnmarshalTo(st); err != nil {
+	err := c.bus.SubscribePrefixWithContext(ctx, "system", "", "logs", func(e eventbus.Event[*anypb.Any]) {
+		var logMsg protopkg.LogMessage
+		if err := e.Payload.UnmarshalTo(&logMsg); err != nil {
 			return
 		}
 
-		fields := st.GetFields()
-		// filter by ID
-		if idVal, ok := fields["id"]; ok {
-			if idVal.GetStringValue() != agentID {
-				return
-			}
-		} else {
+		// Filter by agent ID
+		if logMsg.GetAgentId() != agentID {
 			return
 		}
 
-		stream := "stdout"
-		if sVal, ok := fields["stream"]; ok {
-			stream = sVal.GetStringValue()
-		}
-
-		dataStr := ""
-		if dVal, ok := fields["data"]; ok {
-			// data can be string or struct (if JSON)
-			if dVal.GetStringValue() != "" {
-				dataStr = dVal.GetStringValue()
-			} else if dVal.GetStructValue() != nil {
-				dataStr = dVal.GetStructValue().String()
-			}
-		}
-
-		ts := ""
-		if tVal, ok := fields["time"]; ok {
-			ts = tVal.GetStringValue()
-		}
-
-		msg := fmt.Sprintf("[%s] %s %s: %s", ts, agentID, stream, dataStr)
+		// Format log line
+		ts := time.UnixMilli(logMsg.GetTimestamp()).UTC().Format(time.RFC3339Nano)
+		msg := fmt.Sprintf("[%s] %s [%s]: %s",
+			ts,
+			logMsg.GetAgentId(),
+			logMsg.GetLevel(),
+			logMsg.GetMessage())
 
 		select {
 		case ch <- msg:
@@ -322,13 +294,6 @@ func (c *Client) GetLogs(ctx context.Context, agentID string) (<-chan string, er
 	if err != nil {
 		return nil, err
 	}
-
-	// Handle context cancellation to unsubscribe?
-	// EventBus doesn't support Unsubscribe easily by ID yet (wait, Subscribe returns error, not ID).
-	// We'll rely on the callback checking ctx.Done() implicitly via the select above,
-	// or ideally we fix EventBus to allow unsubscribe.
-	// For now, this leaks the subscription until process exit.
-	// TODO: Fix subscription leak.
 
 	return ch, nil
 }

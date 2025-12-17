@@ -1,6 +1,7 @@
 package eventbus
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -183,6 +184,40 @@ func (bus *EventBus[T]) Unsubscribe(scope, namespace, topic string, target Handl
 	}
 }
 
+// UnsubscribePrefix removes a single handler from a prefix subscription.
+func (bus *EventBus[T]) UnsubscribePrefix(scope, namespace, topicPrefix string, target Handler[T]) {
+	k := "__MATCH:" + fullKey(scope, namespace, topicPrefix)
+
+	bus.mu.Lock()
+	defer bus.mu.Unlock()
+	handlers := bus.prefixSubs[k]
+	for i, h := range handlers {
+		if fmt.Sprintf("%p", h) == fmt.Sprintf("%p", target) {
+			bus.prefixSubs[k] = append(handlers[:i], handlers[i+1:]...)
+			break
+		}
+	}
+	if len(bus.prefixSubs[k]) == 0 {
+		delete(bus.prefixSubs, k)
+	}
+}
+
+// SubscribePrefixWithContext subscribes with automatic cleanup on context cancellation.
+// This prevents subscription leaks in long-running operations by removing the subscription
+// when the context is cancelled or times out.
+func (bus *EventBus[T]) SubscribePrefixWithContext(ctx context.Context, scope, namespace, topicPrefix string, handler Handler[T]) error {
+	if err := bus.SubscribePrefix(scope, namespace, topicPrefix, handler); err != nil {
+		return err
+	}
+
+	go func() {
+		<-ctx.Done()
+		bus.UnsubscribePrefix(scope, namespace, topicPrefix, handler)
+	}()
+
+	return nil
+}
+
 // ---- Publish / Dispatch ----
 
 func (b *EventBus[T]) Publish(e Event[T]) error {
@@ -212,7 +247,7 @@ func (b *EventBus[T]) Publish(e Event[T]) error {
 		if e.Broadcast {
 			terr = b.transport.Broadcast(e)
 		} else {
-			terr = b.transport.PublishRemote(e)
+			terr = b.transport.PublishRemote(context.Background(), e)
 		}
 		if terr != nil {
 			logcore.Error().Err(terr).Str("event_id", e.ID).
@@ -266,7 +301,7 @@ func UnmarshalAnyPayload(e Event[*anypb.Any], target proto.Message) error {
 // LocalTransport is a no-op transport for local-only operation.
 type LocalTransport[T any] struct{}
 
-func (t *LocalTransport[T]) PublishRemote(Event[T]) error { return nil }
-func (t *LocalTransport[T]) Broadcast(Event[T]) error     { return nil }
-func (t *LocalTransport[T]) OnRemoteEvent(func(Event[T])) {}
-func (t *LocalTransport[T]) Close() error                 { return nil }
+func (t *LocalTransport[T]) PublishRemote(ctx context.Context, e Event[T]) error { return nil }
+func (t *LocalTransport[T]) Broadcast(Event[T]) error                            { return nil }
+func (t *LocalTransport[T]) OnRemoteEvent(func(Event[T]))                        {}
+func (t *LocalTransport[T]) Close() error                                        { return nil }
