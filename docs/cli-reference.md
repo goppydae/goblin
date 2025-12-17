@@ -127,18 +127,18 @@ goblinctl [command] [flags]
 
 ## Commands
 
-### `goblinctl status`
+### `goblinctl cluster status`
 
 Show cluster status including members and leader information.
 
 **Usage**:
 ```bash
-goblinctl status [flags]
+goblinctl cluster status [flags]
 ```
 
 **Example**:
 ```bash
-goblinctl status --api-addr=node-1:9000
+goblinctl cluster status --api-addr=node-1:9000
 ```
 
 ---
@@ -165,19 +165,21 @@ goblinctl tui [flags]
 
 ---
 
-### `goblinctl job`
+### `goblinctl cluster`
 
-Job management operations.
+Job and cluster management operations.
 
 #### Subcommands
 
 - `run <job-file.yaml>`: Submit job
 - `drain <node-id>`: Drain node
 - `migrate <job-id> <node>`: Migrate job
+- `status`: Show cluster members
+- `publish`: Broadcast event
 
 **Example**:
 ```bash
-goblinctl job run test-job.yaml
+goblinctl cluster run test-job.yaml
 ```
 
 ---
@@ -193,13 +195,13 @@ goblinctl agent list
 
 ---
 
-### `goblinctl publish`
+### `goblinctl cluster publish`
 
 Publish cluster event.
 
 **Usage**:
 ```bash
-goblinctl publish <event> <payload>
+goblinctl cluster publish <event> <payload>
 ```
 
 ---
@@ -222,7 +224,7 @@ goblind --id=n3 --serf-addr=0.0.0.0:7948 --api-addr=0.0.0.0:9002 --join=127.0.0.
 ### Check Cluster
 
 ```bash
-goblinctl status
+goblinctl cluster status
 goblinctl tui
 ```
 

@@ -2,6 +2,15 @@
 
 <!-- This file tracks the immediate development plan for the Goblin project. -->
 
+## Active Hypotheses
+- None at this phase.
+
+## Blockers
+- None.
+
+## Deferred Risks
+- **SCHED-01**: Global scheduling reliability during network partitions is unknown.
+
 ## Phase 1: Secure Control Plane (Current Focus)
 **Goal**: Unify all CLI and Client operations over a secured QUIC transport.
 
@@ -41,3 +50,21 @@
 - [x] **Action**: Wire `UnifiedController` to call `ListLocalAgents` RPC
 - [x] **Action**: Display local agents alongside cluster members and jobs
 - **Status**: ✅ Complete (Dec 16, 2025)
+
+---
+
+## Phase 3: CLI Harmonization and Port Refactoring
+
+### 1. Port Configuration Refactoring
+- [x] **Action**: Update default ports to non-standard values.
+- [x] **API**: `29000`
+- [x] **Serf**: `29010`
+- [x] **Raft**: `29020`
+- **Status**: ✅ Complete (Dec 17, 2025)
+
+### 2. CLI Command Harmonization
+- [x] **Action**: Refactor `goblinctl` into namespaces (`cluster`, `agent`).
+- [x] **Action**: Move job and cluster operations under `cluster` namespace.
+- [x] **Action**: Flatten GAPI agent commands under `agent` namespace.
+- [x] **Action**: Move global agent specs under `cluster agent`.
+- **Status**: ✅ Complete (Dec 17, 2025)

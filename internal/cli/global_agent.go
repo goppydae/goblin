@@ -15,7 +15,7 @@ import (
 
 // globalAgentCmd represents the parent command for global agent operations
 var globalAgentCmd = &cobra.Command{
-	Use:   "global-agent",
+	Use:   "agent",
 	Short: "Global agent specification management (specs, scheduling)",
 }
 
@@ -165,5 +165,5 @@ func init() {
 	globalAgentCmd.AddCommand(globalAgentDeleteCmd)
 	globalAgentCmd.AddCommand(globalAgentScaleCmd)
 
-	RootCmd.AddCommand(globalAgentCmd)
+	clusterCmd.AddCommand(globalAgentCmd)
 }

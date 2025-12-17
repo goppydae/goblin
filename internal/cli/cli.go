@@ -18,6 +18,11 @@ var RootCmd = &cobra.Command{
 	Short: "Goblin distributed supervisor control",
 }
 
+var clusterCmd = &cobra.Command{
+	Use:   "cluster",
+	Short: "Cluster management operations",
+}
+
 // ... helper code ...
 
 var (
@@ -63,13 +68,14 @@ func init() {
 	startCmd.Flags().StringVar(&joinAddr, "join", "", "Join existing cluster peer (host:port)")
 
 	RootCmd.AddCommand(startCmd)
-	RootCmd.AddCommand(statusCmd)
-	RootCmd.AddCommand(publishCmd)
+	RootCmd.AddCommand(clusterCmd)
 	RootCmd.AddCommand(tuiCmd)
-	RootCmd.AddCommand(jobCmd)
-	jobCmd.AddCommand(runCmd)
-	jobCmd.AddCommand(drainCmd)
-	jobCmd.AddCommand(migrateCmd)
+
+	clusterCmd.AddCommand(statusCmd)
+	clusterCmd.AddCommand(publishCmd)
+	clusterCmd.AddCommand(runCmd)
+	clusterCmd.AddCommand(drainCmd)
+	clusterCmd.AddCommand(migrateCmd)
 
 	// Global flags
 	RootCmd.PersistentFlags().StringVar(&apiAddr, "api-addr", "127.0.0.1:29000", "API address")
@@ -85,8 +91,14 @@ func init() {
 
 	// Mount GAPI Commands under agent subcommand
 	for _, cmd := range gapicli.GetRoot().Commands() {
-		if cmd.Use == "tui" {
-			cmd.Use = "tui"
+		if cmd.Name() == "agent" {
+			// Flatten GAPI's agent namespace into Goblin's agent namespace
+			for _, sub := range cmd.Commands() {
+				agentCmd.AddCommand(sub)
+			}
+			continue
+		}
+		if cmd.Name() == "tui" {
 			cmd.Short = "Local Agent TUI"
 		}
 		if cmd.Name() == "version" {
@@ -95,12 +107,6 @@ func init() {
 		agentCmd.AddCommand(cmd)
 	}
 }
-
-var runFile string
-
-var (
-// apiAddr is now global
-)
 
 var runCmd = &cobra.Command{
 	Use:   "run <job-file.yaml>",
@@ -135,11 +141,6 @@ var runCmd = &cobra.Command{
 		fmt.Println(resp)
 		return nil
 	},
-}
-
-var jobCmd = &cobra.Command{
-	Use:   "job",
-	Short: "Job management operations",
 }
 
 var drainCmd = &cobra.Command{

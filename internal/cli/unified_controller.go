@@ -126,7 +126,7 @@ func (u *UnifiedController) FetchStatus(ctx context.Context) ([]tui.AgentStatus,
 func (u *UnifiedController) Lifecycle(ctx context.Context, id, action string) (bool, error) {
 	// Delegate to GAPI for local agents
 	// For cluster nodes/jobs, return not supported
-	return false, fmt.Errorf("lifecycle operations via unified TUI not yet implemented - use 'goblinctl agent' commands")
+	return false, fmt.Errorf("lifecycle operations via unified TUI not yet implemented - use 'goblinctl agent lifecycle' commands")
 }
 
 // GetLogs streams logs from agents or cluster
