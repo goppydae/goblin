@@ -9,9 +9,11 @@ artifacts_required:
 # prep-context
 
 Precondition:
+
 - `artifacts/intent/project_intent.md` exists.
 
 If precondition is not met:
+
 - fail closed (panic) and immediately initiate `establish-intent` by asking:
   - "What are you trying to produce in this repo (software, book, research notes, something else), and what does 'done' look like for the first milestone?"
 - write `artifacts/intent/project_intent.md`
@@ -20,6 +22,7 @@ If precondition is not met:
 ## Purpose
 
 Load required context before planning:
+
 - `AGENTS.md`
 - `AGENDA.md`
 - relevant `docs/` (if present)
@@ -43,4 +46,3 @@ Emit `artifacts/logs/context_manifest.md` containing:
 **Generation**: Run `python3 tools/generate_context_manifest.py` to create this file.
 
 No code/config modifications are permitted in this workflow.
-

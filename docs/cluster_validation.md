@@ -76,9 +76,9 @@ This checklist tracks the validation steps for ensuring deterministic cluster be
 ## 8) Definition of Done
 
 - [ ] Every check has:
-      - A command or test
-      - Expected output
-      - Failure signature
-      - Fix pointer
+  \- A command or test
+  \- Expected output
+  \- Failure signature
+  \- Fix pointer
 - [ ] A deterministic smoke-test script validates a fresh cluster quickly
 - [ ] A chaos-lite test suite exists and is runnable locally or in CI

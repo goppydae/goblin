@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import os
 import re
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -343,7 +344,7 @@ def collect_journal_entries(repo_root: Path) -> Tuple[List[Dict], str]:
         content = md_file.read_text(encoding="utf-8")
         
         # 1. Add to narrative
-        narrative_buffer.append(f"\n{content}\n")
+        narrative_buffer.append(f"\n## {run_id}\n\n{content}\n")
         
         # 2. Add to history records
         # Use filename as evidence
@@ -360,7 +361,7 @@ def collect_journal_entries(repo_root: Path) -> Tuple[List[Dict], str]:
             "hypothesis_id": "HYP-0000"
         })
         
-    return records, "\n".join(narrative_buffer)
+    return records, "\n".join(narrative_buffer).strip() + "\n"
 
 
 def merge_agenda_records(existing: Optional[Dict], new: Dict) -> Dict:
@@ -428,13 +429,67 @@ def main(argv: Optional[List[str]] = None) -> int:
     
     # Append journals (sorted by timestamp)
     final_records = merged_core + journal_records
+    # Sort final records for output
     final_records.sort(key=lambda r: r.get("timestamp", ""))
 
+    # Generate history.md content
+    history_lines = [
+        "# Execution History",
+        "",
+        "This file tracks all execution runs in chronological order.",
+        "",
+        "| Run ID | Timestamp | Status | Summary | Evidence |",
+        "| :--- | :--- | :--- | :--- | :--- |",
+    ]
+    
+    # Group by timestamp (run_name)
+    runs_seen = {}
+    for rec in final_records:
+        ts = rec.get("timestamp")
+        if not ts or ts == "unknown": continue
+        if ts not in runs_seen:
+            runs_seen[ts] = {"status": "SUCCESS", "summary": "", "evidence": set()}
+        
+        if rec.get("record_type") == "hypothesis":
+            runs_seen[ts]["status"] = rec.get("status", "SUCCESS")
+            runs_seen[ts]["summary"] = rec.get("summary", "")
+            runs_seen[ts]["evidence"].update(rec.get("evidence", []))
+        elif rec.get("record_type") == "journal":
+            runs_seen[ts]["evidence"].update(rec.get("evidence", []))
+
+    history_md_path = repo_root / "artifacts/history/history.md"
+    history_dir = history_md_path.parent
+
+    for run_ts in sorted(runs_seen.keys()):
+        run_info = runs_seen[run_ts]
+        
+        evidence_links = []
+        for ev in sorted(run_info["evidence"]):
+            # Calculate relative path from artifacts/history/ to the evidence
+            try:
+                ev_path = repo_root / ev
+                rel_ev = os.path.relpath(ev_path, history_dir)
+            except Exception:
+                rel_ev = ev
+            
+            name = Path(ev).name
+            evidence_links.append(f"[{name}]({rel_ev})")
+        
+        evidence_str = ", ".join(evidence_links)
+        safe_summary = run_info['summary'].replace("|", "\\|")
+        
+        history_lines.append(
+            f"| {run_ts} | {run_ts} | {run_info['status'].upper()} | {safe_summary} | {evidence_str} |"
+        )
+
+    history_md_text = "\n".join(history_lines).strip() + "\n"
     output_lines = [json.dumps(rec, sort_keys=True, separators=(",", ":")) for rec in final_records]
     output_text = "\n".join(output_lines)
     if output_lines:
         output_text += "\n"
 
+    history_md_path = repo_root / "artifacts/history/history.md"
+    
     if args.check:
         fail = False
         if history_path.exists():
@@ -448,6 +503,12 @@ def main(argv: Optional[List[str]] = None) -> int:
                 fail = True
         elif narrative_text:
             fail = True
+
+        if history_md_path.exists():
+            if history_md_path.read_text(encoding="utf-8") != history_md_text:
+                fail = True
+        elif history_md_text:
+            fail = True
             
         return 1 if fail else 0
 
@@ -456,9 +517,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     
     narrative_path.parent.mkdir(parents=True, exist_ok=True)
     narrative_path.write_text(narrative_text, encoding="utf-8")
+
+    history_md_path.write_text(history_md_text, encoding="utf-8")
     
     print(f"Wrote {len(output_lines)} records to {history_path}")
     print(f"Wrote narrative to {narrative_path}")
+    print(f"Wrote history index to {history_md_path}")
     return 0
 
 

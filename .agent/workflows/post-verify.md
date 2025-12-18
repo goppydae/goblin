@@ -9,9 +9,11 @@ artifacts_required:
 # post-verify
 
 Precondition:
+
 - `artifacts/intent/project_intent.md` exists.
 
 If precondition is not met:
+
 - fail closed (panic) and immediately initiate `establish-intent` by asking:
   - "What are you trying to produce in this repo (software, book, research notes, something else), and what does 'done' look like for the first milestone?"
 - write `artifacts/intent/project_intent.md`
@@ -28,6 +30,7 @@ Emit `artifacts/logs/post_verify_report.md` with the following **exact** section
 - `## Evidence`
 
 Rules:
+
 - Evidence pointers MUST be repo-relative paths (e.g. `artifacts/test_results/...`).
 - Evidence pointers MUST NOT be absolute paths and MUST NOT use `file://` URLs.
 - Avoid truncation (`...`) in evidence pointers; they must be auditable.

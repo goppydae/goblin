@@ -20,10 +20,8 @@ run_log() {
 }
 
 # Check markdown formatting
-if command -v mdformat >/dev/null 2>&1; then
-  run_log "format_md_check" python3 -m mdformat --check *.md artifacts/**/*.md .agent/**/*.md 2>/dev/null
-else
-  echo "WARNING: mdformat not available; skipping markdown formatting checks."
+if [ -f tools/format_md.py ]; then
+  run_log "format_md_check" python3 tools/format_md.py --check
 fi
 
 # Intent must exist for any real work. (Fail closed.)

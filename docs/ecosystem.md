@@ -11,22 +11,25 @@ The GoPPydae ecosystem provides a unified platform for agent-based supervision, 
 **Purpose**: Single-node agent lifecycle management
 
 **Components**:
+
 - **Core Libraries** (`gapi/core/*`): Agent manager, lifecycle controller, event bus
 - **Daemon** (`gapid`): Standalone supervisor for non-cluster nodes
 - **CLI** (`gapictl`): Local agent operations
 
 **Use Cases**:
+
 - Standalone nodes (no clustering needed)
 - Development/testing environments
 - Edge deployments
 
----
+______________________________________________________________________
 
 ### Goblin - Distributed Supervisor
 
 **Purpose**: Multi-node cluster coordination and global scheduling
 
 **Components**:
+
 - **Distributed Primitives**: Raft consensus, Serf membership, distributed event bus
 - **Scheduler**: Global job placement with redundancy
 - **Local Agent Manager**: Uses GAPI core libraries in-process
@@ -34,11 +37,12 @@ The GoPPydae ecosystem provides a unified platform for agent-based supervision, 
 - **CLI** (`goblinctl`): Cluster operations, unified TUI
 
 **Use Cases**:
+
 - Production clusters (high availability)
 - Algorithmic trading (global redundancy)
 - Multi-region deployments
 
----
+______________________________________________________________________
 
 ## Architecture Layers
 
@@ -68,22 +72,25 @@ The GoPPydae ecosystem provides a unified platform for agent-based supervision, 
 **Rationale**: Enable code reuse without embedding full daemons.
 
 **Implementation**:
+
 - `gapi/core/*` packages are public APIs
 - Both `gapid` and `goblind` import from `core/`
 - Semantic versioning for stability
 
 **Benefits**:
+
 - Single executable deployment (`goblind` only)
 - Zero network overhead for local operations
 - Consistent agent management across products
 
----
+______________________________________________________________________
 
 ### 2. Unified Transport (QUIC + ALPN)
 
 **Rationale**: Single port for all communication, protocol multiplexing via ALPN.
 
 **Goblin Port 29000**:
+
 ```
 QUIC Listener
 ├─ ALPN: "goblin-rpc"  → Cluster RPC (SchedulerRPC, Members, etc.)
@@ -91,27 +98,31 @@ QUIC Listener
 ```
 
 **Benefits**:
+
 - Simple firewall rules (one port)
 - Unified TLS management
 - Stream multiplexing
 
----
+______________________________________________________________________
 
 ### 3. Event Bus Scoping
 
 **Local Scope** (GAPI):
+
 - `agent.*` - Agent lifecycle events
 - `metrics.*` - Local metrics
 
 **Cluster Scope** (Goblin via Serf):
+
 - `cluster.node.*` - Membership changes
 - `cache.invalidate` - Gossip-based coordination
 
 **Leader Scope** (Goblin via Raft):
+
 - `global.config` - Cluster-wide configuration
 - `job.assign` - Scheduler decisions
 
----
+______________________________________________________________________
 
 ## Deployment Patterns
 
@@ -125,7 +136,7 @@ gapictl agent lifecycle --start my-agent
 
 **Use Case**: Development, edge nodes, simple deployments
 
----
+______________________________________________________________________
 
 ### Pattern 2: Goblin Cluster
 
@@ -142,7 +153,7 @@ goblinctl tui  # Shows: cluster nodes + jobs + local agents
 
 **Use Case**: Production HA clusters, global scheduling
 
----
+______________________________________________________________________
 
 ### Pattern 3: Hybrid (Advanced)
 
@@ -154,19 +165,19 @@ goblind --port=29000  # No local agents
 
 **Use Case**: Legacy migration, specialized deployments
 
----
+______________________________________________________________________
 
 ## Migration Path
 
 ### From Standalone GAPI → Goblin Cluster
 
 1. **Before**: Run `gapid` on each node
-2. **After**: Run `goblind --enable-local-agents` on each node
-3. **Result**: Agents managed locally, cluster provides global scheduling
+1. **After**: Run `goblind --enable-local-agents` on each node
+1. **Result**: Agents managed locally, cluster provides global scheduling
 
 **No Breaking Changes**: `gapictl` continues to work against local GAPI if using hybrid pattern.
 
----
+______________________________________________________________________
 
 ## Global Agent Scheduling (Future)
 
@@ -184,57 +195,62 @@ goblinctl job submit-agent \
 ```
 
 **Benefits for Algo Trading**:
+
 - High availability (redundant instances)
 - Geographic distribution (latency optimization)
 - Automatic failover (Raft-based health monitoring)
 
----
+______________________________________________________________________
 
 ## Security Model
 
 ### GAPI (Local)
+
 - **Boundary**: Process isolation, cgroups
 - **TLS**: Optional for local clients
 - **Access**: Unix socket or localhost QUIC
 
 ### Goblin (Distributed)
+
 - **Boundary**: Node-to-node mTLS (Raft/Serf)
 - **TLS**: Required for cluster communication
 - **Access**: Certificate-based authentication
 
----
+______________________________________________________________________
 
 ## Performance Characteristics
 
 ### GAPI Core (In-Process)
+
 - Agent queries: **< 1ms** (direct function call)
 - Event propagation: **Memory-speed**
 - Overhead: **None** (linked library)
 
 ### Goblin Cluster
+
 - Gossip propagation: **~100ms** (SWIM eventual consistency)
 - Raft commit: **~10ms** (2-phase quorum)
 - Leader election: **~2s** (timeout-based)
 
----
+______________________________________________________________________
 
 ## Component Ownership
 
-| Component | GAPI | Goblin |
-|-----------|------|--------|
-| Agent Lifecycle | ✅ Core + Daemon | ✅ Via `core/` |
-| Event Bus (Local) | ✅ | ✅ Via `core/` |
-| Event Bus (Distributed) | ❌ | ✅ |
-| Cluster Membership | ❌ | ✅ (Serf) |
-| Consensus | ❌ | ✅ (Raft) |
-| Global Scheduling | ❌ | ✅ |
-| Metrics Collection | ✅ Local | ✅ Aggregated |
+| Component               | GAPI             | Goblin         |
+| ----------------------- | ---------------- | -------------- |
+| Agent Lifecycle         | ✅ Core + Daemon | ✅ Via `core/` |
+| Event Bus (Local)       | ✅               | ✅ Via `core/` |
+| Event Bus (Distributed) | ❌               | ✅             |
+| Cluster Membership      | ❌               | ✅ (Serf)      |
+| Consensus               | ❌               | ✅ (Raft)      |
+| Global Scheduling       | ❌               | ✅             |
+| Metrics Collection      | ✅ Local         | ✅ Aggregated  |
 
----
+______________________________________________________________________
 
 ## References
 
 - **GAPI AGENTS.md**: Single-node design principles
-- **Goblin AGENTS.md**: Distributed system principles  
+- **Goblin AGENTS.md**: Distributed system principles
 - **Goblin docs/architecture.md**: Detailed component breakdown
 - **Implementation Plan**: Phase-based migration strategy

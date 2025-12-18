@@ -5,6 +5,7 @@
 ## TUI (Terminal User Interface)
 
 Launch the TUI with:
+
 ```bash
 goblinctl tui
 ```
@@ -12,16 +13,19 @@ goblinctl tui
 ### Features
 
 #### Overview Tab
+
 - **Cluster Members**: All nodes with status (Leader/Follower).
 - **Cluster Jobs**: Scheduled jobs and assignments.
 - **Local Agents**: Agents running on the selected node.
 
 #### Logs Tab
+
 - **Cluster logs**: Serf membership events, job scheduling.
 - **Agent logs**: Local agent stdout/stderr.
 - **Filtering**: Toggle between All/Agents/Cluster.
 
 ### Controls
+
 - `Tab`: Switch between Overview and Logs
 - `↑/↓` or `j/k`: Navigate lists
 - `/`: Search
@@ -49,7 +53,7 @@ goblinctl
 
 ## Global Flags
 
-| Flag | Description |
-|---|---|
+| Flag         | Description                                                           |
+| ------------ | --------------------------------------------------------------------- |
 | `--api-addr` | Address of the Goblin node to connect to (default: `127.0.0.1:29000`) |
-| `--config` | Path to config file |
+| `--config`   | Path to config file                                                   |

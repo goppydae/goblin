@@ -7,6 +7,7 @@
 While GAPI provides the local runtime library, Goblin is the **Production Daemon**.
 
 It **embeds** GAPI to run agents locally, while adding:
+
 - **Cluster Membership** - Node discovery via Serf
 - **Consensus** - Leader election via Raft
 - **Distributed Events** - Cluster-wide pub/sub messaging

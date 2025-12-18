@@ -2,7 +2,7 @@
 
 Complete reference for `goblind` (daemon) and `goblinctl` (CLI client).
 
----
+______________________________________________________________________
 
 ## `goblind` - Goblin Distributed Supervisor Daemon
 
@@ -18,34 +18,35 @@ goblind [flags]
 
 #### Cluster Configuration
 
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--id` | string | hostname | Unique Node ID |
-| `--serf-addr` | string | `127.0.0.1:9001` | Serf bind address (host:port) |
-| `--serf-advertise-addr` | string | - | Serf advertise address (if different from bind) |
-| `--serf-advertise-port` | int | - | Serf advertise port (if different from bind) |
-| `--raft-addr` | string | `127.0.0.1:9002` | Raft bind address (host:port) |
-| `--api-addr` | string | `127.0.0.1:9000` | API address |
-| `--join` | string | - | Join existing cluster peer (host:port) |
+| Flag                    | Type   | Default          | Description                                     |
+| ----------------------- | ------ | ---------------- | ----------------------------------------------- |
+| `--id`                  | string | hostname         | Unique Node ID                                  |
+| `--serf-addr`           | string | `127.0.0.1:9001` | Serf bind address (host:port)                   |
+| `--serf-advertise-addr` | string | -                | Serf advertise address (if different from bind) |
+| `--serf-advertise-port` | int    | -                | Serf advertise port (if different from bind)    |
+| `--raft-addr`           | string | `127.0.0.1:9002` | Raft bind address (host:port)                   |
+| `--api-addr`            | string | `127.0.0.1:9000` | API address                                     |
+| `--join`                | string | -                | Join existing cluster peer (host:port)          |
 
 #### Security
 
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--encrypt` | string | - | Base64 encoded 32-byte secret key for Serf encryption |
-| `--tls-cert` | string | - | Path to TLS certificate |
-| `--tls-key` | string | - | Path to TLS private key |
-| `--tls-ca` | string | - | Path to CA certificate for mTLS |
+| Flag         | Type   | Default | Description                                           |
+| ------------ | ------ | ------- | ----------------------------------------------------- |
+| `--encrypt`  | string | -       | Base64 encoded 32-byte secret key for Serf encryption |
+| `--tls-cert` | string | -       | Path to TLS certificate                               |
+| `--tls-key`  | string | -       | Path to TLS private key                               |
+| `--tls-ca`   | string | -       | Path to CA certificate for mTLS                       |
 
 #### Storage
 
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
+| Flag     | Type   | Default       | Description                 |
+| -------- | ------ | ------------- | --------------------------- |
 | `--data` | string | `./data/raft` | Data directory for Raft log |
 
 ### Agent Discovery
 
 Local agents are **always enabled** and discovered using GAPI's standard search paths:
+
 - `./agents/`
 - `~/.config/gapi/agents/`
 - `/etc/gapi/agents/`
@@ -61,6 +62,7 @@ goblind --id=dev-node
 #### Multi-Node Cluster
 
 **Node 1 (Leader)**:
+
 ```bash
 goblind \
   --id=node-1 \
@@ -70,6 +72,7 @@ goblind \
 ```
 
 **Node 2 (Follower)**:
+
 ```bash
 goblind \
   --id=node-2 \
@@ -94,6 +97,7 @@ goblind \
 
 Agents are automatically discovered from standard paths.
 Place agent manifests in:
+
 - `./agents/`
 - `~/.config/gapi/agents/`
 - `/etc/gapi/agents/`
@@ -103,7 +107,7 @@ Place agent manifests in:
 goblind --id=agent-node
 ```
 
----
+______________________________________________________________________
 
 ## `goblinctl` - Goblin Control CLI
 
@@ -117,13 +121,13 @@ goblinctl [command] [flags]
 
 ### Global Flags
 
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--api-addr` | string | `127.0.0.1:29000` | API address |
-| `--tls-ca` | string | - | Path to CA certificate for API TLS verification |
-| `--tls-insecure` | bool | false | Skip API TLS verification (INSECURE) |
+| Flag             | Type   | Default           | Description                                     |
+| ---------------- | ------ | ----------------- | ----------------------------------------------- |
+| `--api-addr`     | string | `127.0.0.1:29000` | API address                                     |
+| `--tls-ca`       | string | -                 | Path to CA certificate for API TLS verification |
+| `--tls-insecure` | bool   | false             | Skip API TLS verification (INSECURE)            |
 
----
+______________________________________________________________________
 
 ## Commands
 
@@ -132,38 +136,43 @@ goblinctl [command] [flags]
 Show cluster status including members and leader information.
 
 **Usage**:
+
 ```bash
 goblinctl cluster status [flags]
 ```
 
 **Example**:
+
 ```bash
 goblinctl cluster status --api-addr=node-1:9000
 ```
 
----
+______________________________________________________________________
 
 ### `goblinctl tui`
 
 Unified cluster and agent TUI (Text User Interface).
 
 **Usage**:
+
 ```bash
 goblinctl tui [flags]
 ```
 
 **Features**:
+
 - Real-time cluster member view
 - Job status monitoring
 - Local agent display (if enabled)
 - Event log streaming
 
 **Controls**:
+
 - `Tab`: Switch tabs
 - `↑/↓`: Navigate
 - `q`: Quit
 
----
+______________________________________________________________________
 
 ### `goblinctl cluster`
 
@@ -178,33 +187,36 @@ Job and cluster management operations.
 - `publish`: Broadcast event
 
 **Example**:
+
 ```bash
 goblinctl cluster run test-job.yaml
 ```
 
----
+______________________________________________________________________
 
 ### `goblinctl agent`
 
 Local agent management.
 
 **Example**:
+
 ```bash
 goblinctl agent list
 ```
 
----
+______________________________________________________________________
 
 ### `goblinctl cluster publish`
 
 Publish cluster event.
 
 **Usage**:
+
 ```bash
 goblinctl cluster publish <event> <payload>
 ```
 
----
+______________________________________________________________________
 
 ## Quick Reference
 
@@ -228,7 +240,7 @@ goblinctl cluster status
 goblinctl tui
 ```
 
----
+______________________________________________________________________
 
 ## Environment Variables
 

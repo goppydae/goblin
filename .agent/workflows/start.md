@@ -1,7 +1,7 @@
 ---
 description: Begin a new session or work cycle
 operating_mode: audit-only
-artifacts_required: 
+artifacts_required:
   - artifacts/intent/project_intent.md
 ---
 
@@ -23,9 +23,10 @@ It ensures basics are in place (`project_intent.md`) and then hands off to the m
 ## Workflow
 
 1. **Check Intent**
+
    - Check if `artifacts/intent/project_intent.md` exists.
    - If MISSING, run `establish-intent`.
 
-2. **Hand off to Cycle**
-   - Run `plan-cycle` workflow with `auto_approve` argument.
+1. **Hand off to Cycle**
 
+   - Run `plan-cycle` workflow with `auto_approve` argument.

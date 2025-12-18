@@ -1,174 +1,58 @@
 {
-  description = "Goblin - Distributed Orchestrator for GAPI";
+  description = "GoPPydae Silo - Scenario management for GAPI and Goblin";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    nixos-generators = {
-      url = "github:nix-community/nixos-generators";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, nixos-generators }:
+  outputs = { self, nixpkgs, flake-utils }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = import nixpkgs {
-          inherit system;
-          config.allowUnfree = true;
-        };
-        
-        goblin = pkgs.callPackage ./nix/package.nix {};
-        
-      in {
-        # Formatter
-        formatter = pkgs.nixpkgs-fmt;
-
-        # Package output
-        packages = {
-          default = goblin;
-          goblin = goblin;
-          
-          # nixos-generators images for testing
-          iso = nixos-generators.nixosGenerate {
-            inherit system;
-            modules = [ ./nix/generators/base.nix ];
-            format = "iso";
-          };
-          
-          vm = nixos-generators.nixosGenerate {
-            inherit system;
-            modules = [ ./nix/generators/base.nix ];
-            format = "vm";
-          };
-          
-          vm-nogui = nixos-generators.nixosGenerate {
-            inherit system;
-            modules = [ ./nix/generators/base.nix ];
-            format = "vm-nogui";
-          };
-          
-          qcow = nixos-generators.nixosGenerate {
-            inherit system;
-            modules = [ 
-              ./nix/generators/base.nix
-              { virtualisation.diskSize = 10 * 1024; }  # 10GB
-            ];
-            format = "qcow";
-          };
-          
-          docker = nixos-generators.nixosGenerate {
-            inherit system;
-            modules = [ ./nix/generators/base.nix ];
-            format = "docker";
-          };
-          
-          lxc = nixos-generators.nixosGenerate {
-            inherit system;
-            modules = [ ./nix/generators/base.nix ];
-            format = "lxc";
-          };
-
-          raw = nixos-generators.nixosGenerate {
-             inherit system;
-             modules = [ ./nix/generators/base.nix ];
-             format = "raw";
-           };
-           
-           raw-efi = nixos-generators.nixosGenerate {
-             inherit system;
-             modules = [ ./nix/generators/base.nix ];
-             format = "raw-efi";
-           };
-           
-           virtualbox = nixos-generators.nixosGenerate {
-             inherit system;
-             modules = [ ./nix/generators/base.nix ];
-             format = "virtualbox";
-           };
-           
-           vmware = nixos-generators.nixosGenerate {
-             inherit system;
-             modules = [ ./nix/generators/base.nix ];
-             format = "vmware";
-           };
-        };
-        
-        # Development shell
+        pkgs = nixpkgs.legacyPackages.${system};
+      in
+      {
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
+            # Go toolchain
             go
-            gopls
-            gotools
-            gcc
-            pkg-config
-            openssl
-            pam
+            
+            # Container orchestration
+            podman
+            podman-compose
+            
+            # Utilities
+            rsync
             mage
-            # Protobuf
-            protobuf
-            protoc-gen-go
-            protoc-gen-go-grpc
-            # Verification tools
+            
+            # Python verification tools
             (python3.withPackages (ps: with ps; [
               pytest
               mdformat
               mdformat-gfm
               mdformat-frontmatter
               mdformat-footnote
+              jsonschema
             ]))
+            
+            # Markdown linting
             nodePackages.markdownlint-cli2
-            # Documentation
-            pandoc
-            python3
-            python3Packages.protobuf
-            python3Packages.mkdocs
-            python3Packages.mkdocs-material
           ];
 
           shellHook = ''
-            export GOBIN=$PWD/.bin
-            export PATH=$GOBIN:$PATH
-            
-            export PATH=${pkgs.gcc}/bin:${pkgs.go}/bin:$PATH
-
-            if [ -n "$ZSH_VERSION" ]; then
-              PROMPT="$PROMPT (goblin-dev)"
-            else
-              export PS1="$PS1 (goblin-dev)"
-            fi
-
-            echo "👹 Goblin Dev Shell Active"
-            echo "Use 'mage build' to build binaries."
+            echo "🎭 GoPPydae Silo - Scenario Management"
             echo ""
-            echo "Available nixos-generators formats:"
-            echo "  nix build .#iso          - Bootable ISO"
-            echo "  nix build .#vm           - QEMU VM"
-            echo "  nix build .#qcow         - QCOW2 image"
-            echo "  nix build .#docker       - Docker image"
-            echo "  nix build .#lxc          - LXC container"
+            echo "Available mage tasks:"
+            echo "  mage cluster:build    - Build cluster image (no cache)"
+            echo "  mage cluster:fresh    - Complete fresh build and start"
+            echo "  mage cluster:restart  - Restart with fresh containers"
+            echo "  mage cluster:tui      - Launch unified TUI"
+            echo "  mage cluster:test     - Run automated tests"
+            echo "  mage cluster:clean    - Remove all resources"
+            echo ""
+            echo "Run 'mage -l' to see all available tasks"
           '';
         };
-        
-        # Apps for easy running
-        apps = {
-          default = {
-            type = "app";
-            program = "${goblin}/bin/goblind";
-          };
-          goblind = {
-            type = "app";
-            program = "${goblin}/bin/goblind";
-          };
-          goblinctl = {
-            type = "app";
-            program = "${goblin}/bin/goblinctl";
-          };
-        };
       }
-    ) // {
-      # NixOS module
-      nixosModules.default = import ./nix/module.nix;
-      nixosModules.goblin = import ./nix/module.nix;
-    };
+    );
 }

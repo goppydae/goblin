@@ -19,6 +19,7 @@ non_goals:
 Goblin coordinates multiple GAPI instances across a cluster. It handles leader election, routing, and multi-node scheduling using global intent and reconciliation patterns.
 
 ## Roadmap
+
 - [x] Initial design
 - [ ] v0.1 release
 - [ ] v1.0 milestone

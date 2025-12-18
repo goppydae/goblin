@@ -1,0 +1,60 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "History Record Schema",
+    "type": "object",
+    "required": [
+        "record_type",
+        "timestamp",
+        "summary",
+        "evidence"
+    ],
+    "properties": {
+        "record_type": {
+            "type": "string",
+            "enum": [
+                "hypothesis",
+                "agenda",
+                "journal"
+            ]
+        },
+        "timestamp": {
+            "type": "string"
+        },
+        "summary": {
+            "type": "string",
+            "minLength": 1
+        },
+        "evidence": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "id": {
+            "type": "string"
+        },
+        "agenda_id": {
+            "type": "string",
+            "pattern": "^AG-[0-9]{6}$"
+        },
+        "hypothesis_id": {
+            "type": "string",
+            "pattern": "^HYP-[0-9]{4}$"
+        },
+        "status": {
+            "type": "string",
+            "enum": [
+                "finished",
+                "in-progress",
+                "blocked",
+                "not-started",
+                "unknown",
+                "SUCCESS",
+                "FAILURE",
+                "PROPOSED",
+                "FINISHED",
+                "proposed"
+            ]
+        }
+    }
+}

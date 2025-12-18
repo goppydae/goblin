@@ -17,9 +17,9 @@ Prevent premature domain assumptions. Before any planning or execution, establis
 
    "What are you trying to produce in this repo (software, book, research notes, something else), and what does ‘done’ look like for the first milestone?"
 
-2. Write `artifacts/intent/project_intent.md` with the result using the schema below.
+1. Write `artifacts/intent/project_intent.md` with the result using the schema below.
 
-3. If the user refuses or is unsure, set `primary_domain: unknown` and proceed with minimal, non-domain-specific planning only.
+1. If the user refuses or is unsure, set `primary_domain: unknown` and proceed with minimal, non-domain-specific planning only.
 
 ## Schema (required)
 

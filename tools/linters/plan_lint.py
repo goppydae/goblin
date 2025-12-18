@@ -12,11 +12,18 @@ def load(path: Path) -> dict:
   except Exception as e:
     raise ValueError(str(e))
 
+import jsonschema
+
+def load_schema() -> dict:
+  schema_path = Path(__file__).parent.parent / "schemas/plan_schema.json"
+  return json.loads(schema_path.read_text(encoding="utf-8"))
+
 def lint_obj(obj: object) -> None:
-  if not isinstance(obj, dict) or "meta" not in obj or "items" not in obj:
-    raise ValueError("plan missing meta/items")
-  if not isinstance(obj["items"], list) or not obj["items"]:
-    raise ValueError("plan items must be non-empty array")
+  schema = load_schema()
+  try:
+    jsonschema.validate(instance=obj, schema=schema)
+  except jsonschema.ValidationError as e:
+    raise ValueError(f"schema validation failed: {e.message}")
 
 
 def main(argv: list[str]) -> int:

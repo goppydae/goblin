@@ -5,6 +5,7 @@ This file contains lessons learned the hard way. Read this before debugging "imp
 ## EventBus & Memory Leaks
 
 ### Subscriptions Must Be explicit
+
 **Symptom:** Memory usage grows indefinitely during `Watch` operations or frequent agent reloads.
 **Cause:** The `EventBus.Subscribe` method historically returned nothing. Closures created for handlers would hang around forever in the subscriber slice.
 **Fix:** Always use the returned `Subscription` handle and call `Unsubscribe()` when the consumer (e.g., a `Watch` request) terminates.
@@ -13,6 +14,7 @@ This file contains lessons learned the hard way. Read this before debugging "imp
 ## Store & Consensus
 
 ### Linearizable Reads
+
 **Symptom:** Stale reads from followers during network partitions.
 **Cause:** Allowing any node to serve `Get` requests without verifying leadership or index.
 **Rule:** Reads must only be served by the Leader, or followers must use `ReadIndex` (not yet implemented) to ensure they are up to date. Currently, we force leader-only reads.
@@ -20,6 +22,7 @@ This file contains lessons learned the hard way. Read this before debugging "imp
 ## Testing
 
 ### Cluster Stability
+
 **Symptom:** "It works on my machine" but fails in a real cluster.
 **Lesson:** Unit tests are insufficient for distributed consensus. Always verify changes with `test_cluster.sh` (3-node ensemble) to catch replication and leader election race conditions.
 
@@ -69,13 +72,16 @@ Port 9000 now speaks QUIC+TLS1.3+Protobuf. Unified with GAPI architecture. HTTP 
 ## Serf & Memberlist QUIC Migration (Dec 2024)
 
 ### ALPN is Mandatory
+
 **Symptom**: `CRYPTO_ERROR 0x178 (remote): tls: no application protocol` when nodes try to join.
 **Cause**: `quic-go` strictly enforces ALPN negotiation. If `NextProtos` is empty or mismatched, the handshake fails immediately.
 **Fix**: Explicitly set `NextProtos: []string{"serf-quic"}` on both the Server listener and the Client dialer `tls.Config`. You cannot rely on default TLS configs or empty values.
 
 ### Packet vs Stream Semantics
+
 **Challenge**: `memberlist.Transport` expects both `WriteTo` (UDP-ish) and `DialTimeout` (TCP-ish).
 **Solution**:
+
 - `WriteTo`: Check for cached active QUIC connection. If none, Dial (short timeout). Send `Datagram` (RFC 9221).
 - `DialTimeout`: Open a `Stream` on the QUIC connection.
 - **Trap**: Do not open a new connection for every "Packet". Memberlist gossips *a lot*. Connection caching is critical.

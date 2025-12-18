@@ -7,9 +7,10 @@ Goblin is the **distributed supervisor** within the GoPPydae ecosystem. It provi
 **Goblin = GAPI + Clustering**
 
 Goblin does not reinvent agent supervision. Instead, it:
+
 1. Imports GAPI core libraries (`gapi/core/*`) for local agent management
-2. Adds distributed primitives: consensus (Raft), membership (Serf), event bus
-3. Provides global scheduling with redundancy and failover
+1. Adds distributed primitives: consensus (Raft), membership (Serf), event bus
+1. Provides global scheduling with redundancy and failover
 
 ## Relationship to GAPI
 
@@ -60,11 +61,11 @@ Goblin does not reinvent agent supervision. Instead, it:
 
 The `DistributedEventBus` wraps the local GAPI `EventBus` and routes messages based on their intent:
 
-| Scope | Method | Transport | Consistency | Example |
-|---|---|---|---|---|
-| **Local** | `Publish()` | Memory | None (Local) | `agent.started` |
-| **Cluster** | `PublishCluster()` | Serf Gossip | Eventual | `node.joined`, `cache.invalidate` |
-| **Leader** | `PublishLeader()` | Raft Log | Strong | `global.config`, `job.assign` |
+| Scope       | Method             | Transport   | Consistency  | Example                           |
+| ----------- | ------------------ | ----------- | ------------ | --------------------------------- |
+| **Local**   | `Publish()`        | Memory      | None (Local) | `agent.started`                   |
+| **Cluster** | `PublishCluster()` | Serf Gossip | Eventual     | `node.joined`, `cache.invalidate` |
+| **Leader**  | `PublishLeader()`  | Raft Log    | Strong       | `global.config`, `job.assign`     |
 
 ### 4. RPC Transport (QUIC)
 
@@ -79,6 +80,7 @@ The `DistributedEventBus` wraps the local GAPI `EventBus` and routes messages ba
 - **Clients**: `goblinctl` CLI, future web dashboard
 
 **Why QUIC**:
+
 - Unified transport with GAPI
 - Built-in TLS 1.3 (no separate TLS configuration)
 - Stream multiplexing over single connection
@@ -88,18 +90,21 @@ The `DistributedEventBus` wraps the local GAPI `EventBus` and routes messages ba
 ## Data Flow
 
 1. **Member Join**:
+
    - Node starts, initializes Serf.
    - Joins existing members.
    - `Serf` emits `EventMemberJoin`.
    - Event Bus publishes `cluster.node.joined` locally on all nodes.
 
-2. **Leader Election**:
+1. **Leader Election**:
+
    - Nodes bootstrap Raft.
    - Nodes vote.
    - Leader elected.
    - Leader starts applying FSM logs.
 
-3. **Event Propagation**:
+1. **Event Propagation**:
+
    - **Gossip**: A node calls `PublishCluster("mytopic", data)`. Serf broadcasts it. All nodes receive `UserEvent`, unpack it, and `Publish()` it to their local bus.
    - **Consensus**: A node calls `PublishLeader("cmd", data)`. It is forwarded to the Leader. Leader calls `Raft.Apply()`. Once committed, FSM on *all* nodes updates state.
 
@@ -156,13 +161,14 @@ QUIC Listener :29000
 ```
 
 **Why Single Port:**
+
 - Simplifies firewall rules
 - Unified TLS certificate management
 - Stream multiplexing over one connection
 - ALPN provides protocol routing
 
 **Local Agent Communication:**
+
 - GAPI core runs **in-process** (no network needed)
 - Agent → GAPI core: Direct function calls
 - GAPI core → Scheduler: Event bus (memory)
-

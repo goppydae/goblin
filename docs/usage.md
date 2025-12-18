@@ -21,6 +21,7 @@ Start a single node with default settings:
 To simulate a 3-node cluster on a single machine, you must use different ports and data directories.
 
 ### Node 1 (Bootstrap)
+
 Starts the first node.
 
 ```bash
@@ -32,6 +33,7 @@ Starts the first node.
 ```
 
 ### Node 2
+
 Joins Node 1.
 
 ```bash
@@ -44,6 +46,7 @@ Joins Node 1.
 ```
 
 ### Node 3
+
 Joins cluster via Node 1.
 
 ```bash
@@ -57,16 +60,16 @@ Joins cluster via Node 1.
 
 ## Command Line Reference
 
-| Flag | Default | Description |
-|---|---|---|
-| `--id` | `hostname` | Unique identifier for the node. Must be stable across restarts. |
-| `--serf-addr` | `127.0.0.1:29010` | Bind address for Serf gossip (host:port, UDP/TCP). |
-| `--raft-addr` | `127.0.0.1:29020`| Bind address for Raft consensus (host:port, QUIC). |
-| `--api-addr` | `127.0.0.1:29000`| Bind address for QUIC API (host:port, UDP). |
-| `--tls-ca` | `""` | Path to CA certificate for API TLS verification. |
-| `--tls-insecure` | `false` | Skip API TLS verification (INSECURE). |
-| `--data` | `./data/raft` | Directory to store Raft logs and snapshots. |
-| `--join` | `""` | Address of an existing cluster member to join (e.g., `192.168.1.10:29010`). |
+| Flag             | Default           | Description                                                                 |
+| ---------------- | ----------------- | --------------------------------------------------------------------------- |
+| `--id`           | `hostname`        | Unique identifier for the node. Must be stable across restarts.             |
+| `--serf-addr`    | `127.0.0.1:29010` | Bind address for Serf gossip (host:port, UDP/TCP).                          |
+| `--raft-addr`    | `127.0.0.1:29020` | Bind address for Raft consensus (host:port, QUIC).                          |
+| `--api-addr`     | `127.0.0.1:29000` | Bind address for QUIC API (host:port, UDP).                                 |
+| `--tls-ca`       | `""`              | Path to CA certificate for API TLS verification.                            |
+| `--tls-insecure` | `false`           | Skip API TLS verification (INSECURE).                                       |
+| `--data`         | `./data/raft`     | Directory to store Raft logs and snapshots.                                 |
+| `--join`         | `""`              | Address of an existing cluster member to join (e.g., `192.168.1.10:29010`). |
 
 ## Monitoring
 
@@ -74,6 +77,7 @@ Serf logs will appear in stdout/stderr indicating member joins/leaves.
 The distributed event bus will log `[cluster]` events.
 
 To check local status:
+
 ```bash
 ./bin/goblinctl status --tls-insecure
 ```

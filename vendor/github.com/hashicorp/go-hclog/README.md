@@ -2,8 +2,6 @@
 
 [![Go Documentation](http://img.shields.io/badge/go-documentation-blue.svg?style=flat-square)][godocs]
 
-[godocs]: https://godoc.org/github.com/hashicorp/go-hclog
-
 `go-hclog` is a package for Go that provides a simple key/value logging
 interface for use in development and production environments.
 
@@ -147,3 +145,5 @@ specify `InferLevels: true`, you will not see any output here. You must change
 If the log lines start with a timestamp you can use the
 `InferLevelsWithTimestamp` option to try and ignore them. Please note that in order
 for `InferLevelsWithTimestamp` to be relevant, `InferLevels` must be set to `true`.
+
+[godocs]: https://godoc.org/github.com/hashicorp/go-hclog

@@ -66,7 +66,7 @@ The banner is required even in audit-only replies.
 ## Steps
 
 1. Read `artifacts/intent/project_intent.md` (precondition consistency check).
-2. Read current `artifacts/logs/agent_mode.json` if it exists; otherwise assume `"normal"`.
-3. Apply Transition rules, writing the updated state file.
-4. Echo the new mode + timestamp + reason (if provided) to the operator.
-5. Stop.
+1. Read current `artifacts/logs/agent_mode.json` if it exists; otherwise assume `"normal"`.
+1. Apply Transition rules, writing the updated state file.
+1. Echo the new mode + timestamp + reason (if provided) to the operator.
+1. Stop.

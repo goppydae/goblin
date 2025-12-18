@@ -1,9 +1,3 @@
-# Deep Thoughts: A Journal Timeline
-
-*(Reverse chronological order)*
-
-## run-20251218-cvrl-stabilization
-
 ### Deep Thoughts, by an Agent
 
 *(reconstructed)*

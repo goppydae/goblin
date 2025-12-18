@@ -1,0 +1,22 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Narrative Record Schema",
+    "type": "object",
+    "required": [
+        "timestamp",
+        "run_id",
+        "content"
+    ],
+    "properties": {
+        "timestamp": {
+            "type": "string"
+        },
+        "run_id": {
+            "type": "string"
+        },
+        "content": {
+            "type": "string",
+            "minLength": 10
+        }
+    }
+}

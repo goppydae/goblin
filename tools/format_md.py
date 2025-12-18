@@ -31,13 +31,17 @@ def find_markdown_files(root: Path) -> List[Path]:
     # Simple rigorous glob implementation
     md_files = []
     for root_dir, dirs, files in os.walk(root):
-        # Skip git and hidden dirs
+        # Skip git, hidden, vendor, and build context dirs
         if ".git" in dirs:
             dirs.remove(".git")
         if ".venv" in dirs:
             dirs.remove(".venv")
         if "node_modules" in dirs:
             dirs.remove("node_modules")
+        if "vendor" in dirs:
+            dirs.remove("vendor")
+        if "scenarios" in dirs:
+            dirs.remove("scenarios")
             
         for f in files:
             if f.endswith(".md"):
@@ -47,7 +51,7 @@ def find_markdown_files(root: Path) -> List[Path]:
 
 def run_markdownlint(check_only: bool) -> int:
     """Run markdownlint-cli2."""
-    cmd = ["markdownlint-cli2", "**/*.md", "#node_modules"]
+    cmd = ["markdownlint-cli2", "**/*.md", "#node_modules", "#vendor", "#scenarios"]
     
     # Check if tool exists
     if not shutil.which("markdownlint-cli2"):

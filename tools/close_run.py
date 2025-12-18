@@ -59,17 +59,29 @@ def update_global_lessons(lessons: list, run_name: str) -> int:
         
     content = global_file.read_text(encoding="utf-8")
     
-    new_entries = []
-    for lesson in lessons:
-        # Avoid duplicates
-        if lesson in content:
-            continue
-        new_entries.append(f"- {lesson} (from [{run_name}](runs/{run_name}/walkthrough.md))\n")
+    new_entries = [f"\n## {run_name}\n"]
+    for idx, lesson in enumerate(lessons, start=1):
+        # Clean up lesson text
+        clean_lesson = lesson.strip()
+        if clean_lesson.endswith("."): clean_lesson = clean_lesson[:-1]
         
-    if new_entries:
+        # Simple title extraction (first 5 words)
+        title = " ".join(clean_lesson.split()[:5]) + "..."
+        
+        new_entries.append(f"\n### {idx}. {title}\n")
+        new_entries.append(f"\n**Lesson**: {clean_lesson}.\n")
+        new_entries.append(f"\n**Evidence**: from [{run_name}](runs/{run_name}/walkthrough.md)\n")
+        
+    if len(new_entries) > 1:
+        # Ensure the file ends with a newline before appending
+        existing_content = global_file.read_text(encoding="utf-8")
+        if existing_content and not existing_content.endswith("\n\n"):
+            with open(global_file, "a", encoding="utf-8") as f:
+                f.write("\n")
+                
         with open(global_file, "a", encoding="utf-8") as f:
             f.writelines(new_entries)
-        note(f"Added {len(new_entries)} lessons to {global_file}")
+        note(f"Added {len(lessons)} lessons to {global_file} under header {run_name}")
     else:
         note(f"No new lessons to add to {global_file}")
 
