@@ -15,8 +15,14 @@ run_log() {
   local out="artifacts/logs/${name}.log"
   echo "==> ${name} @ ${ts}" | tee "${out}"
   echo "+ $*" | tee -a "${out}"
-  ( "$@" ) >>"${out}" 2>&1
-  echo "==> OK: ${name}" | tee -a "${out}"
+  # Execute and capture exit code
+  if ( "$@" ) >>"${out}" 2>&1; then
+    echo "==> OK: ${name}" | tee -a "${out}"
+  else
+    local code=$?
+    echo "==> FAILED: ${name} (exit code ${code})" | tee -a "${out}"
+    return "${code}"
+  fi
 }
 
 # Check markdown formatting

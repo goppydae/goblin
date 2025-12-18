@@ -402,7 +402,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 
 	// Ensure ALPN is set on the loaded config
 	// We create a clone to avoid concurrent modification issues if shared
-	cfgCopy := *tlsCfg
+	cfgCopy := tlsCfg.Clone()
 
 	// Append API protocols if not present
 	// We just reset NextProtos to be safe, ensuring all are there including API ones.
@@ -418,7 +418,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	// Unless we want mutual auth for API? Usually not for CLI.
 	cfgCopy.ClientAuth = tls.NoClientCert
 	cfgCopy.ClientCAs = nil
-	tlsCfg = &cfgCopy
+	tlsCfg = cfgCopy
 
 	// Start QUIC Server (Single Listener)
 	go func() {

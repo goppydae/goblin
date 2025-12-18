@@ -103,7 +103,7 @@ var globalAgentGetCmd = &cobra.Command{
 		// Print JSON or YAML
 		enc := yaml.NewEncoder(os.Stdout)
 		enc.SetIndent(2)
-		return enc.Encode(spec)
+		return enc.Encode(&spec)
 	},
 }
 
