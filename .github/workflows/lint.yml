@@ -21,7 +21,7 @@ jobs:
           nix_path: nixpkgs=channel:nixos-unstable
 
       - name: Validate Evidence Gate
-        run: nix develop --command bash tools/require_evidence_if_code_changed.sh
+        run: nix develop --command bash tools/cvr/require_evidence_if_code_changed.sh
 
       - name: Execute Verification Suite
         run: nix develop --command bash tools/verify_all.sh

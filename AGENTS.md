@@ -50,10 +50,9 @@ Goblin MAY be cluster‑aware, MAY elect leaders, and MAY coordinate distributed
 
 **Agents MUST NOT modify the Verification Runtime.**
 
-The following paths are **off-limits** for all agent modifications:
-
-- `tools/**` (all verification scripts)
-- `.agent/workflows/**` (workflow definitions)
+- `tools/cvr/**` (Canonical Verification Runtime substrate)
+- `tools/verify_all.sh` (Verification orchestrator bridge)
+- `.agent/workflows/**` (Workflow definitions)
 - `go.mod` (Go module dependencies - read-only without explicit approval)
 
 **Rationale**: The Runtime is the supervision kernel for development workflows. Modifying it while executing under its supervision creates circular dependencies and undermines determinism.
