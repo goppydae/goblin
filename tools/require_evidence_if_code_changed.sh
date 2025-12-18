@@ -14,7 +14,7 @@ CHANGED="$(git diff --name-only "${BASE}" "${HEAD}" || true)"
 
 # Adapted for Go project: exclude scenarios, infrastructure, and docs
 # Include: Go code changes in core project (Magefile.go, etc.)
-NON_CODE_RE='^(docs/|\.agent/|artifacts/|tools/|\.github/|scenarios/.*\.(sh|yaml|yml)$|.*\.md$|\.gitignore$|flake\.(nix|lock)$)'
+NON_CODE_RE='^(artifacts/|\.agent/|tools/|\.github/|scenarios/.*\.(sh|yaml|yml)$|.*\.md$|\.gitignore$|flake\.(nix|lock)$)'
 
 CODE_CHANGED=0
 while IFS= read -r f; do

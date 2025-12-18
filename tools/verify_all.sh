@@ -21,7 +21,7 @@ run_log() {
 
 # Check markdown formatting
 if command -v mdformat >/dev/null 2>&1; then
-  run_log "format_md_check" python3 -m mdformat --check *.md docs/**/*.md .agent/**/*.md 2>/dev/null || true
+  run_log "format_md_check" python3 -m mdformat --check *.md artifacts/**/*.md .agent/**/*.md 2>/dev/null
 else
   echo "WARNING: mdformat not available; skipping markdown formatting checks."
 fi
@@ -31,9 +31,9 @@ if [ -f tools/linters/intent_lint.py ]; then
   run_log "intent_lint" python3 tools/linters/intent_lint.py
 fi
 
-# Lints (conditional on file existence, non-fatal for Go project adaptation)
+# Lints (conditional on file existence)
 if [ -f tools/linters/agenda_lint.py ]; then 
-  run_log "agenda_lint" python3 tools/linters/agenda_lint.py || true
+  run_log "agenda_lint" python3 tools/linters/agenda_lint.py
 fi
 
 if [ -f tools/linters/context_manifest_lint.py ] && [ -f artifacts/logs/context_manifest.md ]; then
