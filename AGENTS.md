@@ -308,6 +308,31 @@ All paths are relative to the workspace root.
 
 ______________________________________________________________________
 
+## Agent Activity Ledger
+
+All agent actions MUST be recorded in an **append-only activity ledger**.
+
+### Ledger File
+
+- **Path**: `artifacts/agent_activity.jsonl`
+- **Format**: NDJSON
+- **Time**: UTC (RFC3339)
+
+### Required Fields
+
+Each ledger entry MUST include:
+
+- `ts`: Timestamp (UTC, ISO-8601)
+- `actor`: Agent name, $USER, or "unknown"
+- `intent`: High-level goal or run ID
+- `scope`: Affected subsystem (e.g., "tools", "docs")
+- `mode`: "normal" | "maintenance"
+- `action`: `modify` | `plan` | `context_loaded` | ...
+- `result`: "ok" | "fail" 
+- `evidence`: List of affected files (optional)
+
+______________________________________________________________________
+
 ## Test Requirements
 
 - **Unit tests**: Deterministic, isolated

@@ -89,6 +89,7 @@ scenarios/goblin_cluster/build_context/
 # We preserve artifacts/history/ but ignore ephemeral run evidence
 artifacts/logs/*
 !artifacts/logs/agent_mode.json
+!artifacts/agent_activity.jsonl
 artifacts/test_results/
 debug_cvrl_verify*.log
 post_verify_report.md
