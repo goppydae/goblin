@@ -46,6 +46,35 @@ Goblin MAY be cluster‑aware, MAY elect leaders, and MAY coordinate distributed
 * CLI: `gapictl`
 * Local supervision only
 
+### Verification Runtime Boundary (Normative)
+
+**Agents MUST NOT modify the Verification Runtime.**
+
+The following paths are **off-limits** for all agent modifications:
+
+* `tools/**` (all verification scripts)
+* `.agent/workflows/**` (workflow definitions)
+* `go.mod` (Go module dependencies - read-only without explicit approval)
+
+**Rationale**: The Runtime is the supervision kernel for development workflows. Modifying it while executing under its supervision creates circular dependencies and undermines determinism.
+
+**Operating Mode Exception**: Agents in `maintenance` mode MAY modify Runtime components, but MUST follow the full scientific method (hypotheses, experiments, evidence).
+
+**Escalation Protocol**:
+
+If the Verification Runtime has bugs, defects, or missing features:
+
+1. **STOP** – Do not attempt to fix or work around the issue.
+2. **NOTIFY** – Alert the operator with:
+   * Exact error or limitation encountered
+   * Affected Runtime component (file path)
+   * Suggested fix or feature request
+3. **DEFER** – The operator will either:
+   * Fix the Runtime themselves
+   * Escalate to the ADK maintainer
+   * Grant temporary `maintenance` mode access
+
+
 ---
 
 ## Normative Language
@@ -138,6 +167,33 @@ Fail‑closed conditions include:
 
 ---
 
+## Markdown Output Contract
+
+To ensure consistent and valid documentation artifacts:
+
+* **Always use fenced code blocks** with explicit language identifiers (e.g., `bash`, `go`, `python`).
+* **Ensure blank lines** exist before and after every fenced code block.
+* **Lists formatting**: Use 2-space indentation for nested items; do not mix `-` and `*`.
+* **Code references**: Wrap file paths, function names, and commands in backticks.
+* **Headings**: Use ATX-style (`#`) not Setext-style (underlines).
+
+**Rationale**: Markdown is a formal artifact format. Malformed markdown breaks tooling (renderers, linters, parsers) and reduces institutional memory quality.
+
+
+---
+
+## Diagnostic Protocol
+
+When encountering verification errors:
+
+* You **MUST NOT** consult verification script source code (e.g., `grep` the script) to understand the error.
+* You **SHOULD** consult error messages and standard Go tooling documentation.
+* If a verification check fails repeatedly, you **MUST** notify the operator rather than attempting workarounds.
+
+**Rationale**: Verification scripts are part of the Runtime boundary. Agents should treat their output as authoritative, not their implementation as mutable.
+
+---
+
 ## Core Workflow (Authoritative)
 
 All non‑trivial work MUST follow this loop:
@@ -190,11 +246,47 @@ When a change affects multiple workspaces (e.g. GAPI + Goblin):
 
 ## Agent Operating Modes
 
-* **full‑execution**: All artifacts and tests REQUIRED
-* **design‑only**: Plans and hypotheses only
-* **audit‑only**: Findings without execution
+* **full-execution**: All artifacts and tests REQUIRED
+* **design-only**: Plans and hypotheses only
+* **audit-only**: Findings without execution
+* **maintenance**: Runtime modification allowed (requires explicit grant)
 
-If full‑execution guarantees cannot be met, the agent MUST fail closed or downgrade mode.
+**Mode Transitions**:
+
+* Agents MUST NOT self-promote to `maintenance` mode
+* Operator grants `maintenance` mode explicitly for Runtime fixes
+* All other modes prohibit Runtime modification
+
+If full-execution guarantees cannot be met, the agent MUST fail closed or downgrade mode.
+
+
+---
+
+## Go-Specific Constraints
+
+### Dependency Management
+
+* **`go.mod` and `go.sum`**: Read-only without explicit operator approval
+* **Rationale**: Dependency changes affect supply chain security and build reproducibility
+* **Exception**: `go mod tidy` is allowed during verification (cleanup only)
+
+### Build Configuration
+
+* **Build tags**: Document any new build tag usage in implementation plan
+* **CGo**: Avoid unless explicitly required; document platform implications
+* **Vendor directory**: Never modify directly (regenerate via `go mod vendor`)
+
+### Testing
+
+* **Table-driven tests**: Preferred for Go
+* **Test coverage**: Aim for meaningful coverage, not percentage targets
+* **Benchmarks**: Include when performance is a hypothesis variable
+
+### Code Style
+
+* **gofmt**: All code MUST be formatted with `gofmt`
+* **go vet**: All code MUST pass `go vet` without warnings
+* **Idiomatic Go**: Follow effective Go patterns and community conventions
 
 ---
 
@@ -203,6 +295,14 @@ If full‑execution guarantees cannot be met, the agent MUST fail closed or down
 ```
 artifacts/
 ├── agent_activity.log
+├── intent/
+│   └── project_intent.md
+├── history/
+│   ├── history.md
+│   ├── history.ndjson
+│   ├── lessons-learned.md
+│   └── runs/
+│       └── <run-id>/
 ├── logs/
 ├── diffs/
 └── test_results/

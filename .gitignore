@@ -69,3 +69,6 @@ cover.out
 coverage.txt
 coverage.xml
 test-results.xml
+# --- Ephemeral artifacts ---
+artifacts/logs/
+artifacts/test_results/

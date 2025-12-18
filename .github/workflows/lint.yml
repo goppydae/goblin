@@ -1,0 +1,25 @@
+name: Lint and Verify
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: cachix/install-nix-action@v25
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Run Evidence Gate
+        run: nix develop --command bash tools/require_evidence_if_code_changed.sh
+
+      - name: Run Verification Suite
+        run: nix develop --command bash tools/verify_all.sh

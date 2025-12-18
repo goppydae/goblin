@@ -1,0 +1,178 @@
+{
+    "version": "1.0",
+    "rules": [
+        {
+            "tool": "agenda_lint",
+            "rule_id": "AGENDA_MISSING",
+            "title": "AGENDA.md missing",
+            "severity": "error",
+            "message_regex": "AGENDA\\.md not found",
+            "fix": {
+                "strategy": "create_file",
+                "safe_steps": [
+                    "Create 'AGENDA.md' in the workspace root.",
+                    "Initialize it with the standard template (Hypotheses, Blockers, Deferred Risks)."
+                ]
+            }
+        },
+        {
+            "tool": "agenda_lint",
+            "rule_id": "AGENDA_MISSING_HEADING",
+            "title": "AGENDA.md missing required heading",
+            "severity": "error",
+            "message_regex": "missing required heading: (.*)",
+            "fix": {
+                "strategy": "append_content",
+                "safe_steps": [
+                    "Add the missing markdown header to AGENDA.md.",
+                    "Ensure it is a level 2 header (##)."
+                ]
+            }
+        },
+        {
+            "tool": "agenda_lint",
+            "rule_id": "AGENDA_STATUS_INVALID",
+            "title": "Invalid agenda item status",
+            "severity": "error",
+            "message_regex": "invalid status values: (.*)",
+            "fix": {
+                "strategy": "correct_value",
+                "safe_steps": [
+                    "Change the status to one of: finished, in-progress, blocked, not-started, unknown."
+                ]
+            }
+        },
+        {
+            "tool": "agenda_lint",
+            "rule_id": "AGENDA_FINISHED_NO_EVIDENCE",
+            "title": "Finished agenda item missing evidence",
+            "severity": "error",
+            "message_regex": "finished item missing non-empty Evidence:",
+            "fix": {
+                "strategy": "add_field",
+                "safe_steps": [
+                    "Add an 'Evidence: ...' line to the finished agenda item.",
+                    "Provide a path to a log file or result artifact."
+                ]
+            }
+        },
+        {
+            "tool": "plan_lint",
+            "rule_id": "PLAN_FILE_MISSING",
+            "title": "Implementation plan missing",
+            "severity": "error",
+            "message_regex": "implementation_plan\\.json not found",
+            "fix": {
+                "strategy": "create_file",
+                "safe_steps": [
+                    "Create 'implementation_plan.json' (usually via plan-execution workflow)."
+                ]
+            }
+        },
+        {
+            "tool": "plan_lint",
+            "rule_id": "PLAN_STRUCTURE_INVALID",
+            "title": "Invalid plan structure",
+            "severity": "error",
+            "message_regex": "plan missing meta/items",
+            "fix": {
+                "strategy": "fix_json_schema",
+                "safe_steps": [
+                    "Ensure JSON root object has 'meta' (dict) and 'items' (list) keys."
+                ]
+            }
+        },
+        {
+            "tool": "intent_lint",
+            "rule_id": "INTENT_FILE_MISSING",
+            "title": "Project intent missing",
+            "severity": "error",
+            "message_regex": "missing artifacts/intent/project_intent\\.md",
+            "fix": {
+                "strategy": "run_workflow",
+                "safe_steps": [
+                    "Run the 'establish-intent' workflow or create the file manually."
+                ]
+            }
+        },
+        {
+            "tool": "intent_lint",
+            "rule_id": "INTENT_FRONTMATTER_MISSING",
+            "title": "Project intent missing frontmatter",
+            "severity": "error",
+            "message_regex": "project_intent\\.md missing YAML frontmatter",
+            "fix": {
+                "strategy": "add_frontmatter",
+                "safe_steps": [
+                    "Add YAML frontmatter block (--- ... ---) to the top of project_intent.md."
+                ]
+            }
+        },
+        {
+            "tool": "lint_common",
+            "rule_id": "PATH_CONTAINS_FILE_URL",
+            "title": "Path contains file:// URI",
+            "severity": "error",
+            "message_regex": "contains file://; use repo-relative paths only",
+            "fix": {
+                "strategy": "rewrite_path",
+                "safe_steps": [
+                    "Remove 'file://' prefix.",
+                    "Ensure the path is relative to the repository root."
+                ],
+                "examples": [
+                    {
+                        "before": "file:///home/user/repo/file.txt",
+                        "after": "file.txt"
+                    }
+                ]
+            }
+        },
+        {
+            "tool": "lint_common",
+            "rule_id": "PATH_IS_ABSOLUTE",
+            "title": "Path is absolute",
+            "severity": "error",
+            "message_regex": "appears to contain an absolute path",
+            "fix": {
+                "strategy": "rewrite_path",
+                "safe_steps": [
+                    "Convert absolute path to repo-relative path."
+                ],
+                "examples": [
+                    {
+                        "before": "/home/user/repo/artifacts/history/file.md",
+                        "after": "artifacts/history/file.md"
+                    }
+                ]
+            }
+        },
+        {
+            "tool": "lint_common",
+            "rule_id": "EVIDENCE_TRUNCATED",
+            "title": "Evidence path truncated",
+            "severity": "error",
+            "message_regex": "contains '\\.\\.\\.'; do not truncate evidence pointers",
+            "fix": {
+                "strategy": "expand_path",
+                "safe_steps": [
+                    "Replace the truncated path ('...') with the full, valid path."
+                ]
+            }
+        },
+        {
+            "tool": "content_lint",
+            "rule_id": "CONTENT_CHECKS_FAILED",
+            "title": "Content checks failed",
+            "severity": "error",
+            "message_regex": "content checks failed",
+            "fix": {
+                "strategy": "check_details",
+                "safe_steps": [
+                    "Check the specific file errors in the linter output.",
+                    "Fix missing sections or low word counts as indicated."
+                ]
+            }
+        }
+    ]
+}
