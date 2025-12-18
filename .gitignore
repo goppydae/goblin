@@ -1,74 +1,94 @@
-# --- IDE / Editor ---
+# --- OS / IDE Junk ---
+.DS_Store
+Thumbs.db
 .idea/
 .vscode/
+.bin/
 *.iml
 *.ipr
 *.iws
 *~
 
-# --- OS junk ---
-.DS_Store
-Thumbs.db
-
-# --- Binaries / build outputs ---
+# --- Go Binaries and Build Output ---
+bin/
 /goblinctl
 /goblind
-bin/
 *.exe
 *.dll
 *.so
 *.dylib
 *.test
-
-# Go build caches (repo-local only; $GOCACHE is elsewhere)
 _go-build/
 
-# --- Temporary / runtime state ---
+# --- Protobuf Generated Files (Internal) ---
+# Note: Keep generated code in repo if specifically required for build consistency,
+# but usually internal/proto/*.pb.go should be ignored if generated on-the-fly.
+# We follow a "check-in generated code" policy for GAPI/Goblin currently,
+# so we only ignore intermediate buf artifacts.
+buf.lock
+buf.gen.yaml.lock
+.bufbuild/
+
+# --- Python Cache and build artifacts ---
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+venv/
+dist/
+
+# --- Nix Build Outputs ---
+result/
+
+# --- Temporary / Runtime State ---
 tmp/
 test/tmp/
 *.log
 *.pid
 *.sock
+gapi.db
+gapi.sock
 
-# Databases (common local state)
+# --- Databases (common local state) ---
 *.db
 *.sqlite
 
-# --- Docs / generated site outputs ---
-site/
-man/
+# --- Generated Documentation ---
 docs/_build/
 docs/build/
 docs/generated/
+site/
+man/
 
-# --- Tooling outputs ---
-# Mage build artifacts
+# --- Mage Build Artifacts ---
 mage_output/
 
-# Air live reload
+# --- Air Live Reload ---
 .air/
 
-# Buf/protobuf tool artifacts (not generated code)
-buf.lock
-buf.gen.yaml.lock
-.bufbuild/
-
-# Nix build outputs
-result/
-
-# --- Local config overrides ---
+# --- Local Environment / Backups ---
 config/*.local.*
 config/*.backup.*
 *.env.local
 *.env.development.local
 *.env.test.local
 *.env.production.local
+COMMIT_MESSAGE.md
 
-# --- Coverage / test reports ---
+# --- Coverage / Test Reports ---
 cover.out
 coverage.txt
 coverage.xml
 test-results.xml
-# --- Ephemeral artifacts ---
-artifacts/logs/
+
+# --- Scenario Build Contexts (Silo) ---
+scenarios/goblin_cluster/build_context/
+
+# --- Ephemeral CVRL Artifacts ---
+# We preserve artifacts/history/ but ignore ephemeral run evidence
+artifacts/logs/*
+!artifacts/logs/agent_mode.json
 artifacts/test_results/
+debug_cvrl_verify*.log
+post_verify_report.md
