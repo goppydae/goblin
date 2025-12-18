@@ -7,9 +7,9 @@ def die(msg: str) -> int:
   return 1
 
 def main() -> int:
-  req_ok = Path("requirements-verify.txt").exists() or Path("requirements.txt").exists()
+  req_ok = any(Path(p).exists() for p in ["requirements-verify.txt", "requirements.txt", "flake.nix"])
   if not req_ok:
-    return die("missing verification requirements file: requirements-verify.txt (preferred) or requirements.txt (legacy)")
+    return die("missing verification requirements file: requirements-verify.txt, requirements.txt, or flake.nix")
 
   required = [
     Path(".gitignore"),
@@ -17,7 +17,7 @@ def main() -> int:
     Path("AGENTS.md"),
     Path("AGENDA.md"),
     Path(".agent"),
-    Path("docs/intent"),
+    Path("artifacts/intent"),
   ]
   missing = [str(p) for p in required if not p.exists()]
   if missing:

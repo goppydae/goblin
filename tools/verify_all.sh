@@ -59,6 +59,26 @@ if [ -f tools/linters/run_artifacts_lint.py ] && [ -d artifacts/history/runs ]; 
   run_log "run_artifacts_lint" python3 tools/linters/run_artifacts_lint.py
 fi
 
+if [ -f tools/linters/workflow_intent_lint.py ]; then
+  run_log "workflow_intent_lint" python3 tools/linters/workflow_intent_lint.py
+fi
+
+if [ -f tools/linters/template_baseline_lint.py ]; then
+  run_log "template_baseline_lint" python3 tools/linters/template_baseline_lint.py
+fi
+
+if [ -f tools/linters/journal_lint.py ] && [ -d artifacts/journal ]; then
+  run_log "journal_lint" python3 tools/linters/journal_lint.py
+fi
+
+if [ -f tools/linters/evidence_location_lint.py ]; then
+  run_log "evidence_location_lint" python3 tools/linters/evidence_location_lint.py
+fi
+
+if [ -f tools/linters/panic_style_lint.py ]; then
+  run_log "panic_style_lint" python3 tools/linters/panic_style_lint.py
+fi
+
 if [ -f tools/linters/content_lint.py ]; then
   run_log "content_lint" python3 tools/linters/content_lint.py
 fi

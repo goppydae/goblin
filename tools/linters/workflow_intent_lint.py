@@ -8,9 +8,9 @@ def die(msg: str) -> int:
 
 def workflow_requires_intent(txt: str) -> bool:
   # Accept either:
-  # - artifacts_required includes docs/intent/project_intent.md
+  # - artifacts_required includes artifacts/intent/project_intent.md
   # - or a Precondition section mentioning it
-  return ("docs/intent/project_intent.md" in txt)
+  return ("artifacts/intent/project_intent.md" in txt)
 
 def main() -> int:
   wf_dir = Path(".agent/workflows")
@@ -26,7 +26,7 @@ def main() -> int:
       bad.append(p.as_posix())
 
   if bad:
-    return die("workflows missing intent requirement (must mention docs/intent/project_intent.md): " + ", ".join(bad))
+    return die("workflows missing intent requirement (must mention artifacts/intent/project_intent.md): " + ", ".join(bad))
 
   print("workflow_intent_lint: OK")
   return 0

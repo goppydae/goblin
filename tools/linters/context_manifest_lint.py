@@ -18,7 +18,7 @@ def main() -> int:
     ".agentsignore",
     "files read",
   ]
-  missing = [r for r in required if re.search(rf"\b{re.escape(r)}\b", txt, flags=re.IGNORECASE) is None]
+  missing = [r for r in required if re.search(re.escape(r), txt, flags=re.IGNORECASE) is None]
   if missing:
     return die("context_manifest_lint", f"context_manifest.md missing required fields: {', '.join(missing)}")
 

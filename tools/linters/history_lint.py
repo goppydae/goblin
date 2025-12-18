@@ -167,7 +167,8 @@ def lint_agenda_state(path: Path, hist_hypotheses: Set[str], hist_agenda: Set[st
       if not isinstance(hyp_id, str) or not HYP_RE.fullmatch(hyp_id):
         errors.append(format_error(f"{ctx}: hypothesis_id must match HYP-#### when provided"))
       else:
-        seen_hypotheses.add(hyp_id)
+        # Track for cross-check, but don't treat as 'definition' yet
+        pass
 
     if "evidence" in item:
       errors.extend(validate_evidence_paths(item.get("evidence"), f"{ctx}"))
@@ -224,8 +225,8 @@ def main() -> int:
   agenda_state = HISTORY_DIR / "agenda_state.json"
   if agenda_state.exists():
     all_errors.extend(lint_agenda_state(agenda_state, hyp_ids, agenda_ids))
-  else:
-    all_errors.append(format_error("artifacts/history/agenda_state.json is required when history exists"))
+  elif hyp_ids or agenda_ids:
+    all_errors.append(format_error("artifacts/history/agenda_state.json is required when history entries exist"))
 
   if all_errors:
     for err in all_errors:

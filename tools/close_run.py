@@ -15,7 +15,7 @@ def note(msg: str):
     print(f"close_run: {msg}")
 
 def get_latest_run() -> Optional[Path]:
-    runs_dir = Path("docs/exec/runs")
+    runs_dir = Path("artifacts/history/runs")
     if not runs_dir.exists():
         return None
     runs = sorted([d for d in runs_dir.iterdir() if d.is_dir()])
@@ -46,15 +46,12 @@ def extract_lessons(run_dir: Path) -> list:
     return lessons
 
 def update_global_lessons(lessons: list, run_name: str) -> int:
-    """Append unique lessons to docs/exec/lessons-learned.md.
-
-    Returns:
-        Number of lessons added to the global file.
+    """Append unique lessons to artifacts/history/lessons-learned.md.
     """
     if not lessons:
         return 0
         
-    global_file = Path("docs/exec/lessons-learned.md")
+    global_file = Path("artifacts/history/lessons-learned.md")
     
     # Ensure header
     if not global_file.exists():
@@ -81,7 +78,7 @@ def update_global_lessons(lessons: list, run_name: str) -> int:
 def main() -> int:
     if len(sys.argv) > 1:
         run_name = sys.argv[1]
-        run_dir = Path("docs/exec/runs") / run_name
+        run_dir = Path("artifacts/history/runs") / run_name
     else:
         run_dir = get_latest_run()
         if not run_dir:

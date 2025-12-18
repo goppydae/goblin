@@ -1,0 +1,59 @@
+{
+    "meta": {
+        "version": "1.0.0",
+        "generated_at": "2025-12-18T14:40:00Z",
+        "operating_mode": "full-execution"
+    },
+    "items": [
+        {
+            "id": "HYP-0001",
+            "status": "finished",
+            "hypothesis": "Rolling out the stabilized CVRL ecosystem-wide will ensure consistent CI and path hygiene.",
+            "scope": {
+                "components": [
+                    "Runtime",
+                    "Verification"
+                ],
+                "files": [
+                    "tools/",
+                    "AGENTS.md",
+                    ".agentsignore"
+                ]
+            },
+            "invariants": [
+                "Artifact path consistency",
+                "Deterministic verification output"
+            ],
+            "tasks": [
+                {
+                    "step": 1,
+                    "description": "Sync tools and .agentsignore",
+                    "done_definition": "tools/ matches silo and .agentsignore exists"
+                },
+                {
+                    "step": 2,
+                    "description": "Standardize layout",
+                    "done_definition": "No legacy docs/ references remain"
+                },
+                {
+                    "step": 3,
+                    "description": "Exhaustive verification",
+                    "done_definition": "verify_all.sh passes cleanly"
+                }
+            ],
+            "tests": {
+                "unit": [],
+                "integration": [],
+                "build": [
+                    "tools/verify_all.sh"
+                ]
+            },
+            "evidence": {
+                "required_artifacts": [
+                    "walkthrough.md",
+                    "implementation_plan.md"
+                ]
+            }
+        }
+    ]
+}

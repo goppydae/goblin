@@ -129,7 +129,7 @@ def emit_journal(run_dir: Path) -> Optional[Path]:
 
 
 def get_latest_run() -> Optional[Path]:
-    runs_dir = Path("docs/exec/runs")
+    runs_dir = Path("artifacts/history/runs")
     if not runs_dir.exists():
         return None
     # Sort by name (timestamp)

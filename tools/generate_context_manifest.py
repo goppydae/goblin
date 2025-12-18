@@ -56,7 +56,10 @@ def main():
     # Write manifest
     with open(output_file, "w") as f:
         f.write("# Context Manifest\n\n")
-        f.write(f"**Generated**: {timestamp}\n\n")
+        f.write(f"- timestamp: {timestamp}\n")
+        f.write("- operating mode: maintenance\n")
+        f.write("- .agentsignore: .agentsignore\n")
+        f.write(f"- files read: {len(files)}\n\n")
         f.write("## Agent Ignore Patterns\n\n")
         
         if patterns:

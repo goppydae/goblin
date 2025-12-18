@@ -27,7 +27,7 @@ def main(argv: list[str]) -> int:
   if mode_run:
     p = find_run_artifact("implementation_plan.json")
     if p is None:
-      return die("plan_lint", "no docs/exec/runs/**/implementation_plan.json found")
+      return die("plan_lint", "no artifacts/history/runs/**/implementation_plan.json found")
   else:
     p = Path("implementation_plan.json")
     if not p.exists():

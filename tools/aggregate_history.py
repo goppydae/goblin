@@ -5,8 +5,8 @@ import re
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
-DEFAULT_HISTORY_PATH = Path("docs/exec/history.ndjson")
-DEEP_THOUGHTS_PATH = Path("docs/exec/deep-thoughts.md")
+DEFAULT_HISTORY_PATH = Path("artifacts/history/history.ndjson")
+DEEP_THOUGHTS_PATH = Path("artifacts/history/deep-thoughts.md")
 
 HEADER = "# Deep Thoughts: A Journal Timeline\n\n*(Reverse chronological order)*\n"
 
@@ -17,13 +17,13 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         "--output",
         type=Path,
         default=DEFAULT_HISTORY_PATH,
-        help="Path to write the history NDJSON (default: docs/exec/history.ndjson)",
+        help="Path to write the history NDJSON (default: artifacts/history/history.ndjson)",
     )
     parser.add_argument(
         "--narrative",
         type=Path,
         default=DEEP_THOUGHTS_PATH,
-        help="Path to write the narrative markdown (default: docs/exec/deep-thoughts.md)",
+        help="Path to write the narrative markdown (default: artifacts/history/deep-thoughts.md)",
     )
     parser.add_argument(
         "--check",
@@ -413,10 +413,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     narrative_path = args.narrative
 
     existing = load_history(history_path)
-    runs_dir = repo_root / "docs/exec/runs"
+    runs_dir = repo_root / "artifacts/history/runs"
     
     hyp_records = collect_hypotheses(runs_dir, repo_root)
-    agenda_records = collect_agenda_records(repo_root / "docs/exec/agenda_state.json", repo_root)
+    agenda_records = collect_agenda_records(repo_root / "artifacts/history/agenda_state.json", repo_root)
     journal_records, narrative_text = collect_journal_entries(repo_root)
 
     # Filter out existing journals from history so we can regenerate them fully
