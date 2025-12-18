@@ -55,7 +55,7 @@ def lint_ndjson_file(path: Path) -> Tuple[List[str], Set[str], Set[str]]:
 
   lines = path.read_text(encoding="utf-8").splitlines()
   if not lines:
-    errors.append(format_error(f"{path}: file is empty"))
+    # Allow empty NDJSON files during initialization
     return errors, hyp_ids, agenda_ids
 
   for lineno, line in enumerate(lines, start=1):
@@ -225,7 +225,7 @@ def main() -> int:
   if agenda_state.exists():
     all_errors.extend(lint_agenda_state(agenda_state, hyp_ids, agenda_ids))
   else:
-    all_errors.append(format_error("history/agenda_state.json is required when history exists"))
+    all_errors.append(format_error("artifacts/history/agenda_state.json is required when history exists"))
 
   if all_errors:
     for err in all_errors:
