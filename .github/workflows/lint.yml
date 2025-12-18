@@ -1,4 +1,4 @@
-name: Lint and Verify
+name: Formal Verification
 
 on:
   push:
@@ -7,19 +7,21 @@ on:
     branches: [ main, master ]
 
 jobs:
-  verify:
+  integrated-proof:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Workspace
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: cachix/install-nix-action@v25
+      - name: Synchronize Environment (Nix)
+        uses: cachix/install-nix-action@v25
         with:
           nix_path: nixpkgs=channel:nixos-unstable
 
-      - name: Run Evidence Gate
+      - name: Validate Evidence Gate
         run: nix develop --command bash tools/require_evidence_if_code_changed.sh
 
-      - name: Run Verification Suite
+      - name: Execute Verification Suite
         run: nix develop --command bash tools/verify_all.sh
