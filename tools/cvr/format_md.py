@@ -54,10 +54,16 @@ def run_markdownlint(check_only: bool) -> int:
     cmd = ["markdownlint-cli2", "**/*.md", "#node_modules", "#vendor", "#scenarios"]
     
     # Check if tool exists
-    if not shutil.which("markdownlint-cli2"):
-        # Fail if missing? Or warn?
-        # Per plan: "fail with a message directing the user to run tools/check_tools.sh"
-        print("ERROR: markdownlint-cli2 not found.", file=sys.stderr)
+    if shutil.which("markdownlint-cli2"):
+        final_cmd = cmd
+    elif shutil.which("nix-shell"):
+        print("==> Bridging markdownlint-cli2 via nix-shell...", file=sys.stderr)
+        # Join args for --run
+        inner = " ".join(cmd)
+        final_cmd = ["nix-shell", "-p", "markdownlint-cli2", "--run", inner]
+    else:
+        # Fail if missing
+        print("ERROR: markdownlint-cli2 not found (and nix-shell unavailable).", file=sys.stderr)
         print("Please run 'tools/check_tools.sh' to verify your environment.", file=sys.stderr)
         return 1
 
@@ -67,7 +73,7 @@ def run_markdownlint(check_only: bool) -> int:
     
     print("==> Running markdownlint-cli2...")
     try:
-        subprocess.run(cmd, check=True)
+        subprocess.run(final_cmd, check=True)
         return 0
     except subprocess.CalledProcessError:
         return 1

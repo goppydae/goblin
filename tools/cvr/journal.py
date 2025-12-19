@@ -11,6 +11,10 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
+# Import canonical paths - scripts run from repo root
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+from tools.cvr import paths
+
 HEADER = "### Deep Thoughts, by an Agent"
 DISCLAIMER = "*Editor’s note: This entry is a dramatized reconstruction of a deterministic decision process, derived from run artifacts.*"
 
@@ -114,7 +118,7 @@ def emit_journal(run_dir: Path) -> Optional[Path]:
     content = f"{HEADER}\n*(reconstructed)*\n\n{body}\n\n---\n\n{DISCLAIMER}\n"
     
     # 4. Write
-    journal_dir = Path("artifacts/journal")
+    journal_dir = paths.JOURNAL_DIR
     journal_dir.mkdir(parents=True, exist_ok=True)
     
     out_path = journal_dir / f"{run_id}.md"
@@ -129,7 +133,7 @@ def emit_journal(run_dir: Path) -> Optional[Path]:
 
 
 def get_latest_run() -> Optional[Path]:
-    runs_dir = Path("artifacts/history/runs")
+    runs_dir = paths.RUNS_DIR
     if not runs_dir.exists():
         return None
     # Sort by name (timestamp)

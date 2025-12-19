@@ -15,8 +15,12 @@ import os
 import sys
 from pathlib import Path
 
-LEDGER_PATH = Path("artifacts/agent_activity.jsonl")
-MODE_FILE = Path("artifacts/logs/agent_mode.json")
+# Import canonical paths
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+from tools.cvr import paths
+
+LEDGER_PATH = paths.AGENT_ACTIVITY_LOG
+MODE_FILE = paths.AGENT_MODE_FILE
 
 def get_current_mode():
     try:

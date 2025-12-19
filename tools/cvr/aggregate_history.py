@@ -3,11 +3,16 @@ import argparse
 import json
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
-DEFAULT_HISTORY_PATH = Path("artifacts/history/history.ndjson")
-DEEP_THOUGHTS_PATH = Path("artifacts/history/deep-thoughts.md")
+# Import canonical paths - scripts run from repo root
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+from tools.cvr import paths
+
+DEFAULT_HISTORY_PATH = paths.HISTORY_NDJSON
+DEEP_THOUGHTS_PATH = paths.DEEP_THOUGHTS
 
 HEADER = "# Deep Thoughts: A Journal Timeline\n\n*(Reverse chronological order)*\n"
 
@@ -251,12 +256,22 @@ def parse_post_verify_report(run_dir: Path, repo_root: Path) -> List[Dict]:
     text = report_path.read_text(encoding="utf-8")
     run_name = run_dir.name
 
-    run_match = re.search(r"Run ID:\s*([0-9]{4}-[0-9]{2}-[0-9]{2}_[A-Z]+-[0-9]{4,})", text)
+    # Match both old and new run ID formats:
+    # Old: YYYY-MM-DD_HHMMSS or YYYY-MM-DD_HHMMSS-HYP-####
+    # New: YYYY-MM-DD-HH-MM-SS or YYYY-MM-DD-HH-MM-SS-HYP-####
+    run_match = re.search(
+        r"Run ID:\s*([0-9]{4}-[0-9]{2}-[0-9]{2}[-_][0-9]{2}[-:]?[0-9]{2}[-:]?[0-9]{2}(?:-[A-Z]+-[0-9]{4,})?)",
+        text
+    )
     hyp_id = None
     if run_match:
         run_id = run_match.group(1)
-        if "_" in run_id:
-            hyp_id = run_id.split("_", 1)[1]
+        # Extract hypothesis ID if present (works for both formats)
+        if "-HYP-" in run_id or "_HYP-" in run_id:
+            # Split on either - or _ before HYP
+            parts = re.split(r"[-_](?=HYP-)", run_id, maxsplit=1)
+            if len(parts) == 2:
+                hyp_id = parts[1]
     if hyp_id is None:
         m = re.search(r"(HYP-[0-9]{4,})", text)
         if m:
@@ -414,10 +429,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     narrative_path = args.narrative
 
     existing = load_history(history_path)
-    runs_dir = repo_root / "artifacts/history/runs"
+    runs_dir = repo_root / paths.RUNS_DIR
     
     hyp_records = collect_hypotheses(runs_dir, repo_root)
-    agenda_records = collect_agenda_records(repo_root / "artifacts/history/agenda_state.json", repo_root)
+    agenda_records = collect_agenda_records(repo_root / paths.AGENDA_STATE, repo_root)
     journal_records, narrative_text = collect_journal_entries(repo_root)
 
     # Filter out existing journals from history so we can regenerate them fully
@@ -457,7 +472,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         elif rec.get("record_type") == "journal":
             runs_seen[ts]["evidence"].update(rec.get("evidence", []))
 
-    history_md_path = repo_root / "artifacts/history/history.md"
+    history_md_path = repo_root / paths.HISTORY_MD
     history_dir = history_md_path.parent
 
     for run_ts in sorted(runs_seen.keys()):
@@ -488,7 +503,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if output_lines:
         output_text += "\n"
 
-    history_md_path = repo_root / "artifacts/history/history.md"
+    history_md_path = repo_root / paths.HISTORY_MD
     
     if args.check:
         fail = False

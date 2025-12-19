@@ -9,6 +9,10 @@ import sys
 from pathlib import Path
 from datetime import datetime, timezone
 
+# Import canonical paths
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+from tools.cvr import paths
+
 
 def read_agentsignore(root: Path) -> list:
     """Read .agentsignore patterns."""
@@ -43,10 +47,10 @@ def list_workspace_files(root: Path) -> list:
 
 def main():
     root = Path.cwd()
-    output_dir = root / "artifacts" / "logs"
+    output_dir = root / paths.LOGS_DIR
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    output_file = output_dir / "context_manifest.md"
+    output_file = root / paths.CONTEXT_MANIFEST
     
     # Generate manifest
     timestamp = datetime.now(timezone.utc).isoformat()
@@ -81,6 +85,19 @@ def main():
             f.write(f"\n*... and {len(files) - sample_size} more files*\n")
     
     print(f"Context manifest generated: {output_file}")
+
+    # Log action
+    import subprocess
+    cmd = [
+        sys.executable,
+        str(root / "tools" / "cvr" / "log_action.py"),
+        "--intent", "prep-context",
+        "--action", "context_loaded",
+        "--scope", "context",
+        "--result", "ok",
+        "--evidence", str(output_file.relative_to(root))
+    ]
+    subprocess.run(cmd, check=True)
 
 
 if __name__ == "__main__":

@@ -328,7 +328,7 @@ Each ledger entry MUST include:
 - `scope`: Affected subsystem (e.g., "tools", "docs")
 - `mode`: "normal" | "maintenance"
 - `action`: `modify` | `plan` | `context_loaded` | ...
-- `result`: "ok" | "fail" 
+- `result`: "ok" | "fail"
 - `evidence`: List of affected files (optional)
 
 ______________________________________________________________________
