@@ -1,5 +1,5 @@
 {
-  description = "GoPPydae Silo - Scenario management for GAPI and Goblin";
+  description = "Goblin - Distributed Orchestrator for GAPI (GoPPydae Agent Programming Interface)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -40,15 +40,16 @@
           ];
 
           shellHook = ''
-            echo "🎭 GoPPydae Silo - Scenario Management"
+            echo "👺 Goblin - Distributed Orchestrator"
             echo ""
             echo "Available mage tasks:"
-            echo "  mage cluster:build    - Build cluster image (no cache)"
-            echo "  mage cluster:fresh    - Complete fresh build and start"
-            echo "  mage cluster:restart  - Restart with fresh containers"
-            echo "  mage cluster:tui      - Launch unified TUI"
-            echo "  mage cluster:test     - Run automated tests"
-            echo "  mage cluster:clean    - Remove all resources"
+            echo "  mage build          - Build goblind and goblinctl binaries"
+            echo "  mage test           - Run all tests"
+            echo "  mage testCluster    - Run cluster coordination tests"
+            echo "  mage testMigration  - Run data migration tests"
+            echo "  mage dev            - Start goblind in development mode"
+            echo "  mage docs:html      - Generate HTML documentation"
+            echo "  mage docs:man       - Generate Man pages"
             echo ""
             echo "Run 'mage -l' to see all available tasks"
           '';

@@ -1,4 +1,4 @@
-# Goblin - Distributed Orchestrator for GAPI
+# Goblin - Distributed Orchestrator for GAPI (GoPPydae Agent Programming Interface)
 
 **Goblin** extends [GAPI](https://github.com/goppydae/gapi) with distributed orchestration capabilities, enabling multi-node agent supervision and cluster-wide coordination.
 
