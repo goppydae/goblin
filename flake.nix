@@ -16,6 +16,18 @@
           buildInputs = with pkgs; [
             # Go toolchain
             go
+            gotools
+            
+            # CGO and build essentials
+            gcc
+            pkg-config
+            pam
+            openssl
+            
+            # Protocol Buffers
+            protobuf
+            protoc-gen-go
+            protoc-gen-go-grpc
             
             # Container orchestration
             podman
@@ -33,6 +45,7 @@
               mdformat-frontmatter
               mdformat-footnote
               jsonschema
+              pybindgen
             ]))
             
             # Markdown linting
@@ -40,6 +53,14 @@
           ];
 
           shellHook = ''
+            export GOBIN=$PWD/.bin
+            export PATH=$GOBIN:$PATH
+
+            if ! command -v gopy &> /dev/null; then
+              echo "Installing gopy..."
+              go install github.com/go-python/gopy@latest
+            fi
+
             echo "👺 Goblin - Distributed Orchestrator"
             echo ""
             echo "Available mage tasks:"
