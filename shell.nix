@@ -58,6 +58,12 @@ pkgs.mkShell {
     export GOBIN=$PWD/.bin
     export PATH=$GOBIN:$PATH
 
+    # gcc 15 defaults to C23, where 'bool' is a keyword; the pinned gopy's
+    # generated cgo preamble (typedef uint8_t bool) assumes C17. Pin the
+    # dialect until gopy emits C23-safe code (kept symmetric with gapi's
+    # shell).
+    export CGO_CFLAGS=-std=gnu17
+
     if [ ! -x "$GOBIN/gopy" ]; then
       echo "Building pinned gopy from tools/gopy..."
       (cd tools/gopy && GOWORK=off go build -o "$GOBIN/gopy" github.com/go-python/gopy)
