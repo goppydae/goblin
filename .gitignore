@@ -84,12 +84,3 @@ test-results.xml
 
 # --- Scenario Build Contexts (Silo) ---
 scenarios/goblin_cluster/build_context/
-
-# --- Ephemeral CVRL Artifacts ---
-# We preserve artifacts/history/ but ignore ephemeral run evidence
-artifacts/logs/*
-!artifacts/logs/agent_mode.json
-!artifacts/logs/post_verify_report.md
-!artifacts/agent_activity.jsonl
-artifacts/test_results/
-debug_cvrl_verify*.log

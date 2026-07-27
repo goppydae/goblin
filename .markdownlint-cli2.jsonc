@@ -13,8 +13,6 @@
     "ignores": [
         "node_modules",
         "vendor",
-        "scenarios",
-        "artifacts/history/runs/*/walkthrough.md",
-        "artifacts/history/runs/*/implementation_plan.md"
+        "scenarios"
     ]
 }
