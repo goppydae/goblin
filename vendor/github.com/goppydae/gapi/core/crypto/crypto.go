@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/goppydae/gapi/internal/safeio"
 	"github.com/zeebo/blake3"
 )
 
@@ -51,7 +52,7 @@ func Verify(pub ed25519.PublicKey, data, sig []byte) bool {
 
 // HashFile returns the BLAKE3 hash of a file as a hex string
 func HashFile(path string) (string, error) {
-	f, err := os.Open(path)
+	f, err := safeio.Open(path)
 	if err != nil {
 		return "", err
 	}
@@ -80,7 +81,7 @@ func (k *KeyPair) SavePrivate(path string) error {
 		Type:  pemTypePKCS8,
 		Bytes: der,
 	}
-	f, err := os.Create(path)
+	f, err := safeio.Create(path)
 	if err != nil {
 		return err
 	}
@@ -96,7 +97,7 @@ func (k *KeyPair) SavePrivate(path string) error {
 // format for backward compatibility (legacy keys are upgraded to PKCS#8 the next
 // time SavePrivate runs).
 func LoadPrivate(path string) (*KeyPair, error) {
-	data, err := os.ReadFile(path)
+	data, err := safeio.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -136,12 +137,12 @@ func LoadPrivate(path string) (*KeyPair, error) {
 
 // SavePublic saves the public key to a hex file (simple format for now)
 func (k *KeyPair) SavePublic(path string) error {
-	return os.WriteFile(path, []byte(hex.EncodeToString(k.Public)), 0644)
+	return os.WriteFile(path, []byte(hex.EncodeToString(k.Public)), 0600)
 }
 
 // LoadPublic loads a public key from a hex file
 func LoadPublic(path string) (ed25519.PublicKey, error) {
-	data, err := os.ReadFile(path)
+	data, err := safeio.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}

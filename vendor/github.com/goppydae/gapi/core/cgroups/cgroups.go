@@ -3,6 +3,7 @@ package cgroups
 import (
 	"bufio"
 	"fmt"
+	"github.com/goppydae/gapi/internal/safeio"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -42,12 +43,12 @@ func Setup() error {
 
 	// 1. Create hierarchy
 	infraPath := filepath.Join(root, infraCgroup)
-	if err := os.MkdirAll(infraPath, 0755); err != nil {
+	if err := os.MkdirAll(infraPath, 0750); err != nil {
 		return fmt.Errorf("failed to create infra cgroup: %w", err)
 	}
 
 	supPath := filepath.Join(infraPath, supervisorName)
-	if err := os.MkdirAll(supPath, 0755); err != nil {
+	if err := os.MkdirAll(supPath, 0750); err != nil {
 		return fmt.Errorf("failed to create supervisor cgroup: %w", err)
 	}
 
@@ -96,7 +97,7 @@ func Create(name string, spec ResourceSpec) (string, error) {
 	}
 
 	cgPath := filepath.Join(root, name)
-	if err := os.MkdirAll(cgPath, 0755); err != nil {
+	if err := os.MkdirAll(cgPath, 0750); err != nil {
 		return "", err
 	}
 
@@ -106,11 +107,11 @@ func Create(name string, spec ResourceSpec) (string, error) {
 
 	// Apply Memory
 	if spec.Memory > 0 {
-		if err := os.WriteFile(filepath.Join(cgPath, memoryMax), []byte(fmt.Sprintf("%d", spec.Memory)), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(cgPath, memoryMax), []byte(fmt.Sprintf("%d", spec.Memory)), 0600); err != nil {
 			return "", fmt.Errorf("failed to set memory limit: %w", err)
 		}
 		// Try to disable swap to ensure hard limit
-		_ = os.WriteFile(filepath.Join(cgPath, "memory.swap.max"), []byte("0"), 0644)
+		_ = os.WriteFile(filepath.Join(cgPath, "memory.swap.max"), []byte("0"), 0600)
 	}
 
 	// Apply CPU
@@ -119,7 +120,7 @@ func Create(name string, spec ResourceSpec) (string, error) {
 		period := 100000
 		quota := int(float64(period) * spec.CPU)
 		val := fmt.Sprintf("%d %d", quota, period)
-		if err := os.WriteFile(filepath.Join(cgPath, cpuMax), []byte(val), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(cgPath, cpuMax), []byte(val), 0600); err != nil {
 			return "", fmt.Errorf("failed to set cpu limit: %w", err)
 		}
 	}
@@ -170,7 +171,7 @@ func enableControllers(path, controllers string) error {
 
 	if len(toWrite) > 0 {
 		scPath := filepath.Join(path, subtreeControl)
-		return os.WriteFile(scPath, []byte(strings.Join(toWrite, " ")), 0644)
+		return os.WriteFile(scPath, []byte(strings.Join(toWrite, " ")), 0600)
 	}
 	return nil
 }
@@ -204,8 +205,11 @@ func detectRoot() (string, error) {
 	return "/sys/fs/cgroup" + suffix, nil
 }
 
+// cgroupfsRoot confines every variable cgroup path this package opens.
+const cgroupfsRoot = "/sys/fs/cgroup"
+
 func readPids(path string) ([]int, error) {
-	f, err := os.Open(path)
+	f, err := safeio.OpenUnder(cgroupfsRoot, path)
 	if err != nil {
 		return nil, err
 	}
@@ -224,11 +228,11 @@ func readPids(path string) ([]int, error) {
 }
 
 func writePid(path string, pid int) error {
-	return os.WriteFile(path, []byte(strconv.Itoa(pid)), 0644)
+	return os.WriteFile(path, []byte(strconv.Itoa(pid)), 0600)
 }
 
 func readFirstLine(path string) (string, error) {
-	b, err := os.ReadFile(path)
+	b, err := safeio.ReadFileUnder(cgroupfsRoot, path)
 	if err != nil {
 		return "", err
 	}

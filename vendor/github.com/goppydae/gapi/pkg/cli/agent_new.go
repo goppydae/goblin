@@ -7,6 +7,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/goppydae/gapi/internal/safeio"
 	"github.com/spf13/cobra"
 )
 
@@ -37,7 +38,7 @@ func runAgentNew(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create output directory
-	if err := os.MkdirAll(outputPath, 0755); err != nil {
+	if err := os.MkdirAll(outputPath, 0750); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
@@ -76,7 +77,7 @@ func runAgentNew(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create output file
-	outFile, err := os.Create(outputFile)
+	outFile, err := safeio.Create(outputFile)
 	if err != nil {
 		return fmt.Errorf("failed to create output file: %w", err)
 	}

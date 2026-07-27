@@ -48,7 +48,7 @@ func SetupOutputs(cfg *config.LoggingConfig) (io.Writer, error) {
 func setupFileOutput(cfg *config.FileOutputConfig) (io.Writer, error) {
 	// Create directory if it doesn't exist
 	dir := filepath.Dir(cfg.Path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create log directory: %w", err)
 	}
 

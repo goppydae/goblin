@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"math/big"
 	"net"
 	"os"
@@ -268,9 +269,15 @@ func (q *QUIC) PublishRemote(ctx context.Context, e eventbus.Event[*anypb.Any]) 
 			return
 		}
 
-		// Length prefix
+		// Length prefix. The receiver caps messages far below this, but
+		// the conversion itself must be provably in range.
+		dataLen := len(data)
+		if dataLen > math.MaxUint32 {
+			log.Printf("envelope too large to frame: %d bytes\n", dataLen)
+			return
+		}
 		lenBuf := make([]byte, 4)
-		binary.BigEndian.PutUint32(lenBuf, uint32(len(data)))
+		binary.BigEndian.PutUint32(lenBuf, uint32(dataLen))
 		if _, err := s.Write(lenBuf); err != nil {
 			return
 		}

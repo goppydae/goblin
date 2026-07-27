@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/goppydae/gapi/internal/safeio"
 	"github.com/zeebo/blake3"
 )
 
@@ -41,7 +42,7 @@ func HashDirectory(dir string, pattern string) (string, error) {
 	// Hash each file and combine
 	hasher := blake3.New()
 	for _, file := range files {
-		data, err := os.ReadFile(file)
+		data, err := safeio.ReadFileUnder(dir, file)
 		if err != nil {
 			return "", err
 		}

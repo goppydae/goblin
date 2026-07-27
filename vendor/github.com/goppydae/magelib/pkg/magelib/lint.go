@@ -53,7 +53,11 @@ func Lint(gosecExcludes ...string) error {
 		return fmt.Errorf("golangci-lint: %w", err)
 	}
 
-	gosecArgs := []string{}
+	// Generated code (protoc-gen-go, cgo intermediates) is skipped: it is
+	// not hand-fixable, and rule-level excludes would also mute the same
+	// rule in hand-written code. Rule excludes below stay the per-repo
+	// carve-out mechanism for code we own.
+	gosecArgs := []string{"-exclude-generated"}
 	if len(gosecExcludes) > 0 {
 		gosecArgs = append(gosecArgs, "-exclude="+strings.Join(gosecExcludes, ","))
 	}

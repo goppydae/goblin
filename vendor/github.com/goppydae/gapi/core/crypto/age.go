@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"filippo.io/age"
+	"github.com/goppydae/gapi/internal/safeio"
 )
 
 // GenerateAgeIdentity generates a new x25519 identity.
@@ -43,7 +44,7 @@ func EncryptAge(recipients []string, data []byte) ([]byte, error) {
 // DecryptAge decrypts data using an identity file (containing private keys).
 func DecryptAge(identityPath string, data []byte) ([]byte, error) {
 	// Read identities from file
-	f, err := os.Open(identityPath)
+	f, err := safeio.Open(identityPath)
 	if err != nil {
 		return nil, fmt.Errorf("open identity: %w", err)
 	}

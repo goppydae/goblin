@@ -3,7 +3,7 @@ package crypto
 import (
 	"crypto/ed25519"
 	"fmt"
-	"os"
+	"github.com/goppydae/gapi/internal/safeio"
 	"strings"
 )
 
@@ -19,7 +19,7 @@ func VerifySignedBinary(binPath string, pub ed25519.PublicKey) error {
 	}
 
 	hashPath := binPath + ".b3"
-	hashData, err := os.ReadFile(hashPath)
+	hashData, err := safeio.ReadFile(hashPath)
 	if err != nil {
 		return fmt.Errorf("verify %s: reading digest: %w", binPath, err)
 	}
@@ -31,7 +31,7 @@ func VerifySignedBinary(binPath string, pub ed25519.PublicKey) error {
 		return fmt.Errorf("verify %s: digest mismatch (binary does not match its .b3)", binPath)
 	}
 
-	sigData, err := os.ReadFile(binPath + ".sig")
+	sigData, err := safeio.ReadFile(binPath + ".sig")
 	if err != nil {
 		return fmt.Errorf("verify %s: reading signature: %w", binPath, err)
 	}

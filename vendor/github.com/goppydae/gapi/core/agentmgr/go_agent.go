@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"os"
 	"os/exec"
@@ -235,6 +236,10 @@ func (a *GoAgent) watchLoop(ctx context.Context, f *os.File) {
 		fd = int(descriptor)
 	})
 
+	if fd < 0 || fd > math.MaxInt32 {
+		fmt.Fprintf(os.Stderr, "[gapid] watchLoop: fd %d out of int32 range\n", fd)
+		return
+	}
 	pollFd := []unix.PollFd{
 		{Fd: int32(fd), Events: unix.POLLIN},
 	}

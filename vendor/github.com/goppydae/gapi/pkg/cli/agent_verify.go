@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/goppydae/gapi/core/crypto"
+	"github.com/goppydae/gapi/internal/safeio"
 )
 
 var (
@@ -57,7 +58,7 @@ func runAgentVerify(cmd *cobra.Command, args []string) error {
 	if _, err := os.Stat(hashFile); os.IsNotExist(err) {
 		fmt.Printf("   ⚠️  No .b3 file found\n")
 	} else {
-		expectedHash, err := os.ReadFile(hashFile)
+		expectedHash, err := safeio.ReadFile(hashFile)
 		if err != nil {
 			return fmt.Errorf("failed to read hash file: %w", err)
 		}
@@ -88,13 +89,13 @@ func runAgentVerify(cmd *cobra.Command, args []string) error {
 		fmt.Printf("   ⚠️  Signature file exists but no --pubkey provided\n")
 	} else {
 		// Read signature
-		sigData, err := os.ReadFile(sigFile)
+		sigData, err := safeio.ReadFile(sigFile)
 		if err != nil {
 			return fmt.Errorf("failed to read signature: %w", err)
 		}
 
 		// Read hash (what was signed)
-		hashData, err := os.ReadFile(hashFile)
+		hashData, err := safeio.ReadFile(hashFile)
 		if err != nil {
 			return fmt.Errorf("failed to read hash file: %w", err)
 		}

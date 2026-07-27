@@ -55,8 +55,9 @@ func AgentSearchPaths() []string {
 		paths = append(paths, filepath.Join(home, ".local", "share", "gapi", "agents"))
 	}
 
-	// Legacy fallback: ~/.gapi/agents
-	if home := os.Getenv("HOME"); home != "" {
+	// Legacy fallback: ~/.gapi/agents. os.UserHomeDir (not raw $HOME) so
+	// the probed path is anchored at the platform home directory.
+	if home, err := os.UserHomeDir(); err == nil {
 		legacyPath := filepath.Join(home, ".gapi", "agents")
 		if _, err := os.Stat(legacyPath); err == nil {
 			paths = append(paths, legacyPath)

@@ -253,7 +253,7 @@ func buildAgent(sourcePath string) error {
 	}
 
 	// Create output directory
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	if err := os.MkdirAll(outputDir, 0750); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
@@ -295,7 +295,7 @@ func buildAgent(sourcePath string) error {
 	}
 
 	hashFile := outputBinary + ".b3"
-	if err := os.WriteFile(hashFile, []byte(hash+"\n"), 0644); err != nil {
+	if err := os.WriteFile(hashFile, []byte(hash+"\n"), 0600); err != nil {
 		return fmt.Errorf("failed to write hash file: %w", err)
 	}
 
@@ -315,7 +315,7 @@ func buildAgent(sourcePath string) error {
 
 		signature := keypair.Sign([]byte(hash))
 		sigFile := outputBinary + ".sig"
-		if err := os.WriteFile(sigFile, []byte(fmt.Sprintf("%x\n", signature)), 0644); err != nil {
+		if err := os.WriteFile(sigFile, []byte(fmt.Sprintf("%x\n", signature)), 0600); err != nil {
 			return fmt.Errorf("failed to write signature: %w", err)
 		}
 

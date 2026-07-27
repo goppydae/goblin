@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/goppydae/gapi/core/crypto"
+	"github.com/goppydae/gapi/internal/safeio"
 	"github.com/spf13/cobra"
 )
 
@@ -39,7 +40,7 @@ var signCmd = &cobra.Command{
 
 		// Write .sig
 		sigPath := file + ".sig"
-		if err := os.WriteFile(sigPath, []byte(sigHex), 0644); err != nil {
+		if err := os.WriteFile(sigPath, []byte(sigHex), 0600); err != nil {
 			return err
 		}
 
@@ -92,7 +93,7 @@ var verifyCmd = &cobra.Command{
 		}
 
 		// Read signature
-		sigHexBytes, err := os.ReadFile(file + ".sig")
+		sigHexBytes, err := safeio.ReadFile(file + ".sig")
 		if err != nil {
 			return fmt.Errorf("read signature: %w", err)
 		}

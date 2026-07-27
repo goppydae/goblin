@@ -82,6 +82,7 @@ github.com/goppydae/gapi/core/version
 github.com/goppydae/gapi/internal/logging/logcore
 github.com/goppydae/gapi/internal/logging/logevent
 github.com/goppydae/gapi/internal/logging/logoutput
+github.com/goppydae/gapi/internal/safeio
 github.com/goppydae/gapi/internal/statewatch
 github.com/goppydae/gapi/internal/toposort
 github.com/goppydae/gapi/pkg/cli
