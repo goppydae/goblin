@@ -254,7 +254,12 @@ func (am *AgentManager) processDiscovered(path string, d struct {
 	}
 
 	var a Agent
-	if meta.Type == "timer" && strings.HasSuffix(path, ".py") { // Python Timer
+	// Python timers ship as either "<name>.py" (with TYPE=timer metadata) or
+	// "<name>.py.timer"; matching only the ".py" suffix routed .py.timer
+	// files into the Python-SERVICE branch, where the runner awaits a
+	// readiness signal a timer module never sends (GAPI-DIV-021).
+	isPythonTimer := strings.HasSuffix(path, ".py") || strings.HasSuffix(path, ".py.timer")
+	if meta.Type == "timer" && isPythonTimer { // Python Timer
 		schedule := d.Schedule
 		if schedule == "" {
 			schedule = "OnUnitActiveSec=60s"

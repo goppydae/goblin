@@ -9,9 +9,11 @@ import (
 	"time"
 
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/goppydae/gapi/core/eventbus"
 	"github.com/goppydae/gapi/core/lifecycle"
+	protopkg "github.com/goppydae/gapi/pkg/proto"
 	"github.com/rs/zerolog/log"
 )
 
@@ -23,9 +25,15 @@ type TimerAgent struct {
 	pyRunner string
 	hostname string
 
-	ctrl   *lifecycle.Controller
-	cancel context.CancelFunc
-	mu     sync.Mutex
+	ctrl *lifecycle.Controller
+	// lbus is where the controller listens for lifecycle status; the timer
+	// must publish its RUNNING/STOPPED transitions there (with the run id
+	// the controller set) or ActionStart times out waiting for them - the
+	// contract GoAgent/PythonAgent satisfy via publishStatus.
+	lbus      *lifecycle.TypedBus
+	nextRunID string
+	cancel    context.CancelFunc
+	mu        sync.Mutex
 }
 
 func NewTimerAgent(id, path, schedule, pyRunner string, bus *eventbus.EventBus[*anypb.Any], lbus *lifecycle.TypedBus) *TimerAgent {
@@ -36,6 +44,7 @@ func NewTimerAgent(id, path, schedule, pyRunner string, bus *eventbus.EventBus[*
 		schedule: schedule,
 		pyRunner: pyRunner,
 		hostname: host,
+		lbus:     lbus,
 	}
 
 	// Create controller with proper signature
@@ -50,7 +59,11 @@ func (ta *TimerAgent) Lang() string                      { return "python" }
 func (ta *TimerAgent) Dependencies() []string            { return nil }
 func (ta *TimerAgent) Requires() []string                { return nil }
 func (ta *TimerAgent) Wants() []string                   { return nil }
-func (ta *TimerAgent) SetRunID(string)                   { /* no-op for timers or store if needed */ }
+func (ta *TimerAgent) SetRunID(id string) {
+	ta.mu.Lock()
+	ta.nextRunID = id
+	ta.mu.Unlock()
+}
 func (ta *TimerAgent) Controller() *lifecycle.Controller { return ta.ctrl }
 
 func (ta *TimerAgent) Describe() map[string]string {
@@ -92,6 +105,10 @@ func (ta *TimerAgent) Start(ctx context.Context) error {
 	ta.cancel = cancel
 	go ta.run(ctx, schedule)
 
+	// The controller awaits a RUNNING status carrying the run id it set;
+	// the ticker loop is our running state.
+	ta.publishStatusWithRunID("RUNNING", "timer scheduled", ta.nextRunID)
+
 	return nil
 }
 
@@ -106,8 +123,32 @@ func (ta *TimerAgent) Stop(ctx context.Context) error {
 	ta.cancel()
 	ta.cancel = nil
 
+	ta.publishStatusWithRunID("STOPPED", "timer stopped", ta.nextRunID)
+
 	log.Info().Str("agent", ta.id).Msg("timer agent stopped")
 	return nil
+}
+
+// publishStatusWithRunID is lock-free and safe to call with ta.mu held
+// (the Go/Python agents' status contract).
+func (ta *TimerAgent) publishStatusWithRunID(state, message, rid string) {
+	if ta.lbus == nil {
+		return
+	}
+	st := &protopkg.LifecycleStatus{
+		AgentId:  ta.id,
+		State:    state,
+		Message:  message,
+		Time:     timestamppb.Now(),
+		Hostname: ta.hostname,
+		RunId:    rid,
+	}
+	anyp, err := anypb.New(st)
+	if err != nil {
+		return
+	}
+	ev := eventbus.NewEvent[*anypb.Any]("system", "", "agent/lifecycle.status", ta.id, anyp, true)
+	_ = ta.lbus.Publish(ev)
 }
 
 func (ta *TimerAgent) Reload(ctx context.Context) error {
