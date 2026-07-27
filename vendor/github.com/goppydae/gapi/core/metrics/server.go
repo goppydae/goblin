@@ -25,7 +25,11 @@ func NewServer(addr string, logger zerolog.Logger) *Server {
 	// Health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "OK")
+		// The ResponseWriter is the terminus: a failed write means the
+		// client is gone; nothing upstream can act on it beyond a log.
+		if _, err := fmt.Fprintln(w, "OK"); err != nil {
+			logger.Warn().Err(err).Msg("health endpoint write failed")
+		}
 	})
 
 	return &Server{

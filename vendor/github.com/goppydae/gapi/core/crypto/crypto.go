@@ -55,10 +55,13 @@ func HashFile(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
 
 	h := blake3.New()
-	if _, err := io.Copy(h, f); err != nil {
+	_, err = io.Copy(h, f)
+	if cerr := f.Close(); cerr != nil && err == nil {
+		err = cerr
+	}
+	if err != nil {
 		return "", err
 	}
 
@@ -81,8 +84,11 @@ func (k *KeyPair) SavePrivate(path string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	return pem.Encode(f, block)
+	err = pem.Encode(f, block)
+	if cerr := f.Close(); cerr != nil && err == nil {
+		err = cerr
+	}
+	return err
 }
 
 // LoadPrivate loads a private key from a PEM file. It accepts the canonical

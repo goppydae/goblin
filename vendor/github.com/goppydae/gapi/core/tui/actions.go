@@ -10,6 +10,7 @@ import (
 	"github.com/goppydae/gapi/core/config"
 	"github.com/goppydae/gapi/core/eventbus"
 	"github.com/goppydae/gapi/core/transport"
+	"github.com/goppydae/gapi/internal/logging/logcore"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
 )
 
@@ -31,14 +32,18 @@ func sendLifecycleAction(agentID, action string) tea.Cmd {
 		if err != nil {
 			return lifecycleActionMsg{agentID: agentID, action: action, success: false, err: err}
 		}
-		defer t.Close()
+		defer func() {
+			if cerr := t.Close(); cerr != nil {
+				logcore.Error().Str("module", "tui").Err(cerr).Msg("failed to close transport")
+			}
+		}()
 
 		bus := eventbus.NewEventBus(t)
 
 		done := make(chan bool)
 		errChan := make(chan error)
 
-		bus.SubscribePrefix("system", "", "agent/lifecycle", func(e eventbus.Event[*anypb.Any]) {
+		if err := bus.SubscribePrefix("system", "", "agent/lifecycle", func(e eventbus.Event[*anypb.Any]) {
 			var status protopkg.LifecycleTransition
 			if err := e.Payload.UnmarshalTo(&status); err != nil {
 				errChan <- err
@@ -48,7 +53,9 @@ func sendLifecycleAction(agentID, action string) tea.Cmd {
 			if status.AgentId == agentID {
 				done <- true
 			}
-		})
+		}); err != nil {
+			return lifecycleActionMsg{agentID: agentID, action: action, success: false, err: err}
+		}
 
 		req := &protopkg.LifecycleControl{
 			AgentId: agentID,
@@ -56,7 +63,9 @@ func sendLifecycleAction(agentID, action string) tea.Cmd {
 		}
 		packed, _ := anypb.New(req)
 		// Send control event
-		bus.Publish(eventbus.NewEvent("system", "", "agent/lifecycle.action", "gapictl-tui", packed, true))
+		if err := bus.Publish(eventbus.NewEvent("system", "", "agent/lifecycle.action", "gapictl-tui", packed, true)); err != nil {
+			return lifecycleActionMsg{agentID: agentID, action: action, success: false, err: err}
+		}
 
 		select {
 		case <-done:

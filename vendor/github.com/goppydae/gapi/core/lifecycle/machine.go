@@ -6,6 +6,7 @@ import (
 
 	"github.com/goppydae/gapi/core/eventbus"
 	"github.com/goppydae/gapi/core/state"
+	"github.com/goppydae/gapi/internal/logging/logcore"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
 )
 
@@ -65,7 +66,8 @@ func (lsm *LifecycleStateMachine) emitLifecycleEvent(from, to string) {
 
 	anyMsg, err := anypb.New(msg)
 	if err != nil {
-		return // optionally log
+		logcore.Error().Str("module", "lifecycle").Str("agent_id", lsm.agentID).Err(err).Msg("failed to marshal lifecycle transition event")
+		return
 	}
 
 	event := eventbus.NewEvent(
@@ -77,7 +79,11 @@ func (lsm *LifecycleStateMachine) emitLifecycleEvent(from, to string) {
 		true,
 	)
 
-	lsm.bus.Publish(event)
+	// Advisory observability event: log failures loudly, never abort the
+	// transition itself (see Controller.publishControl).
+	if err := lsm.bus.Publish(event); err != nil {
+		logcore.Error().Str("module", "lifecycle").Str("agent_id", lsm.agentID).Err(err).Msg("failed to publish lifecycle transition event")
+	}
 }
 
 func (lsm *LifecycleStateMachine) TransitionTo(newState string) error {

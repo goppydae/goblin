@@ -53,12 +53,12 @@ func NewTimerAgent(id, path, schedule, pyRunner string, bus *eventbus.EventBus[*
 	return ta
 }
 
-func (ta *TimerAgent) ID() string                        { return ta.id }
-func (ta *TimerAgent) Type() string                      { return "timer" }
-func (ta *TimerAgent) Lang() string                      { return "python" }
-func (ta *TimerAgent) Dependencies() []string            { return nil }
-func (ta *TimerAgent) Requires() []string                { return nil }
-func (ta *TimerAgent) Wants() []string                   { return nil }
+func (ta *TimerAgent) ID() string             { return ta.id }
+func (ta *TimerAgent) Type() string           { return "timer" }
+func (ta *TimerAgent) Lang() string           { return "python" }
+func (ta *TimerAgent) Dependencies() []string { return nil }
+func (ta *TimerAgent) Requires() []string     { return nil }
+func (ta *TimerAgent) Wants() []string        { return nil }
 func (ta *TimerAgent) SetRunID(id string) {
 	ta.mu.Lock()
 	ta.nextRunID = id
@@ -81,7 +81,10 @@ func (ta *TimerAgent) Initialize(ctx context.Context) error {
 	return nil // No initialization needed
 }
 
-func (ta *TimerAgent) Start(ctx context.Context) error {
+// Start satisfies lifecycle.Runner. The caller's context is deliberately
+// unused: the ticker loop must outlive Start (it is cancelled by Stop),
+// so it runs on its own detached context.
+func (ta *TimerAgent) Start(_ context.Context) error {
 	ta.mu.Lock()
 	defer ta.mu.Unlock()
 
@@ -101,9 +104,9 @@ func (ta *TimerAgent) Start(ctx context.Context) error {
 		Msg("timer agent started")
 
 	// Start ticker goroutine
-	ctx, cancel := context.WithCancel(context.Background())
+	runCtx, cancel := context.WithCancel(context.Background())
 	ta.cancel = cancel
-	go ta.run(ctx, schedule)
+	go ta.run(runCtx, schedule)
 
 	// The controller awaits a RUNNING status carrying the run id it set;
 	// the ticker loop is our running state.

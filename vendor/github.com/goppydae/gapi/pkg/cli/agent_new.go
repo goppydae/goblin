@@ -70,9 +70,9 @@ func runAgentNew(cmd *cobra.Command, args []string) error {
 		ID          string
 		Description string
 	}{
-		Name:        strings.Title(strings.ReplaceAll(agentName, "_", " ")),
+		Name:        titleCase(strings.ReplaceAll(agentName, "_", " ")),
 		ID:          agentName,
-		Description: fmt.Sprintf("%s agent", strings.Title(strings.ReplaceAll(agentName, "_", " "))),
+		Description: fmt.Sprintf("%s agent", titleCase(strings.ReplaceAll(agentName, "_", " "))),
 	}
 
 	// Create output file
@@ -80,10 +80,14 @@ func runAgentNew(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create output file: %w", err)
 	}
-	defer outFile.Close()
 
-	// Render template
-	if err := tmpl.Execute(outFile, data); err != nil {
+	// Render template. Close is part of the write path: a close error means
+	// the scaffold may be truncated, so it fails the command.
+	err = tmpl.Execute(outFile, data)
+	if cerr := outFile.Close(); cerr != nil && err == nil {
+		err = fmt.Errorf("failed to close output file: %w", cerr)
+	}
+	if err != nil {
 		return fmt.Errorf("failed to render template: %w", err)
 	}
 
@@ -99,4 +103,15 @@ func runAgentNew(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// titleCase ASCII-capitalizes each space-separated word. It replaces the
+// deprecated strings.Title for agent-name scaffolding without promoting
+// golang.org/x/text to a direct dependency (go.mod is operator-gated).
+func titleCase(s string) string {
+	words := strings.Fields(s)
+	for i, w := range words {
+		words[i] = strings.ToUpper(w[:1]) + w[1:]
+	}
+	return strings.Join(words, " ")
 }

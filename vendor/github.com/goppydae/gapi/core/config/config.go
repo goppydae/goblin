@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -110,7 +111,8 @@ func Load() (*Config, error) {
 	viper.SetDefault("timeouts.supervisorShutdown", SupervisorShutdownTimeout.String())
 
 	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+		var notFound viper.ConfigFileNotFoundError
+		if !errors.As(err, &notFound) {
 			return nil, fmt.Errorf("read config error: %w", err)
 		}
 		// Config file not found; proceed with defaults

@@ -17,12 +17,12 @@ import (
 
 	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/types/known/anypb"
-	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/goppydae/gapi/core/cgroups"
 	"github.com/goppydae/gapi/core/eventbus"
 	"github.com/goppydae/gapi/core/lifecycle"
+	"github.com/goppydae/gapi/internal/logging/logcore"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
 )
 
@@ -228,7 +228,12 @@ func (a *PythonAgent) armLocked() error {
 }
 
 func (a *PythonAgent) watchLoop(ctx context.Context, f *os.File) {
-	defer f.Close()
+	// Goroutine terminus: the loop has no caller to return to.
+	defer func() {
+		if cerr := f.Close(); cerr != nil {
+			logcore.Error().Str("module", "agentmgr").Str("agent_id", a.id).Err(cerr).Msg("failed to close watch fd")
+		}
+	}()
 
 	// Get raw FD
 	rawConn, err := f.SyscallConn()
@@ -311,9 +316,13 @@ func (a *PythonAgent) Start(ctx context.Context) error {
 		}
 		if socketFile != nil {
 			extraFiles = append(extraFiles, socketFile)
-			// Defer close? Start() consumes it?
-			// exec.Command duplicates. We should close our copy.
-			defer socketFile.Close()
+			// Our dup of the listener fd; the child holds its own copy. A
+			// close failure only leaks our dup - log it, don't fail Start.
+			defer func() {
+				if cerr := socketFile.Close(); cerr != nil {
+					logcore.Error().Str("module", "agentmgr").Str("agent_id", a.id).Err(cerr).Msg("failed to close listener fd dup")
+				}
+			}()
 		}
 	}
 
@@ -568,12 +577,6 @@ func (a *PythonAgent) streamStderr(r io.Reader) {
 	for sc.Scan() {
 		a.publishLog("stderr", sc.Text())
 	}
-}
-
-func anyFromMap(m map[string]any) *anypb.Any {
-	s, _ := structpb.NewStruct(m)
-	anyp, _ := anypb.New(s)
-	return anyp
 }
 
 func (a *PythonAgent) publishStatus(state, message string) {

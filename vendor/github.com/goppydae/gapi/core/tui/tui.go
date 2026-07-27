@@ -225,10 +225,11 @@ func (m Model) handleListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "tab":
 		// Switch between Overview, Global, and Logs tabs
-		if m.view == ViewOverview {
+		switch m.view {
+		case ViewOverview:
 			m.view = ViewGlobal
 			m.currentTab = 1
-		} else if m.view == ViewGlobal {
+		case ViewGlobal:
 			m.view = ViewLogs
 			m.currentTab = 2
 
@@ -249,7 +250,7 @@ func (m Model) handleListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.logViewer.sub = logsCh
 			return m, waitForLog(logsCh)
 
-		} else if m.view == ViewLogs {
+		case ViewLogs:
 			m.view = ViewOverview
 			m.currentTab = 0
 
@@ -432,22 +433,23 @@ func (m Model) renderList() string {
 		Padding(0, 2).
 		Bold(true)
 
-	activeTabStyle := tabStyle.Copy().
+	activeTabStyle := tabStyle.
 		Foreground(lipgloss.Color("205")).
 		Background(lipgloss.Color("63"))
 
-	inactiveTabStyle := tabStyle.Copy().
+	inactiveTabStyle := tabStyle.
 		Foreground(lipgloss.Color("241"))
 
 	overviewTab := "[Overview]"
 	globalTab := "[Global]"
 	logsTab := "[Logs]"
 
-	if m.view == ViewOverview {
+	switch m.view {
+	case ViewOverview:
 		s += activeTabStyle.Render(overviewTab) + inactiveTabStyle.Render(globalTab) + inactiveTabStyle.Render(logsTab)
-	} else if m.view == ViewGlobal {
+	case ViewGlobal:
 		s += inactiveTabStyle.Render(overviewTab) + activeTabStyle.Render(globalTab) + inactiveTabStyle.Render(logsTab)
-	} else {
+	default:
 		s += inactiveTabStyle.Render(overviewTab) + inactiveTabStyle.Render(globalTab) + activeTabStyle.Render(logsTab)
 	}
 	s += "\n\n"

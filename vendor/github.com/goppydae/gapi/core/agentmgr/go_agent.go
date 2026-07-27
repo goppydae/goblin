@@ -22,6 +22,7 @@ import (
 	"github.com/goppydae/gapi/core/cgroups"
 	"github.com/goppydae/gapi/core/eventbus"
 	"github.com/goppydae/gapi/core/lifecycle"
+	"github.com/goppydae/gapi/internal/logging/logcore"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
 )
 
@@ -216,7 +217,12 @@ func (a *GoAgent) armLocked() error {
 }
 
 func (a *GoAgent) watchLoop(ctx context.Context, f *os.File) {
-	defer f.Close()
+	// Goroutine terminus: the loop has no caller to return to.
+	defer func() {
+		if cerr := f.Close(); cerr != nil {
+			logcore.Error().Str("module", "agentmgr").Str("agent_id", a.id).Err(cerr).Msg("failed to close watch fd")
+		}
+	}()
 
 	rawConn, err := f.SyscallConn()
 	if err != nil {
@@ -288,7 +294,13 @@ func (a *GoAgent) Start(ctx context.Context) error {
 		}
 		if socketFile != nil {
 			extraFiles = append(extraFiles, socketFile)
-			defer socketFile.Close()
+			// Our dup of the listener fd; the child holds its own copy. A
+			// close failure only leaks our dup - log it, don't fail Start.
+			defer func() {
+				if cerr := socketFile.Close(); cerr != nil {
+					logcore.Error().Str("module", "agentmgr").Str("agent_id", a.id).Err(cerr).Msg("failed to close listener fd dup")
+				}
+			}()
 		}
 	}
 
@@ -420,16 +432,15 @@ func (a *GoAgent) Stop(ctx context.Context) error {
 	}
 }
 
-// ignoreStopSignalExit maps a child exit caused by our own stop signals
-// (SIGTERM/SIGKILL) to success: that exit is the intended outcome of Stop,
-// not a failure. Any other error passes through.
+// ignoreStopSignalExit maps a signal-caused child exit to success at Stop
+// time: whether the signal was Stop's own SIGTERM/SIGKILL or an earlier one
+// (e.g. Reload's SIGHUP on an agent that does not handle it), the process
+// is stopped - which is Stop's contract. Any non-signal error passes through.
 func ignoreStopSignalExit(err error) error {
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {
 		if status, ok := ee.Sys().(syscall.WaitStatus); ok && status.Signaled() {
-			if status.Signal() == syscall.SIGTERM || status.Signal() == syscall.SIGKILL {
-				return nil
-			}
+			return nil
 		}
 	}
 	return err

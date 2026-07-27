@@ -161,7 +161,7 @@ var tuiCmd = &cobra.Command{
 
 		c, err := client.New(cfg)
 		if err != nil {
-			return fmt.Errorf("failed to init client: %v", err)
+			return fmt.Errorf("failed to init client: %w", err)
 		}
 
 		ctrl := &LocalController{client: c}

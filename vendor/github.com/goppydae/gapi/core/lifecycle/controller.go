@@ -49,8 +49,12 @@ type Controller struct {
 	stateCh   chan statusEvt // single, long-lived feed
 }
 
+// depCtxKey is an unexported context-key type so the dependency-cycle
+// stack cannot collide with other packages' context values (SA1029).
+type depCtxKey struct{}
+
 // DepCtxKey is used to store the call stack for cycle detection
-var DepCtxKey = "gapi_dep_stack"
+var DepCtxKey = depCtxKey{}
 
 type DependencyResolver interface {
 	DepsOf(id string) []string
@@ -283,7 +287,12 @@ func (c *Controller) ApplyWithContext(ctx context.Context, a Action) error {
 func (c *Controller) publishControl(a protopkg.LifecycleControl_Action) {
 	msg := &protopkg.LifecycleControl{AgentId: c.id, Action: a}
 	anyMsg, _ := anypb.New(msg)
-	c.bus.Publish(eventbus.NewEvent("system", "", "agent/lifecycle.control", c.id, anyMsg, true))
+	// Advisory observability event: a publish failure is logged loudly but
+	// must not abort the lifecycle action itself (aborting stop/start on a
+	// closed bus would invert priorities during shutdown).
+	if err := c.bus.Publish(eventbus.NewEvent("system", "", "agent/lifecycle.control", c.id, anyMsg, true)); err != nil {
+		logcore.Error().Str("module", "lifecycle").Str("agent_id", c.id).Err(err).Msg("failed to publish lifecycle control event")
+	}
 }
 
 func (c *Controller) publishStatus(state protopkg.AgentState, message string) {
@@ -295,7 +304,10 @@ func (c *Controller) publishStatus(state protopkg.AgentState, message string) {
 		Hostname: c.host,
 	}
 	anyMsg, _ := anypb.New(st)
-	c.bus.Publish(eventbus.NewEvent("system", "", "agent/lifecycle.status", c.id, anyMsg, true))
+	// Advisory observability event; see publishControl for the no-abort rationale.
+	if err := c.bus.Publish(eventbus.NewEvent("system", "", "agent/lifecycle.status", c.id, anyMsg, true)); err != nil {
+		logcore.Error().Str("module", "lifecycle").Str("agent_id", c.id).Err(err).Msg("failed to publish lifecycle status event")
+	}
 }
 
 func (c *Controller) awaitTarget(d time.Duration, want string) error {
@@ -333,10 +345,6 @@ func (c *Controller) awaitRunningWithRunIDSince(d time.Duration, wantRunID strin
 }
 
 func anyEnumToString(e protopkg.AgentState) string {
-	s := e.String()
-	const p = "AGENT_STATE_"
-	if strings.HasPrefix(s, p) {
-		s = s[len(p):]
-	}
+	s := strings.TrimPrefix(e.String(), "AGENT_STATE_")
 	return strings.ToLower(s)
 }

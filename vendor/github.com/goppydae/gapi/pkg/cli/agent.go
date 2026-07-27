@@ -122,7 +122,13 @@ func watchAndBuild(sourcePath string, isDir bool) error {
 	if err != nil {
 		return fmt.Errorf("failed to create watcher: %w", err)
 	}
-	defer watcher.Close()
+	// The watch loop runs until interrupt; stderr is the CLI's error surface
+	// for the final cleanup close.
+	defer func() {
+		if cerr := watcher.Close(); cerr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to close watcher: %v\n", cerr)
+		}
+	}()
 
 	// Watch the source path
 	if err := addWatchRecursive(watcher, sourcePath); err != nil {

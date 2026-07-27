@@ -47,8 +47,12 @@ func HashDirectory(dir string, pattern string) (string, error) {
 		}
 		// Include relative path for uniqueness
 		relPath, _ := filepath.Rel(dir, file)
-		hasher.Write([]byte(relPath))
-		hasher.Write(data)
+		if _, err := hasher.Write([]byte(relPath)); err != nil {
+			return "", err
+		}
+		if _, err := hasher.Write(data); err != nil {
+			return "", err
+		}
 	}
 
 	return hex.EncodeToString(hasher.Sum(nil)), nil

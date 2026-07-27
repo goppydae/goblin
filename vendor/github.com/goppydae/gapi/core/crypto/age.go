@@ -47,9 +47,11 @@ func DecryptAge(identityPath string, data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open identity: %w", err)
 	}
-	defer f.Close()
 
 	ids, err := age.ParseIdentities(f)
+	if cerr := f.Close(); cerr != nil && err == nil {
+		err = fmt.Errorf("close identity: %w", cerr)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("parse identities: %w", err)
 	}

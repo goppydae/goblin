@@ -182,7 +182,6 @@ func detectRoot() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
 
 	scanner := bufio.NewScanner(f)
 	var suffix string
@@ -193,6 +192,9 @@ func detectRoot() (string, error) {
 			suffix = parts[2]
 			break
 		}
+	}
+	if cerr := f.Close(); cerr != nil {
+		return "", cerr
 	}
 
 	if suffix == "" {
@@ -207,7 +209,6 @@ func readPids(path string) ([]int, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
 
 	var pids []int
 	scanner := bufio.NewScanner(f)
@@ -215,6 +216,9 @@ func readPids(path string) ([]int, error) {
 		if pid, err := strconv.Atoi(scanner.Text()); err == nil {
 			pids = append(pids, pid)
 		}
+	}
+	if cerr := f.Close(); cerr != nil {
+		return nil, cerr
 	}
 	return pids, nil
 }

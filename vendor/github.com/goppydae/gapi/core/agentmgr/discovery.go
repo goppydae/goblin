@@ -427,10 +427,10 @@ func (am *AgentManager) pythonDescribe(modulePath string) (*pyDescribe, error) {
 				exitErr.ExitCode(), bytes.TrimSpace(stderr.Bytes()), cmdline)
 		}
 		if ctx.Err() != nil {
-			return nil, fmt.Errorf("describe: timeout: %v\nstderr: %s\ncmd: %s",
+			return nil, fmt.Errorf("describe: timeout: %w\nstderr: %s\ncmd: %s",
 				ctx.Err(), bytes.TrimSpace(stderr.Bytes()), cmdline)
 		}
-		return nil, fmt.Errorf("describe: exec error: %v\nstderr: %s\ncmd: %s",
+		return nil, fmt.Errorf("describe: exec error: %w\nstderr: %s\ncmd: %s",
 			err, bytes.TrimSpace(stderr.Bytes()), cmdline)
 	}
 
@@ -443,7 +443,7 @@ func (am *AgentManager) pythonDescribe(modulePath string) (*pyDescribe, error) {
 
 	var d pyDescribe
 	if err := json.Unmarshal(out, &d); err != nil {
-		return nil, fmt.Errorf("describe: invalid JSON: %v\nstdout: %q\nstderr: %s\ncmd: %s",
+		return nil, fmt.Errorf("describe: invalid JSON: %w\nstdout: %q\nstderr: %s\ncmd: %s",
 			err, string(out), bytes.TrimSpace(stderr.Bytes()), cmdline)
 	}
 	return &d, nil

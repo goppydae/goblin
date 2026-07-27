@@ -128,8 +128,10 @@ func (q *QUIC) acceptLoop(ln *quic.Listener) {
 				return
 			}
 
-			// Handle temporary errors with exponential backoff
-			if netErr, ok := err.(net.Error); ok && netErr.Temporary() {
+			// Retry timeouts with exponential backoff (Temporary() is
+			// deprecated: timeouts are the well-defined retryable class).
+			var netErr net.Error
+			if errors.As(err, &netErr) && netErr.Timeout() {
 				if tempDelay == 0 {
 					tempDelay = 5 * time.Millisecond
 				} else {
@@ -169,7 +171,12 @@ func (q *QUIC) handleConn(conn *quic.Conn) {
 }
 
 func (q *QUIC) handleStream(s *quic.Stream) {
-	defer s.Close()
+	// Read-side stream close in a handler goroutine: the terminus is a log.
+	defer func() {
+		if cerr := s.Close(); cerr != nil {
+			log.Println("close stream:", cerr)
+		}
+	}()
 
 	var lenBuf [4]byte
 	if _, err := io.ReadFull(s, lenBuf[:]); err != nil {
@@ -239,7 +246,13 @@ func (q *QUIC) PublishRemote(ctx context.Context, e eventbus.Event[*anypb.Any]) 
 		if err != nil {
 			return
 		}
-		defer s.Close()
+		// Write-side close in a fire-and-forget publish goroutine: a close
+		// error can mean the frame did not flush - log it loudly.
+		defer func() {
+			if cerr := s.Close(); cerr != nil {
+				log.Printf("close publish stream: %v\n", cerr)
+			}
+		}()
 
 		env := &protopkg.Envelope{
 			Id:      e.ID,
