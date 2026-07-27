@@ -13,6 +13,9 @@ import (
 
 var (
 	ErrNotLeader = errors.New("not leader")
+
+	// ErrCASMismatch mirrors consensus.ErrCASMismatch at the store boundary.
+	ErrCASMismatch = consensus.ErrCASMismatch
 )
 
 // Store provides a distributed key-value store interface
@@ -66,6 +69,57 @@ func (s *Store) Set(ctx context.Context, namespace, key string, value []byte) er
 	}
 
 	return nil
+}
+
+// CompareAndSwap writes value only if the key's current version equals
+// casVersion (0 = create-if-absent). A lost race returns ErrCASMismatch;
+// callers must not treat it as a transport failure.
+func (s *Store) CompareAndSwap(ctx context.Context, namespace, key string, value []byte, casVersion uint64) error {
+	cmd := &goblinv1.LogEntry{
+		Type:       goblinv1.CommandType_CAS,
+		Namespace:  namespace,
+		Key:        key,
+		Value:      value,
+		CasVersion: casVersion,
+	}
+
+	data, err := proto.Marshal(cmd)
+	if err != nil {
+		return err
+	}
+
+	resp, err := s.consensus.ApplyWithResponse(data, s.timeout)
+	if err != nil {
+		return err
+	}
+	if respErr, ok := resp.(error); ok {
+		return respErr
+	}
+
+	if err := s.bus.PublishLocal("kv", "store.change", map[string]interface{}{
+		"op":        "cas",
+		"namespace": namespace,
+		"key":       key,
+		"value":     string(value),
+	}, []string{"kv"}); err != nil {
+		return err
+	}
+	return nil
+}
+
+// GetWithVersion retrieves a value and its CAS version with the same
+// leader-only consistency rules as Get.
+func (s *Store) GetWithVersion(ctx context.Context, namespace, key string) ([]byte, uint64, bool, error) {
+	if s.consensus.IsLeader() {
+		if err := s.consensus.VerifyLeader(); err != nil {
+			return nil, 0, false, ErrNotLeader
+		}
+	} else {
+		return nil, 0, false, ErrNotLeader
+	}
+
+	val, ver, found := s.consensus.GetStateWithVersion(namespace, key)
+	return val, ver, found, nil
 }
 
 // Get retrieves a value from the store with linearizable consistency

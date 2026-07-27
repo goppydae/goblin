@@ -139,6 +139,17 @@ func (c *Consensus) Apply(data []byte, timeout time.Duration) error {
 	return future.Error()
 }
 
+// ApplyWithResponse applies a command and returns the FSM's response value
+// alongside any commit error. Commands whose outcome is data (CAS) return a
+// typed error as the response; a nil, nil result is an applied success.
+func (c *Consensus) ApplyWithResponse(data []byte, timeout time.Duration) (interface{}, error) {
+	future := c.raft.Apply(data, timeout)
+	if err := future.Error(); err != nil {
+		return nil, err
+	}
+	return future.Response(), nil
+}
+
 // AddVoter adds a new voting member to the cluster
 func (c *Consensus) AddVoter(id, address string) error {
 	future := c.raft.AddVoter(raft.ServerID(id), raft.ServerAddress(address), 0, 0)
@@ -159,6 +170,12 @@ func (c *Consensus) Shutdown() error {
 // GetState returns the current FSM state
 func (c *Consensus) GetState(namespace, key string) ([]byte, bool) {
 	return c.fsm.Get(namespace, key)
+}
+
+// GetStateWithVersion returns the current FSM state and the key's CAS
+// version (0 when the key is absent).
+func (c *Consensus) GetStateWithVersion(namespace, key string) ([]byte, uint64, bool) {
+	return c.fsm.GetWithVersion(namespace, key)
 }
 
 // Scan returns all keys matching the prefix

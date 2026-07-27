@@ -2,6 +2,7 @@ package consensus
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -11,21 +12,36 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// ErrCASMismatch is returned (as the Apply response) when a CAS command's
+// expected version does not match the key's current version. Errors are
+// data: callers distinguish "CAS lost the race" from transport failures.
+var ErrCASMismatch = errors.New("cas: version mismatch")
+
 // FSM implements the Raft finite state machine
 type FSM struct {
 	// Namespace -> Key -> Value
 	state map[string]map[string][]byte
-	mu    sync.RWMutex
+	// Namespace -> Key -> version. Versions start at 1 on first write and
+	// increment on every applied SET or CAS. DELETE clears the version, so
+	// a re-created key restarts at 1 (versions are per-incarnation, not
+	// ABA-proof across delete/recreate).
+	versions map[string]map[string]uint64
+	mu       sync.RWMutex
 }
 
 // NewFSM creates a new FSM
 func NewFSM() *FSM {
 	return &FSM{
-		state: make(map[string]map[string][]byte),
+		state:    make(map[string]map[string][]byte),
+		versions: make(map[string]map[string]uint64),
 	}
 }
 
-// Apply applies a Raft log entry to the FSM
+// Apply applies a Raft log entry to the FSM. The returned value is the
+// command's response (retrieved via raft.ApplyFuture.Response): nil on
+// success, ErrCASMismatch on a failed CAS, an error for undecodable or
+// unknown commands. A silent no-op on a distributed write is a data
+// consistency hazard, so every path answers.
 func (f *FSM) Apply(log *raft.Log) interface{} {
 	var cmd goblinv1.LogEntry
 	if err := proto.Unmarshal(log.Data, &cmd); err != nil {
@@ -35,23 +51,59 @@ func (f *FSM) Apply(log *raft.Log) interface{} {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	// Initialize namespace if not exists
-	if _, ok := f.state[cmd.Namespace]; !ok {
-		f.state[cmd.Namespace] = make(map[string][]byte)
-	}
-
 	switch cmd.Type {
 	case goblinv1.CommandType_SET:
-		f.state[cmd.Namespace][cmd.Key] = cmd.Value
-	case goblinv1.CommandType_DELETE:
-		delete(f.state[cmd.Namespace], cmd.Key)
-		// Clean up empty namespace? Optional.
-		if len(f.state[cmd.Namespace]) == 0 {
-			delete(f.state, cmd.Namespace)
-		}
-	}
+		f.write(cmd.Namespace, cmd.Key, cmd.Value)
+		return nil
 
-	return nil
+	case goblinv1.CommandType_DELETE:
+		if kv, ok := f.state[cmd.Namespace]; ok {
+			delete(kv, cmd.Key)
+			if len(kv) == 0 {
+				delete(f.state, cmd.Namespace)
+			}
+		}
+		if vs, ok := f.versions[cmd.Namespace]; ok {
+			delete(vs, cmd.Key)
+			if len(vs) == 0 {
+				delete(f.versions, cmd.Namespace)
+			}
+		}
+		return nil
+
+	case goblinv1.CommandType_CAS:
+		current := f.versions[cmd.Namespace][cmd.Key] // 0 when absent
+		if current != cmd.CasVersion {
+			return fmt.Errorf("%w: key %s/%s is at version %d, expected %d",
+				ErrCASMismatch, cmd.Namespace, cmd.Key, current, cmd.CasVersion)
+		}
+		f.write(cmd.Namespace, cmd.Key, cmd.Value)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown command type %v (namespace %s, key %s)",
+			cmd.Type, cmd.Namespace, cmd.Key)
+	}
+}
+
+// write stores a value and bumps its version. Callers hold f.mu.
+func (f *FSM) write(namespace, key string, value []byte) {
+	if _, ok := f.state[namespace]; !ok {
+		f.state[namespace] = make(map[string][]byte)
+	}
+	if _, ok := f.versions[namespace]; !ok {
+		f.versions[namespace] = make(map[string]uint64)
+	}
+	f.state[namespace][key] = value
+	f.versions[namespace][key]++
+}
+
+// snapshotPayload is the versioned snapshot encoding. SchemaVersion
+// distinguishes it from legacy snapshots, which were a bare JSON state map.
+type snapshotPayload struct {
+	SchemaVersion int                          `json:"schema_version"`
+	State         map[string]map[string][]byte `json:"state"`
+	Versions      map[string]map[string]uint64 `json:"versions"`
 }
 
 // Snapshot returns a snapshot of the FSM state
@@ -59,34 +111,68 @@ func (f *FSM) Snapshot() (raft.FSMSnapshot, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
-	// Clone state deeply
-	snapshot := make(map[string]map[string][]byte)
+	state := make(map[string]map[string][]byte, len(f.state))
 	for ns, kv := range f.state {
-		snapshot[ns] = make(map[string][]byte)
+		state[ns] = make(map[string][]byte, len(kv))
 		for k, v := range kv {
-			// Copy bytes
 			val := make([]byte, len(v))
 			copy(val, v)
-			snapshot[ns][k] = val
+			state[ns][k] = val
+		}
+	}
+	versions := make(map[string]map[string]uint64, len(f.versions))
+	for ns, vs := range f.versions {
+		versions[ns] = make(map[string]uint64, len(vs))
+		for k, v := range vs {
+			versions[ns][k] = v
 		}
 	}
 
-	return &fsmSnapshot{state: snapshot}, nil
+	return &fsmSnapshot{payload: snapshotPayload{
+		SchemaVersion: 1,
+		State:         state,
+		Versions:      versions,
+	}}, nil
 }
 
-// Restore restores the FSM from a snapshot
+// Restore restores the FSM from a snapshot. Both the versioned encoding and
+// the legacy bare-state-map encoding are accepted; legacy keys restore at
+// version 1 (they exist, so CAS create-if-absent semantics must not fire).
 func (f *FSM) Restore(rc io.ReadCloser) error {
 	defer rc.Close()
 
-	var state map[string]map[string][]byte
-	if err := json.NewDecoder(rc).Decode(&state); err != nil {
+	raw, err := io.ReadAll(rc)
+	if err != nil {
 		return err
+	}
+
+	var payload snapshotPayload
+	if err := json.Unmarshal(raw, &payload); err != nil || payload.SchemaVersion == 0 {
+		// Legacy snapshot: bare state map.
+		var state map[string]map[string][]byte
+		if err := json.Unmarshal(raw, &state); err != nil {
+			return err
+		}
+		payload = snapshotPayload{State: state, Versions: make(map[string]map[string]uint64)}
+		for ns, kv := range state {
+			payload.Versions[ns] = make(map[string]uint64, len(kv))
+			for k := range kv {
+				payload.Versions[ns][k] = 1
+			}
+		}
+	}
+	if payload.State == nil {
+		payload.State = make(map[string]map[string][]byte)
+	}
+	if payload.Versions == nil {
+		payload.Versions = make(map[string]map[string]uint64)
 	}
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.state = state
+	f.state = payload.State
+	f.versions = payload.Versions
 	return nil
 }
 
@@ -100,6 +186,23 @@ func (f *FSM) Get(namespace, key string) ([]byte, bool) {
 		return val, found
 	}
 	return nil, false
+}
+
+// GetWithVersion retrieves a value and its CAS version. A missing key
+// reports version 0 (the value CAS create-if-absent expects).
+func (f *FSM) GetWithVersion(namespace, key string) ([]byte, uint64, bool) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	kv, ok := f.state[namespace]
+	if !ok {
+		return nil, 0, false
+	}
+	val, found := kv[key]
+	if !found {
+		return nil, 0, false
+	}
+	return val, f.versions[namespace][key], true
 }
 
 // Scan returns all key-value pairs in a namespace that match the prefix
@@ -122,14 +225,15 @@ func (f *FSM) Scan(namespace, prefix string) map[string][]byte {
 
 // fsmSnapshot implements raft.FSMSnapshot
 type fsmSnapshot struct {
-	state map[string]map[string][]byte
+	payload snapshotPayload
 }
 
 // Persist writes the snapshot to the sink
 func (s *fsmSnapshot) Persist(sink raft.SnapshotSink) error {
-	err := json.NewEncoder(sink).Encode(s.state)
-	if err != nil {
-		sink.Cancel()
+	if err := json.NewEncoder(sink).Encode(s.payload); err != nil {
+		if cerr := sink.Cancel(); cerr != nil {
+			return fmt.Errorf("%w (also failed to cancel sink: %w)", err, cerr)
+		}
 		return err
 	}
 
