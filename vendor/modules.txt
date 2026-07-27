@@ -68,6 +68,7 @@ github.com/goppydae/gapi/core/adk/meta
 github.com/goppydae/gapi/core/agentmgr
 github.com/goppydae/gapi/core/cgroups
 github.com/goppydae/gapi/core/client
+github.com/goppydae/gapi/core/clock
 github.com/goppydae/gapi/core/config
 github.com/goppydae/gapi/core/crypto
 github.com/goppydae/gapi/core/eventbus

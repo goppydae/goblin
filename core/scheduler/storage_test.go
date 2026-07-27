@@ -9,7 +9,7 @@ import (
 
 func TestAgentStorage(t *testing.T) {
 	mockStore := NewMockStore()
-	s := NewScheduler(mockStore, nil, nil, nil) // Cluster/Bus not needed for storage tests
+	s := NewScheduler(mockStore, nil, nil, nil, nil) // Cluster/Bus not needed for storage tests
 	ctx := context.Background()
 
 	// 1. Test Register and Get
@@ -72,7 +72,7 @@ func TestAgentStorage(t *testing.T) {
 
 func TestInstanceStorage(t *testing.T) {
 	mockStore := NewMockStore()
-	s := NewScheduler(mockStore, nil, nil, nil)
+	s := NewScheduler(mockStore, nil, nil, nil, nil)
 	ctx := context.Background()
 
 	instance := &goblinv1.AgentInstance{

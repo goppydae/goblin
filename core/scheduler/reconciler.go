@@ -271,8 +271,10 @@ func (s *Scheduler) RunReconciler(ctx context.Context, interval time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// Ensure we are leader before reconciling
-			// if !s.consensus.IsLeader() { continue }
+			// Only the leader writes; followers skip the tick (R7).
+			if !s.leading() {
+				continue
+			}
 			if err := s.ReconcileAgents(ctx); err != nil {
 				log.Printf("❌ Reconcile cycle failed: %v", err)
 			}

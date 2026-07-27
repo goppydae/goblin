@@ -3,6 +3,7 @@ package agentmgr
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/goppydae/gapi/core/config"
+	"github.com/goppydae/gapi/core/crypto"
 	"github.com/goppydae/gapi/core/eventbus"
 	"github.com/goppydae/gapi/core/lifecycle"
 	"github.com/goppydae/gapi/core/schema"
@@ -71,11 +73,15 @@ type AgentManager struct {
 	pyRun          string // path to adk runner
 	agents         map[string]Agent
 	productionMode bool
+	// verifyKey validates agent-binary signatures during discovery in
+	// production mode (review R20). nil + productionMode means discovery
+	// rejects every binary loudly - fail closed, never open.
+	verifyKey ed25519.PublicKey
 }
 
-func NewAgentManager(bus *eventbus.EventBus[*anypb.Any], lbus *lifecycle.TypedBus, pyRunnerPath string, productionMode bool) *AgentManager {
+func NewAgentManager(bus *eventbus.EventBus[*anypb.Any], lbus *lifecycle.TypedBus, pyRunnerPath string, productionMode bool, verifyKey ed25519.PublicKey) *AgentManager {
 	return &AgentManager{
-		bus: bus, lbus: lbus, pyRun: pyRunnerPath, agents: map[string]Agent{}, productionMode: productionMode,
+		bus: bus, lbus: lbus, pyRun: pyRunnerPath, agents: map[string]Agent{}, productionMode: productionMode, verifyKey: verifyKey,
 	}
 }
 
@@ -320,8 +326,12 @@ func (am *AgentManager) safeToExecute(binPath string) error {
 		return reject("directory " + err.Error())
 	}
 	if am.productionMode {
-		if _, err := os.Stat(binPath + ".sig"); err != nil {
-			return reject("production mode requires a signature (missing .sig)")
+		// Presence of a .sig is not provenance: verify it (review R20).
+		if am.verifyKey == nil {
+			return reject("production mode requires a verification public key (none configured)")
+		}
+		if err := crypto.VerifySignedBinary(binPath, am.verifyKey); err != nil {
+			return reject(err.Error())
 		}
 	}
 	return nil

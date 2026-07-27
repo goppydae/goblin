@@ -43,18 +43,30 @@ type Scheduler struct {
 	clientFactory ClientFactory
 
 	placement *PlacementEngine
+
+	// isLeader gates reconciliation: only the Raft leader writes; followers
+	// read and react (review R7). nil means standalone mode (always leader).
+	isLeader func() bool
 }
 
-// NewScheduler creates a new Scheduler instance
-func NewScheduler(store KVStore, c Cluster, bus eventbus.EventBus, clientFactory ClientFactory) *Scheduler {
+// NewScheduler creates a new Scheduler instance. isLeader is the leadership
+// predicate reconciliation is gated on (pass consensus.IsLeader in cluster
+// deployments); nil means standalone mode, in which every reconcile runs.
+func NewScheduler(store KVStore, c Cluster, bus eventbus.EventBus, isLeader func() bool, clientFactory ClientFactory) *Scheduler {
 	s := &Scheduler{
 		store:         store,
 		cluster:       c,
 		bus:           bus,
 		clientFactory: clientFactory,
+		isLeader:      isLeader,
 	}
 	s.placement = NewPlacementEngine()
 	return s
+}
+
+// leading reports whether this node may run reconciliation writes.
+func (s *Scheduler) leading() bool {
+	return s.isLeader == nil || s.isLeader()
 }
 
 // Store returns the underlying KV store

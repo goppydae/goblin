@@ -28,6 +28,8 @@ var (
 	tlsKeyFile        string
 	tlsCAFile         string
 	metricsAddr       string
+	productionMode    bool
+	agentVerifyKey    string
 )
 
 var rootCmd = &cobra.Command{
@@ -47,20 +49,22 @@ var rootCmd = &cobra.Command{
 		}
 
 		cfg := supervisor.Config{
-			NodeID:        nodeID,
-			SerfAddr:      serfAddr,
-			AdvertiseAddr: serfAdvertiseAddr,
-			AdvertisePort: serfAdvertisePort,
-			RaftAddr:      raftAddr,
-			RaftDir:       raftDir,
-			JoinAddr:      joinAddr,
-			APIAddr:       apiAddr,
-			Tags:          tags,
-			EncryptionKey: encryptionKey,
-			CertFile:      tlsCertFile,
-			KeyFile:       tlsKeyFile,
-			CAFile:        tlsCAFile,
-			MetricsAddr:   metricsAddr,
+			NodeID:         nodeID,
+			SerfAddr:       serfAddr,
+			AdvertiseAddr:  serfAdvertiseAddr,
+			AdvertisePort:  serfAdvertisePort,
+			RaftAddr:       raftAddr,
+			RaftDir:        raftDir,
+			JoinAddr:       joinAddr,
+			APIAddr:        apiAddr,
+			Tags:           tags,
+			EncryptionKey:  encryptionKey,
+			CertFile:       tlsCertFile,
+			KeyFile:        tlsKeyFile,
+			CAFile:         tlsCAFile,
+			MetricsAddr:    metricsAddr,
+			ProductionMode: productionMode,
+			AgentVerifyKey: agentVerifyKey,
 		}
 		return supervisor.New(cfg).Run(cmd.Context())
 	},
@@ -98,6 +102,8 @@ func init() {
 	rootCmd.Flags().StringVar(&apiAddr, "api-addr", "127.0.0.1:29000", "API address")
 
 	// Security Flags
+	rootCmd.Flags().BoolVar(&productionMode, "production", false, "Restrict agent discovery to binaries with verified signatures")
+	rootCmd.Flags().StringVar(&agentVerifyKey, "agent-verify-key", "", "Path to the Ed25519 public key for agent signature verification (falls back to $RUNTIME_VERIFY_KEY)")
 	rootCmd.Flags().StringVar(&encryptionKey, "encrypt", "", "Base64 encoded 32-byte secret key for Serf encryption")
 	rootCmd.Flags().StringVar(&tlsCertFile, "tls-cert", "", "Path to TLS certificate")
 	rootCmd.Flags().StringVar(&tlsKeyFile, "tls-key", "", "Path to TLS private key")

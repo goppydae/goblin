@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -27,6 +28,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	gapiagentmgr "github.com/goppydae/gapi/core/agentmgr"
+	gapicrypto "github.com/goppydae/gapi/core/crypto"
 	gapieventbus "github.com/goppydae/gapi/core/eventbus"
 	gapilifecycle "github.com/goppydae/gapi/core/lifecycle"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
@@ -56,6 +58,12 @@ type Config struct {
 	KeyFile       string
 	CAFile        string
 	MetricsAddr   string
+	// ProductionMode restricts embedded-GAPI agent discovery to binaries
+	// with verified signatures (review R20).
+	ProductionMode bool
+	// AgentVerifyKey is the path to the Ed25519 public key that verifies
+	// agent-binary signatures; falls back to $RUNTIME_VERIFY_KEY.
+	AgentVerifyKey string
 }
 
 // Supervisor manages the Goblin daemon components
@@ -245,14 +253,16 @@ func (s *Supervisor) Run(ctx context.Context) error {
 				switch ev.EventType() {
 				case serf.EventMemberJoin:
 					topic = "cluster.node.joined"
-					// Auto-join Raft if Leader
+					// Auto-join Raft if Leader. Retried with backoff: a
+					// leader change between the Serf event and the AddVoter
+					// commit must not silently orphan the voter (R6). The
+					// goroutine keeps the Serf dispatch goroutine unblocked.
 					if consensus.IsLeader() {
 						raftAddr, ok := member.Tags["raft_addr"]
 						if ok {
 							log.Printf("Cluster: Adding Raft voter %s at %s", member.Name, raftAddr)
-							// Run in goroutine to avoid blocking Serf handler
 							go func(name, addr string) {
-								if err := consensus.AddVoter(name, addr); err != nil {
+								if err := addVoterWithRetry(context.Background(), consensus, name, addr); err != nil {
 									log.Printf("Failed to add voter %s: %v", name, err)
 								}
 							}(member.Name, raftAddr)
@@ -287,7 +297,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	fmt.Println("✅ Distributed KV Store initialized")
 
 	// Create Scheduler
-	sched := scheduler.NewScheduler(kvStore, membership, bus, func(addr string) (scheduler.RPCClient, error) {
+	sched := scheduler.NewScheduler(kvStore, membership, bus, consensus.IsLeader, func(addr string) (scheduler.RPCClient, error) {
 		// Use the same QUIC client logic as CLI (but internal)
 		// We need to access tlsCfg here.
 		// Note: addr should be "host:port" of the QUIC listener (APIAddr)
@@ -321,9 +331,22 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	if pyRunnerPath == "" {
 		pyRunnerPath = "/usr/local/bin/gapi-runner"
 	}
-	productionMode := false // TODO: Make configurable
+	// Verification key for production-mode signed discovery (review R20):
+	// config first, then env, mirroring the GAPI supervisor.
+	verifyKeyPath := s.cfg.AgentVerifyKey
+	if verifyKeyPath == "" {
+		verifyKeyPath = os.Getenv("RUNTIME_VERIFY_KEY")
+	}
+	var verifyKey ed25519.PublicKey
+	if verifyKeyPath != "" {
+		pk, err := gapicrypto.LoadPublic(verifyKeyPath)
+		if err != nil {
+			return fmt.Errorf("failed to load agent verification key %q: %w", verifyKeyPath, err)
+		}
+		verifyKey = pk
+	}
 
-	agentMgr = gapiagentmgr.NewAgentManager(localBus, lifecycleBus, pyRunnerPath, productionMode)
+	agentMgr = gapiagentmgr.NewAgentManager(localBus, lifecycleBus, pyRunnerPath, s.cfg.ProductionMode, verifyKey)
 
 	// Discover agents using GAPI's standard search paths
 	discovered, err := agentMgr.DiscoverFromPaths()

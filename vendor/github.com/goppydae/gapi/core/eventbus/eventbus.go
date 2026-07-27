@@ -162,6 +162,11 @@ func (b *EventBus[T]) SubscribePrefix(scope, namespace, topicPrefix string, fn H
 }
 
 // SubscribeOnce calls handler at most once for the exact topic, then unsubscribes.
+//
+// Deprecated: uncorrelated one-shot subscriptions let concurrent callers
+// steal each other's events (review R15). Use SubscribeCorrelated for
+// request/reply, or WaitForTopic for bounded phase gates. Scheduled for
+// removal; see deprecation.jsonl.
 func (bus *EventBus[T]) SubscribeOnce(scope, namespace, topic string, handler Handler[T]) error {
 	var once sync.Once
 	var wrapper Handler[T]
