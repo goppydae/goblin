@@ -48,12 +48,12 @@ func (s *Scheduler) reconcileAgent(ctx context.Context, spec *goblinv1.AgentSpec
 		}
 	}
 
-	currentCount := int32(len(active))
-	desiredCount := spec.Replicas
+	currentCount := len(active)
+	desiredCount := int(spec.Replicas)
 
 	if currentCount < desiredCount {
 		// Scale Up
-		needed := int(desiredCount - currentCount)
+		needed := desiredCount - currentCount
 		log.Printf("📈 Scaling up agent %s: need %d more instances", spec.Id, needed)
 		for i := 0; i < needed; i++ {
 			if err := s.createInstance(ctx, spec); err != nil {
@@ -62,7 +62,7 @@ func (s *Scheduler) reconcileAgent(ctx context.Context, spec *goblinv1.AgentSpec
 		}
 	} else if currentCount > desiredCount {
 		// Scale Down
-		excess := int(currentCount - desiredCount)
+		excess := currentCount - desiredCount
 		log.Printf("📉 Scaling down agent %s: removing %d instances", spec.Id, excess)
 		// Simple strategy: Remove newest (or random)
 		// 'active' might not be sorted. Just pick last 'excess' elements.
@@ -103,9 +103,11 @@ func (s *Scheduler) createInstance(ctx context.Context, spec *goblinv1.AgentSpec
 		return fmt.Errorf("failed to save instance: %w", err)
 	}
 
-	// 4. Trigger Start on Node (Async to avoid blocking Reconciler loop)
+	// 4. Trigger Start on Node (Async to avoid blocking Reconciler loop).
+	// The reconciler-loop ctx (not Background) so in-flight starts abort
+	// at shutdown instead of outliving the supervisor.
 	go func() {
-		if err := s.startAgentOnNode(context.Background(), nodeID, instance, spec); err != nil {
+		if err := s.startAgentOnNode(ctx, nodeID, instance, spec); err != nil {
 			log.Printf("❌ Failed to start agent %s on node %s: %v", instance.InstanceId, nodeID, err)
 			// TODO: Mark instance as failed?
 		}

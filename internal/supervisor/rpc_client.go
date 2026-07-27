@@ -13,6 +13,7 @@ import (
 	goblinv1 "github.com/goppydae/goblin/proto"
 	"github.com/quic-go/quic-go"
 	"google.golang.org/protobuf/proto"
+	"math"
 )
 
 // QUICRPCClient is a client for making RPC calls over QUIC
@@ -80,8 +81,12 @@ func (c *QUICRPCClient) Call(method string, request interface{}, response interf
 	}
 
 	// Write request length
+	reqLen := len(reqData)
+	if reqLen > math.MaxUint32 {
+		return fmt.Errorf("request too large to frame: %d bytes", reqLen)
+	}
 	var lenBuf [4]byte
-	binary.BigEndian.PutUint32(lenBuf[:], uint32(len(reqData)))
+	binary.BigEndian.PutUint32(lenBuf[:], uint32(reqLen))
 	if _, err := stream.Write(lenBuf[:]); err != nil {
 		return fmt.Errorf("failed to write request length: %w", err)
 	}

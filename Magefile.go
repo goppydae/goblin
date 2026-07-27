@@ -262,10 +262,20 @@ func TestUnit() error {
 	return sh.RunV("go", "test", "-v", "./core/...", "./internal/...")
 }
 
-// Lint runs the shared lint gate (gofmt check, pinned golangci-lint, gosec)
+// Lint runs the shared lint gate (gofmt check, pinned golangci-lint, gosec).
+//
+// Rule-level gosec carve-outs (GOBLIN-DIV-023):
+//   - G402: the InsecureSkipVerify fallbacks are dev-mode only; production
+//     mode fails closed at startup when TLS is not configured (supervisor
+//     Run, covered by TestRun_ProductionModeRequiresTLS).
+//   - G404: math/rand is scheduler placement jitter; there is no adversary
+//     and crypto/rand would add error paths to hot paths for no benefit.
+//   - G304: fires only in test/cluster/gen_certs.go, a dev-cert fixture
+//     generator whose path segments are validated (nodeIDPattern) and
+//     joined under a constant certDir.
 func Lint() error {
 	mg.Deps(checkHermetic)
-	return magelib.Lint()
+	return magelib.Lint("G402", "G404", "G304")
 }
 
 // Dev runs the development build and starts goblind

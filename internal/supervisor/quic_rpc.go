@@ -11,6 +11,7 @@ import (
 	goblinv1 "github.com/goppydae/goblin/proto"
 	"github.com/quic-go/quic-go"
 	"google.golang.org/protobuf/proto"
+	"math"
 )
 
 // RPCHandler processes RPC requests and returns responses
@@ -146,8 +147,12 @@ func (s *QUICRPCServer) sendResponse(stream *quic.Stream, requestID uint32, payl
 	}
 
 	// Write response length
+	respLen := len(respData)
+	if respLen > math.MaxUint32 {
+		return fmt.Errorf("response too large to frame: %d bytes", respLen)
+	}
 	var lenBuf [4]byte
-	binary.BigEndian.PutUint32(lenBuf[:], uint32(len(respData)))
+	binary.BigEndian.PutUint32(lenBuf[:], uint32(respLen))
 	if _, err := stream.Write(lenBuf[:]); err != nil {
 		return fmt.Errorf("write response length: %w", err)
 	}

@@ -135,6 +135,11 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 			fmt.Println("⚠️ TLS enabled but no CA provided - mTLS disabled")
 		}
 	} else {
+		// Fail closed in production: an unverified ephemeral-cert listener
+		// must be an explicit dev-mode choice, never a silent default.
+		if s.cfg.ProductionMode {
+			return fmt.Errorf("production mode requires TLS: configure cert-file and key-file (and ca-file for mTLS)")
+		}
 		// Default to insecure: Generate ephemeral cert for QUIC
 		// QUIC requires a certificate even if we don't verify it (TLS 1.3)
 		var err error
@@ -370,7 +375,9 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 	if err != nil {
 		log.Printf("⚠️  Agent discovery warning: %v", err)
 	} else {
-		log.Printf("✅ Local agent manager initialized (%d agents discovered)", len(discovered))
+		// strconv.Itoa: digits-only formatting breaks the (spurious) taint
+		// chain gosec G706 traces from discovery paths into this log call.
+		log.Printf("✅ Local agent manager initialized (%s agents discovered)", strconv.Itoa(len(discovered)))
 	}
 
 	s.agentMgr = agentMgr
@@ -475,7 +482,7 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 		log.Printf("📡 GAPI & RPC Listener on %s...", s.cfg.APIAddr)
 
 		for {
-			conn, err := listener.Accept(context.Background())
+			conn, err := listener.Accept(ctx)
 			if err != nil {
 				select {
 				case <-ctx.Done():
@@ -505,7 +512,11 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 		go func() {
 			http.Handle("/metrics", promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{}))
 			log.Printf("📊 Metrics server listening on %s", s.cfg.MetricsAddr)
-			if err := http.ListenAndServe(s.cfg.MetricsAddr, nil); err != nil {
+			srv := &http.Server{
+				Addr:              s.cfg.MetricsAddr,
+				ReadHeaderTimeout: 5 * time.Second,
+			}
+			if err := srv.ListenAndServe(); err != nil {
 				log.Printf("⚠️ Metrics server failed: %v", err)
 			}
 		}()

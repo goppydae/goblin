@@ -212,7 +212,10 @@ func (s *SchedulerRPC) Members(req *struct{}, resp *[]MemberInfo) error {
 						status = "leaving"
 					}
 					addr := member.FieldByName("Addr").Bytes() // Addr is likely net.IP slice []byte
-					port := int(member.FieldByName("Port").Uint())
+					port := 0
+					if portU := member.FieldByName("Port").Uint(); portU <= 65535 {
+						port = int(portU)
+					}
 
 					// Need to format Addr
 					ip := net.IP(addr)

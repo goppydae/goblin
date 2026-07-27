@@ -11,8 +11,13 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"time"
 )
+
+// nodeIDPattern confines generated cert filenames: ids become path
+// segments under certDir, so anything outside [A-Za-z0-9-] is rejected.
+var nodeIDPattern = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 
 const certDir = "/tmp/goblin-test-certs"
 
@@ -20,7 +25,7 @@ func main() {
 	if err := os.RemoveAll(certDir); err != nil {
 		panic(err)
 	}
-	if err := os.MkdirAll(certDir, 0755); err != nil {
+	if err := os.MkdirAll(certDir, 0700); err != nil {
 		panic(err)
 	}
 
@@ -73,6 +78,9 @@ func generateCA() (*x509.Certificate, *rsa.PrivateKey, error) {
 }
 
 func generateNodeCert(id string, ca *x509.Certificate, caKey *rsa.PrivateKey) error {
+	if !nodeIDPattern.MatchString(id) {
+		return fmt.Errorf("invalid node id %q: must match %s", id, nodeIDPattern)
+	}
 	cert := &x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()),
 		Subject:      pkix.Name{CommonName: id},

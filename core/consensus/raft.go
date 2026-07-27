@@ -24,7 +24,7 @@ type Consensus struct {
 // NewConsensus creates a new Raft-based consensus manager
 func NewConsensus(nodeID, dataDir, bindAddr string, tlsCfg *tls.Config) (*Consensus, error) {
 	// Create data directory
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create data dir: %w", err)
 	}
 
