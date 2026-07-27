@@ -65,9 +65,9 @@ var pingCmd = &cobra.Command{
 	},
 }
 
-// agent-reload
+// reload
 var agentReloadCmd = &cobra.Command{
-	Use:   "agent-reload",
+	Use:   "reload",
 	Short: "Trigger a reload of registered agents",
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg, _ := config.Load()
@@ -86,12 +86,15 @@ var agentReloadCmd = &cobra.Command{
 	},
 }
 
-// agent-status
+// status
 var agentStatusCmd = &cobra.Command{
-	Use:   "agent-status [PATTERN...]",
+	Use:   "status [PATTERN...]",
 	Short: "Show current registered agents",
 	Run: func(cmd *cobra.Command, args []string) {
 		treeView, _ := cmd.Flags().GetBool("tree")
+		if len(args) == 0 && !cmd.Flags().Changed("tree") {
+			treeView = true
+		}
 		cfg, err := config.Load()
 		if err != nil {
 			log.Fatalf("failed to load config: %v", err)
@@ -166,11 +169,19 @@ var tuiCmd = &cobra.Command{
 	},
 }
 
+var cryptoCmd = &cobra.Command{
+	Use:   "crypto",
+	Short: "Cryptography utilities",
+}
+
 func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(pingCmd)
-	rootCmd.AddCommand(agentStatusCmd)
 	rootCmd.AddCommand(tuiCmd)
+	rootCmd.AddCommand(cryptoCmd)
+
+	agentCmd.AddCommand(agentReloadCmd)
+	agentCmd.AddCommand(agentStatusCmd)
 
 	agentStatusCmd.Flags().BoolP("tree", "t", false, "Show dependency tree")
 }

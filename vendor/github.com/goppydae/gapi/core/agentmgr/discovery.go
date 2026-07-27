@@ -11,14 +11,16 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/goppydae/gapi/core/config"
-	"github.com/goppydae/gapi/core/schema"
 	"github.com/goppydae/gapi/core/eventbus"
 	"github.com/goppydae/gapi/core/lifecycle"
+	"github.com/goppydae/gapi/core/schema"
+	"github.com/goppydae/gapi/internal/logging/logcore"
 )
 
 type Discovered struct {
@@ -106,12 +108,12 @@ func (am *AgentManager) DiscoverFromPaths() ([]map[string]string, error) {
 		}
 
 		pathType := config.ClassifyPath(searchPath)
-		println(fmt.Sprintf("[Discovery] Scanning %s [%s]", searchPath, pathType))
+		logcore.Info().Str("module", "discovery").Str("path", searchPath).Str("path_type", pathType.String()).Msg("scanning agent search path")
 
 		// Discover agents from this path
 		agents, err := am.discoverFromSinglePath(searchPath, pathType)
 		if err != nil {
-			println(fmt.Sprintf("[Discovery] Warning: failed to scan %s: %v", searchPath, err))
+			logcore.Warn().Str("module", "discovery").Str("path", searchPath).Err(err).Msg("failed to scan agent search path")
 			continue
 		}
 
@@ -119,18 +121,18 @@ func (am *AgentManager) DiscoverFromPaths() ([]map[string]string, error) {
 		for _, agent := range agents {
 			agentID := agent.ID()
 			if _, exists := discovered[agentID]; exists {
-				println(fmt.Sprintf("[Discovery] Skipping %s from %s (already found in higher priority path)", agentID, searchPath))
+				logcore.Debug().Str("module", "discovery").Str("agent_id", agentID).Str("path", searchPath).Msg("skipping agent already found in higher priority path")
 				continue
 			}
 
 			discovered[agentID] = agent
 			am.Register(agent)
 			out = append(out, agent.Describe())
-			println(fmt.Sprintf("[Discovery] Registered %s from %s [%s]", agentID, searchPath, pathType))
+			logcore.Info().Str("module", "discovery").Str("agent_id", agentID).Str("path", searchPath).Str("path_type", pathType.String()).Msg("registered agent")
 		}
 	}
 
-	println(fmt.Sprintf("[Discovery] Total agents discovered: %d", len(discovered)))
+	logcore.Info().Str("module", "discovery").Int("count", len(discovered)).Msg("agent discovery complete")
 	return out, nil
 }
 
@@ -230,7 +232,7 @@ func (am *AgentManager) processDiscovered(path string, d struct {
 		RequiredBy:   d.RequiredBy,
 		Capabilities: d.Capabilities,
 	}); err != nil {
-		println(fmt.Sprintf("validation failed for %s: %v", path, err))
+		logcore.Warn().Str("module", "discovery").Str("path", path).Err(err).Msg("agent metadata validation failed")
 		return nil
 	}
 
@@ -282,7 +284,68 @@ func (am *AgentManager) processDiscovered(path string, d struct {
 	return nil
 }
 
+// safeToExecute guards the discovery-time `--describe` execution of a candidate
+// agent binary against TOCTOU / privilege-escalation via a writable agent search
+// path. It rejects world-writable binaries or directories and binaries not owned
+// by root or the running user, and in production mode requires a signature file
+// to be present. Rejections are logged loudly because the caller treats a
+// describe error as "not an agent" and silently skips it.
+func (am *AgentManager) safeToExecute(binPath string) error {
+	info, err := os.Stat(binPath)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(binPath)
+	dirInfo, err := os.Stat(dir)
+	if err != nil {
+		return err
+	}
+
+	reject := func(reason string) error {
+		logcore.Warn().Str("module", "discovery").Str("path", binPath).Str("reason", reason).
+			Msg("refusing to execute agent binary for --describe")
+		return fmt.Errorf("unsafe agent binary %s: %s", binPath, reason)
+	}
+
+	if info.Mode().Perm()&0o002 != 0 {
+		return reject("world-writable file")
+	}
+	if dirInfo.Mode().Perm()&0o002 != 0 {
+		return reject("world-writable directory")
+	}
+	if err := checkOwner(info); err != nil {
+		return reject(err.Error())
+	}
+	if err := checkOwner(dirInfo); err != nil {
+		return reject("directory " + err.Error())
+	}
+	if am.productionMode {
+		if _, err := os.Stat(binPath + ".sig"); err != nil {
+			return reject("production mode requires a signature (missing .sig)")
+		}
+	}
+	return nil
+}
+
+// checkOwner requires the file to be owned by root (uid 0) or the current euid.
+// On platforms without unix stat semantics, ownership is not checked.
+func checkOwner(info os.FileInfo) error {
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return nil
+	}
+	euid := os.Geteuid()
+	if int(st.Uid) != 0 && int(st.Uid) != euid {
+		return fmt.Errorf("owned by uid %d (not root or current user %d)", st.Uid, euid)
+	}
+	return nil
+}
+
 func (am *AgentManager) binaryDescribe(binPath string) (*pyDescribe, error) {
+	if err := am.safeToExecute(binPath); err != nil {
+		return nil, err
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -380,6 +443,26 @@ func (d depView) DepsOf(id string) []string {
 		return nil
 	}
 	return a.Dependencies()
+}
+
+// HardDepsOf and SoftDepsOf let the lifecycle controller distinguish hard
+// (Requires) dependencies, whose failure blocks startup, from soft (Wants)
+// dependencies, whose failure is advisory. Without this split, Dependencies()
+// merges both and a failing Want would wrongly block start.
+func (d depView) HardDepsOf(id string) []string {
+	a := d.am.Get(id)
+	if a == nil {
+		return nil
+	}
+	return a.Requires()
+}
+
+func (d depView) SoftDepsOf(id string) []string {
+	a := d.am.Get(id)
+	if a == nil {
+		return nil
+	}
+	return a.Wants()
 }
 func (d depView) IsRunning(id string) bool {
 	a := d.am.Get(id)

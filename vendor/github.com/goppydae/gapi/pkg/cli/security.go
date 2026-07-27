@@ -191,15 +191,15 @@ func init() {
 	signCmd.Flags().String("key", "", "Path to private key (PEM)")
 	verifyCmd.Flags().String("pub", "", "Path to public key (hex)")
 
-	rootCmd.AddCommand(signCmd)
-	rootCmd.AddCommand(keygenCmd)
-	rootCmd.AddCommand(verifyCmd)
+	cryptoCmd.AddCommand(signCmd)
+	cryptoCmd.AddCommand(keygenCmd)
+	cryptoCmd.AddCommand(verifyCmd)
 
-	rootCmd.AddCommand(ageKeygenCmd)
+	cryptoCmd.AddCommand(ageKeygenCmd)
 
 	encryptCmd.Flags().StringSliceP("recipient", "r", nil, "Recipient public key(s)")
-	rootCmd.AddCommand(encryptCmd)
+	cryptoCmd.AddCommand(encryptCmd)
 
 	decryptCmd.Flags().StringP("identity", "i", "", "Identity file")
-	rootCmd.AddCommand(decryptCmd)
+	cryptoCmd.AddCommand(decryptCmd)
 }

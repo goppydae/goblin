@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/rs/zerolog"
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -46,7 +47,7 @@ func SetupOutputs(cfg *config.LoggingConfig) (io.Writer, error) {
 // setupFileOutput creates a file writer with rotation
 func setupFileOutput(cfg *config.FileOutputConfig) (io.Writer, error) {
 	// Create directory if it doesn't exist
-	dir := cfg.Path[:len(cfg.Path)-len(cfg.Path[len(cfg.Path)-1:])]
+	dir := filepath.Dir(cfg.Path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create log directory: %w", err)
 	}
@@ -61,14 +62,14 @@ func setupFileOutput(cfg *config.FileOutputConfig) (io.Writer, error) {
 	}, nil
 }
 
-// setupLokiOutput creates a Loki writer
-func setupLokiOutput(cfg *config.LokiOutputConfig) (io.Writer, error) {
-	// TODO: Implement Loki integration
-	// For now, return a placeholder that logs to stderr
-	// This will be implemented when we add the Loki client dependency
-
-	// Placeholder: just log to stderr with a prefix
-	return os.Stderr, nil
+// setupLokiOutput creates a Loki writer.
+//
+// Loki integration is not yet implemented. Rather than silently falling back
+// to stderr (which leaves operators believing logs are being forwarded to
+// Loki when they are not), this returns an explicit error so the
+// misconfiguration surfaces at startup.
+func setupLokiOutput(_ *config.LokiOutputConfig) (io.Writer, error) {
+	return nil, fmt.Errorf("loki output is enabled but not implemented; disable logging.loki.enabled or remove the loki configuration")
 }
 
 // ParseLevel converts string level to zerolog.Level

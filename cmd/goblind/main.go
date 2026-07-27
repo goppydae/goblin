@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/goppydae/goblin/internal/supervisor"
+	"github.com/goppydae/goblin/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -30,8 +31,9 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "goblind",
-	Short: "Goblin Distributed Supervisor Daemon",
+	Use:     "goblind",
+	Short:   "Goblin Distributed Supervisor Daemon",
+	Version: version.Version,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Detect Resources
 		cpu := runtime.NumCPU()

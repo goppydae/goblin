@@ -3,6 +3,7 @@ package crypto
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/pem"
 	"fmt"
@@ -10,6 +11,17 @@ import (
 	"os"
 
 	"github.com/zeebo/blake3"
+)
+
+// PEM block types for Ed25519 private keys.
+//
+// pemTypePKCS8 is the canonical format: a PKCS#8 DER key in a "PRIVATE KEY"
+// block, matching PEMNS.EncodePrivateKey/ParsePrivateKey so keys are
+// interchangeable across both persistence paths. pemTypeLegacyEd25519 is the
+// old raw-key format still accepted by LoadPrivate for backward compatibility.
+const (
+	pemTypePKCS8         = "PRIVATE KEY"
+	pemTypeLegacyEd25519 = "ED25519 PRIVATE KEY"
 )
 
 // KeyPair holds the private and public keys
@@ -53,11 +65,17 @@ func HashFile(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// SavePrivate saves the private key to a PEM file
+// SavePrivate saves the private key to a PEM file in PKCS#8 form ("PRIVATE KEY"
+// block), the same format PEMNS.EncodePrivateKey produces, so a key written here
+// can be loaded through either code path.
 func (k *KeyPair) SavePrivate(path string) error {
+	der, err := x509.MarshalPKCS8PrivateKey(k.Private)
+	if err != nil {
+		return fmt.Errorf("marshal pkcs8 private key: %w", err)
+	}
 	block := &pem.Block{
-		Type:  "ED25519 PRIVATE KEY",
-		Bytes: k.Private,
+		Type:  pemTypePKCS8,
+		Bytes: der,
 	}
 	f, err := os.Create(path)
 	if err != nil {
@@ -67,7 +85,10 @@ func (k *KeyPair) SavePrivate(path string) error {
 	return pem.Encode(f, block)
 }
 
-// LoadPrivate loads a private key from a PEM file
+// LoadPrivate loads a private key from a PEM file. It accepts the canonical
+// PKCS#8 "PRIVATE KEY" format as well as the legacy raw "ED25519 PRIVATE KEY"
+// format for backward compatibility (legacy keys are upgraded to PKCS#8 the next
+// time SavePrivate runs).
 func LoadPrivate(path string) (*KeyPair, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -75,12 +96,35 @@ func LoadPrivate(path string) (*KeyPair, error) {
 	}
 
 	block, _ := pem.Decode(data)
-	if block == nil || block.Type != "ED25519 PRIVATE KEY" {
+	if block == nil {
 		return nil, fmt.Errorf("invalid pem data")
 	}
 
-	priv := ed25519.PrivateKey(block.Bytes)
-	pub := priv.Public().(ed25519.PublicKey)
+	var priv ed25519.PrivateKey
+	switch block.Type {
+	case pemTypePKCS8:
+		key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("parse pkcs8 private key: %w", err)
+		}
+		ed, ok := key.(ed25519.PrivateKey)
+		if !ok {
+			return nil, fmt.Errorf("unexpected private key type %T, want ed25519", key)
+		}
+		priv = ed
+	case pemTypeLegacyEd25519:
+		if len(block.Bytes) != ed25519.PrivateKeySize {
+			return nil, fmt.Errorf("invalid ed25519 private key length %d, want %d", len(block.Bytes), ed25519.PrivateKeySize)
+		}
+		priv = ed25519.PrivateKey(append([]byte(nil), block.Bytes...))
+	default:
+		return nil, fmt.Errorf("unsupported private key PEM type %q", block.Type)
+	}
+
+	pub, ok := priv.Public().(ed25519.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("failed to derive ed25519 public key")
+	}
 	return &KeyPair{Private: priv, Public: pub}, nil
 }
 

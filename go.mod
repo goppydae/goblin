@@ -1,11 +1,14 @@
 module github.com/goppydae/goblin
 
-go 1.25.4
+go 1.26.0
+
+toolchain go1.26.5
 
 require (
 	github.com/boltdb/bolt v1.3.1
 	github.com/google/uuid v1.6.0
 	github.com/goppydae/gapi v0.0.0-00010101000000-000000000000
+	github.com/goppydae/magelib v0.0.0-00010101000000-000000000000
 	github.com/hashicorp/go-metrics v0.5.4
 	github.com/hashicorp/go-msgpack v0.5.5
 	github.com/hashicorp/memberlist v0.5.2
@@ -87,3 +90,5 @@ require (
 )
 
 replace github.com/goppydae/gapi => ../gapi
+
+replace github.com/goppydae/magelib => ../magelib

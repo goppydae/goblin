@@ -15,9 +15,16 @@ type BaseStateMachine struct {
 }
 
 func NewBaseStateMachine(initial string, allowed map[string][]string) *BaseStateMachine {
+	// Deep-copy the transition table so that mutation of the caller's map after
+	// construction (or sharing one map across machines, common in tests) cannot
+	// race with TransitionTo reading it under sm.mu.
+	transitions := make(map[string][]string, len(allowed))
+	for k, v := range allowed {
+		transitions[k] = append([]string(nil), v...)
+	}
 	return &BaseStateMachine{
 		current:     initial,
-		transitions: allowed,
+		transitions: transitions,
 		observers:   make([]TransitionFunc, 0),
 	}
 }

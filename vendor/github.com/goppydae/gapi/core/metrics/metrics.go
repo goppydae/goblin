@@ -1,13 +1,29 @@
 package metrics
 
 import (
+	"net/http"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+// Registry is a dedicated registry for all GAPI metrics. Registering against it
+// (rather than prometheus.DefaultRegisterer) means host applications that embed
+// GAPI and replace the default registry still expose GAPI metrics via Handler().
+var Registry = prometheus.NewRegistry()
+
+// factory registers every metric below against Registry.
+var factory = promauto.With(Registry)
+
+// Handler returns an http.Handler that serves the GAPI metric Registry.
+func Handler() http.Handler {
+	return promhttp.HandlerFor(Registry, promhttp.HandlerOpts{})
+}
 
 var (
 	// Build Info
-	BuildInfo = promauto.NewGaugeVec(
+	BuildInfo = factory.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "gapi_build_info",
 			Help: "GAPI build information",
@@ -16,14 +32,14 @@ var (
 	)
 
 	// Supervisor Metrics
-	SupervisorUptime = promauto.NewGauge(
+	SupervisorUptime = factory.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "gapi_supervisor_uptime_seconds",
 			Help: "GAPI supervisor uptime in seconds",
 		},
 	)
 
-	AgentsTotal = promauto.NewGauge(
+	AgentsTotal = factory.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "gapi_supervisor_agents_total",
 			Help: "Total number of registered agents",
@@ -31,7 +47,7 @@ var (
 	)
 
 	// Agent Lifecycle Metrics
-	AgentState = promauto.NewGaugeVec(
+	AgentState = factory.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "gapi_agent_state",
 			Help: "Current state of agents (1 = in this state, 0 = not)",
@@ -39,7 +55,7 @@ var (
 		[]string{"id", "type", "state"},
 	)
 
-	AgentStarts = promauto.NewCounterVec(
+	AgentStarts = factory.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "gapi_agent_starts_total",
 			Help: "Total number of agent starts",
@@ -47,7 +63,7 @@ var (
 		[]string{"id", "type"},
 	)
 
-	AgentStops = promauto.NewCounterVec(
+	AgentStops = factory.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "gapi_agent_stops_total",
 			Help: "Total number of agent stops",
@@ -55,7 +71,7 @@ var (
 		[]string{"id", "type"},
 	)
 
-	AgentFailures = promauto.NewCounterVec(
+	AgentFailures = factory.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "gapi_agent_failures_total",
 			Help: "Total number of agent failures",
@@ -64,7 +80,7 @@ var (
 	)
 
 	// Resource Usage Metrics
-	AgentCPUUsage = promauto.NewGaugeVec(
+	AgentCPUUsage = factory.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "gapi_agent_cpu_usage",
 			Help: "Agent CPU usage percentage",
@@ -72,7 +88,7 @@ var (
 		[]string{"id", "type"},
 	)
 
-	AgentMemoryBytes = promauto.NewGaugeVec(
+	AgentMemoryBytes = factory.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "gapi_agent_memory_bytes",
 			Help: "Agent memory usage in bytes",
@@ -80,7 +96,7 @@ var (
 		[]string{"id", "type"},
 	)
 
-	AgentUptimeSeconds = promauto.NewGaugeVec(
+	AgentUptimeSeconds = factory.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "gapi_agent_uptime_seconds",
 			Help: "Agent uptime in seconds",
@@ -89,7 +105,7 @@ var (
 	)
 
 	// EventBus Metrics
-	EventBusEvents = promauto.NewCounterVec(
+	EventBusEvents = factory.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "gapi_eventbus_events_total",
 			Help: "Total number of events published",
@@ -97,7 +113,7 @@ var (
 		[]string{"topic"},
 	)
 
-	EventBusSubscribers = promauto.NewGaugeVec(
+	EventBusSubscribers = factory.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "gapi_eventbus_subscribers",
 			Help: "Number of active subscribers per topic",

@@ -9,8 +9,8 @@ import (
 
 	"github.com/goppydae/gapi/core/config"
 	"github.com/goppydae/gapi/core/eventbus"
-	protopkg "github.com/goppydae/gapi/pkg/proto"
 	"github.com/goppydae/gapi/core/transport"
+	protopkg "github.com/goppydae/gapi/pkg/proto"
 )
 
 type lifecycleActionMsg struct {

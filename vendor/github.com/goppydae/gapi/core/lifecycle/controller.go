@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/goppydae/gapi/core/eventbus"
+	"github.com/goppydae/gapi/internal/logging/logcore"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
 )
 
@@ -93,15 +94,31 @@ func NewController(id, host string, r Runner, bus *TypedBus, deps DependencyReso
 		if st.Time != nil {
 			when = st.Time.AsTime()
 		}
-		msg := strings.TrimSpace(st.Message)
-		runID := ""
-		if m := reRunID.FindStringSubmatch(msg); len(m) == 2 {
-			runID = m[1]
+		// Prefer the structural run_id field; fall back to parsing the message
+		// text for agents/runners that predate the LifecycleStatus.run_id field.
+		runID := strings.TrimSpace(st.GetRunId())
+		if runID == "" {
+			if m := reRunID.FindStringSubmatch(strings.TrimSpace(st.Message)); len(m) == 2 {
+				runID = m[1]
+			}
 		}
 
+		evt := statusEvt{state: got, when: when, runID: runID}
 		select {
-		case c.stateCh <- statusEvt{state: got, when: when, runID: runID}:
+		case c.stateCh <- evt:
 		default:
+			// Channel full: evict the oldest event to make room for the newest,
+			// so a fresh running/terminal status is never lost behind a backlog
+			// of stale events during rapid start/stop churn (which previously
+			// caused awaitRunning to time out on a healthy agent).
+			select {
+			case <-c.stateCh:
+			default:
+			}
+			select {
+			case c.stateCh <- evt:
+			default:
+			}
 		}
 	})
 
@@ -109,6 +126,21 @@ func NewController(id, host string, r Runner, bus *TypedBus, deps DependencyReso
 }
 
 func (c *Controller) State() string { return c.sm.GetState() }
+
+// dependencyClasses splits this controller's dependencies into hard (Requires)
+// and soft (Wants). Hard failures block startup; soft failures only warn. If the
+// resolver does not distinguish the two, every dependency is treated as hard so
+// existing behavior is preserved.
+func (c *Controller) dependencyClasses() (hard, soft []string) {
+	type classified interface {
+		HardDepsOf(id string) []string
+		SoftDepsOf(id string) []string
+	}
+	if cr, ok := c.deps.(classified); ok {
+		return cr.HardDepsOf(c.id), cr.SoftDepsOf(c.id)
+	}
+	return c.deps.DepsOf(c.id), nil
+}
 
 func (c *Controller) Apply(a Action) error {
 	return c.ApplyWithContext(context.Background(), a)
@@ -135,9 +167,19 @@ func (c *Controller) ApplyWithContext(ctx context.Context, a Action) error {
 			return nil
 		}
 		if c.deps != nil {
-			for _, dep := range c.deps.DepsOf(c.id) {
+			hard, soft := c.dependencyClasses()
+			for _, dep := range hard {
 				if err := c.deps.EnsureStarted(ctx, dep); err != nil {
 					return fmt.Errorf("dependency %q failed to start: %w", dep, err)
+				}
+			}
+			// Soft (Wants) dependencies are advisory: a failure is logged and
+			// startup continues, rather than blocking like a hard dependency.
+			for _, dep := range soft {
+				if err := c.deps.EnsureStarted(ctx, dep); err != nil {
+					logcore.Warn().Str("module", "lifecycle").Str("agent_id", c.id).
+						Str("dependency", dep).Err(err).
+						Msg("soft (wants) dependency failed to start; continuing")
 				}
 			}
 		}
@@ -164,7 +206,9 @@ func (c *Controller) ApplyWithContext(ctx context.Context, a Action) error {
 
 		// spawn
 		{
-			ctx, cancel := context.WithTimeout(context.Background(), c.WaitStart)
+			// Derive from the caller's context so cancellation, deadlines, and
+			// tracing propagate into the runner instead of being discarded.
+			ctx, cancel := context.WithTimeout(ctx, c.WaitStart)
 			defer cancel()
 			if err := c.runner.Start(ctx); err != nil {
 				_ = c.sm.TransitionTo(StateError)

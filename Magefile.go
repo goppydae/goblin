@@ -10,26 +10,31 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/goppydae/gapi/pkg/magelib"
+	"github.com/goppydae/magelib/pkg/magelib"
 	"github.com/magefile/mage/mg"
 	"github.com/magefile/mage/sh"
 	"github.com/zeebo/blake3"
 )
 
+// versionLdflags stamps the resolved version into internal/version, the
+// shared injection point read by both binaries (VERSION file is the source
+// of version truth).
+func versionLdflags() string {
+	return "-X github.com/goppydae/goblin/internal/version.Version=" + magelib.Version()
+}
+
 // Build builds the goblind and goblinctl binaries
 func Build() error {
 	mg.Deps(checkHermetic)
-	fmt.Println("Building goblind and goblinctl...")
+	fmt.Printf("Building goblind and goblinctl (version %s)...\n", magelib.Version())
 
 	// Goblin Daemon
-	if err := sh.Run("go", "build", "-o", "bin/goblind", "./cmd/goblind"); err != nil {
-		// Assuming cmd/goblind exists, if not we will adjust.
-		// Previous exploration showed cmd/goblinctl. Let's check listing.
+	if err := sh.Run("go", "build", "-ldflags", versionLdflags(), "-o", "bin/goblind", "./cmd/goblind"); err != nil {
 		return err
 	}
 
 	// Goblin CLI
-	if err := sh.Run("go", "build", "-o", "bin/goblinctl", "./cmd/goblinctl"); err != nil {
+	if err := sh.Run("go", "build", "-ldflags", versionLdflags(), "-o", "bin/goblinctl", "./cmd/goblinctl"); err != nil {
 		return err
 	}
 
@@ -68,11 +73,11 @@ func Install() error {
 	mg.Deps(checkHermetic)
 	fmt.Println("Installing goblind and goblinctl...")
 
-	if err := sh.Run("go", "install", "./cmd/goblind"); err != nil {
+	if err := sh.Run("go", "install", "-ldflags", versionLdflags(), "./cmd/goblind"); err != nil {
 		return err
 	}
 
-	if err := sh.Run("go", "install", "./cmd/goblinctl"); err != nil {
+	if err := sh.Run("go", "install", "-ldflags", versionLdflags(), "./cmd/goblinctl"); err != nil {
 		return err
 	}
 
@@ -80,39 +85,82 @@ func Install() error {
 	return nil
 }
 
-// Test runs all tests
+// Test runs all tests with the race detector (the suite CI runs)
 func Test() error {
 	mg.Deps(checkHermetic)
-	fmt.Println("Running tests...")
-	return sh.RunV("go", "test", "-v", "./...")
+	fmt.Println("Running tests (-race)...")
+	return sh.RunV("go", "test", "-race", "./...")
+}
+
+// TestShort runs the fast inner-loop subset
+func TestShort() error {
+	mg.Deps(checkHermetic)
+	fmt.Println("Running short tests...")
+	return sh.RunV("go", "test", "-short", "./...")
+}
+
+// Fuzz runs every Fuzz* target for a bounded fuzztime
+func Fuzz() error {
+	mg.Deps(checkHermetic)
+	return magelib.FuzzAll("10s")
+}
+
+// Vuln runs govulncheck (named offline exception: skipped loudly when offline)
+func Vuln() error {
+	mg.Deps(checkHermetic)
+	return magelib.Vuln()
+}
+
+// Doctor validates the local environment against the ecosystem pins
+func Doctor() error {
+	return magelib.Doctor(magelib.DoctorConfig{
+		ReplaceTargets: []string{"../gapi", "../magelib"},
+		ProtoPlugins:   []string{"buf", "protoc-gen-go", "protoc-gen-go-grpc"},
+		GopyVersion:    "v0.4.10",
+		RequiredEnv:    []string{"GOBIN"},
+		SharedTools:    []string{"buf", "golangci-lint", "gosec", "govulncheck", "mage", "goimports", "mkdocs", "pandoc", "criu"},
+	})
+}
+
+// EnvCheck compares the sibling dev shells' tool inventories; skew is red
+func EnvCheck() error {
+	return magelib.CheckShellUnification(
+		map[string]string{"gapi": "../gapi", "goblin": ".", "magelib": "path:../magelib"},
+		[]string{"go", "gcc", "protoc", "buf", "golangci-lint", "gosec", "govulncheck", "mage", "goimports"},
+	)
 }
 
 // TestCluster runs cluster coordination tests
 func TestCluster() error {
 	mg.Deps(Build)
 	fmt.Println("Running cluster tests...")
-	return sh.RunV("./test/test_cluster.sh")
-}
-
-// TestMigration runs data migration tests
-func TestMigration() error {
-	mg.Deps(Build)
-	fmt.Println("Running migration tests...")
-	return sh.RunV("./test/test_migration.sh")
+	return sh.RunV("./test/cluster/test_cluster.sh")
 }
 
 // TestScheduler runs scheduler tests
 func TestScheduler() error {
-	mg.Deps(Build)
-	fmt.Println("Running scheduler tests...")
-	return sh.RunV("./test/test_scheduler.sh")
+	mg.Deps(checkHermetic)
+	fmt.Println("Running scheduler tests (-race)...")
+	return sh.RunV("go", "test", "-race", "./core/scheduler/...")
+}
+
+// Release cross-compiles pure-Go release artifacts (CGO_ENABLED=0) for
+// linux/{amd64,arm64} and darwin/{amd64,arm64} into dist/, with a SHA256SUMS
+// manifest. Signing (minisign) and the signed tag are operator-gated and
+// printed as a stub.
+func Release() error {
+	mg.Deps(checkHermetic)
+	return magelib.Release("goblin", "dist", versionLdflags(), map[string]string{
+		"goblind":   "./cmd/goblind",
+		"goblinctl": "./cmd/goblinctl",
+	})
 }
 
 // Clean removes build artifacts
 func Clean() error {
 	fmt.Println("Cleaning build artifacts...")
 
-	dirs := []string{"bin"}
+	dirs := []string{"bin", "dist"}
 	for _, dir := range dirs {
 		if err := sh.Rm(dir); err != nil {
 			fmt.Printf("Warning: failed to remove %s: %v\n", dir, err)
@@ -123,11 +171,19 @@ func Clean() error {
 	return nil
 }
 
-// Proto generates protobuf code
+// Proto generates protobuf code through the buf gate (generate, lint,
+// breaking against HEAD), then mirrors the generated *.pb.go into
+// internal/proto (Goblin's importable location).
 func Proto() error {
 	mg.Deps(checkHermetic)
-	// Goblin puts generated protos in internal/proto instead of pkg/proto
-	return magelib.GenerateProto("proto/*.proto", "internal/proto")
+	if err := magelib.BufGenerate(".git#ref=HEAD"); err != nil {
+		return err
+	}
+	if err := magelib.MirrorGenerated("proto/*.pb.go", "internal/proto"); err != nil {
+		return err
+	}
+	fmt.Println("Protobuf generation complete (buf generate + lint + breaking)")
+	return nil
 }
 
 // Fmt formats all Go code
@@ -206,18 +262,10 @@ func TestUnit() error {
 	return sh.RunV("go", "test", "-v", "./core/...", "./internal/...")
 }
 
-// Lint runs linters
+// Lint runs the shared lint gate (gofmt check, pinned golangci-lint, gosec)
 func Lint() error {
-	fmt.Println("Running linters...")
-
-	// Check if golangci-lint is available
-	if _, err := exec.LookPath("golangci-lint"); err == nil {
-		return sh.RunV("golangci-lint", "run")
-	}
-
-	// Fallback to go vet
-	fmt.Println("golangci-lint not found, using go vet...")
-	return sh.RunV("go", "vet", "./...")
+	mg.Deps(checkHermetic)
+	return magelib.Lint()
 }
 
 // Dev runs the development build and starts goblind

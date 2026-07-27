@@ -63,7 +63,7 @@ github.com/google/btree
 ## explicit
 github.com/google/uuid
 # github.com/goppydae/gapi v0.0.0-00010101000000-000000000000 => ../gapi
-## explicit; go 1.25.0
+## explicit; go 1.26.0
 github.com/goppydae/gapi/core/adk/meta
 github.com/goppydae/gapi/core/agentmgr
 github.com/goppydae/gapi/core/cgroups
@@ -83,8 +83,10 @@ github.com/goppydae/gapi/internal/logging/logevent
 github.com/goppydae/gapi/internal/logging/logoutput
 github.com/goppydae/gapi/internal/statewatch
 github.com/goppydae/gapi/pkg/cli
-github.com/goppydae/gapi/pkg/magelib
 github.com/goppydae/gapi/pkg/proto
+# github.com/goppydae/magelib v0.0.0-00010101000000-000000000000 => ../magelib
+## explicit; go 1.26.0
+github.com/goppydae/magelib/pkg/magelib
 # github.com/hashicorp/errwrap v1.1.0
 ## explicit
 github.com/hashicorp/errwrap
@@ -459,3 +461,4 @@ google.golang.org/protobuf/types/known/timestamppb
 ## explicit; go 1.13
 gopkg.in/natefinch/lumberjack.v2
 # github.com/goppydae/gapi => ../gapi
+# github.com/goppydae/magelib => ../magelib

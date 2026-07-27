@@ -94,7 +94,7 @@ We’d love to hear your thoughts on this project. Feel free to drop us a note!
 
 [MIT](https://github.com/charmbracelet/bubbletea/raw/master/LICENSE)
 
-______________________________________________________________________
+---
 
 Part of [Charm](https://charm.sh).
 

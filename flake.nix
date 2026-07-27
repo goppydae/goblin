@@ -28,7 +28,21 @@
             protobuf
             protoc-gen-go
             protoc-gen-go-grpc
-            
+            buf
+
+            # Lint and security gate
+            golangci-lint
+            gosec
+            govulncheck
+
+            # Documentation toolchain
+            mkdocs
+            pandoc
+
+            # Checkpoint/restore (Goblin owns migration; see GOBLIN-DIV-018)
+            criu
+            libseccomp
+
             # Container orchestration
             podman
             podman-compose
@@ -49,16 +63,16 @@
             ]))
             
             # Markdown linting
-            nodePackages.markdownlint-cli2
+            markdownlint-cli2
           ];
 
           shellHook = ''
             export GOBIN=$PWD/.bin
             export PATH=$GOBIN:$PATH
 
-            if ! command -v gopy &> /dev/null; then
-              echo "Installing gopy..."
-              go install github.com/go-python/gopy@latest
+            if [ ! -x "$GOBIN/gopy" ]; then
+              echo "Building pinned gopy from tools/gopy..."
+              (cd tools/gopy && GOWORK=off go build -o "$GOBIN/gopy" github.com/go-python/gopy)
             fi
 
             echo "👺 Goblin - Distributed Orchestrator"
@@ -67,7 +81,7 @@
             echo "  mage build          - Build goblind and goblinctl binaries"
             echo "  mage test           - Run all tests"
             echo "  mage testCluster    - Run cluster coordination tests"
-            echo "  mage testMigration  - Run data migration tests"
+            echo "  mage testScheduler  - Run scheduler tests"
             echo "  mage dev            - Start goblind in development mode"
             echo "  mage docs:html      - Generate HTML documentation"
             echo "  mage docs:man       - Generate Man pages"

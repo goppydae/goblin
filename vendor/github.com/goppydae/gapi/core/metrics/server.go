@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 )
 
@@ -20,7 +19,8 @@ type Server struct {
 // NewServer creates a new metrics server
 func NewServer(addr string, logger zerolog.Logger) *Server {
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.Handler())
+	// Serve GAPI's dedicated registry rather than the global default registry.
+	mux.Handle("/metrics", Handler())
 
 	// Health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

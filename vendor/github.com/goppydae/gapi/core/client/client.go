@@ -9,8 +9,8 @@ import (
 
 	"github.com/goppydae/gapi/core/config"
 	"github.com/goppydae/gapi/core/eventbus"
-	"github.com/goppydae/gapi/internal/statewatch"
 	"github.com/goppydae/gapi/core/transport"
+	"github.com/goppydae/gapi/internal/statewatch"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
 )
 
@@ -46,22 +46,27 @@ func (c *Client) Ping(ctx context.Context) (string, error) {
 	done := make(chan string, 1)
 	errCh := make(chan error, 1)
 
-	c.bus.SubscribeOnce("system", "", "pong", func(e eventbus.Event[*anypb.Any]) {
+	msg := &protopkg.PingStatus{Status: "ping"}
+	payload, err := anypb.New(msg)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal ping: %w", err)
+	}
+	req := eventbus.NewEvent("system", "", "ping", "client", payload, true)
+
+	// Correlate the reply to this request's ID so concurrent Ping callers don't
+	// steal each other's pong. The daemon echoes the request ID onto the reply.
+	if err := c.bus.SubscribeCorrelated("system", "", "pong", req.ID, func(e eventbus.Event[*anypb.Any]) {
 		var pong protopkg.PingStatus
 		if err := e.Payload.UnmarshalTo(&pong); err != nil {
 			errCh <- fmt.Errorf("failed to unmarshal pong: %w", err)
 			return
 		}
 		done <- pong.Status
-	})
-
-	msg := &protopkg.PingStatus{Status: "ping"}
-	payload, err := anypb.New(msg)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal ping: %w", err)
+	}); err != nil {
+		return "", fmt.Errorf("failed to subscribe to pong: %w", err)
 	}
 
-	if err := c.bus.Publish(eventbus.NewEvent("system", "", "ping", "client", payload, true)); err != nil {
+	if err := c.bus.Publish(req); err != nil {
 		return "", fmt.Errorf("failed to publish ping: %w", err)
 	}
 
@@ -89,22 +94,27 @@ func (c *Client) AgentStatus(ctx context.Context) ([]*protopkg.AgentStatus, erro
 	done := make(chan []*protopkg.AgentStatus, 1)
 	errCh := make(chan error, 1)
 
-	c.bus.SubscribeOnce("system", "", "agents.reply", func(e eventbus.Event[*anypb.Any]) {
+	reqMsg := &protopkg.AgentStatusRequest{}
+	packed, err := anypb.New(reqMsg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal status request: %w", err)
+	}
+	req := eventbus.NewEvent("system", "", "agents/", "client", packed, true)
+
+	// Correlate the reply to this request's ID so concurrent status callers don't
+	// steal each other's reply. The daemon echoes the request ID onto the reply.
+	if err := c.bus.SubscribeCorrelated("system", "", "agents.reply", req.ID, func(e eventbus.Event[*anypb.Any]) {
 		var res protopkg.AgentStatusResponse
 		if err := e.Payload.UnmarshalTo(&res); err != nil {
 			errCh <- fmt.Errorf("failed to unmarshal agent status: %w", err)
 			return
 		}
 		done <- res.Agents
-	})
-
-	req := &protopkg.AgentStatusRequest{}
-	packed, err := anypb.New(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal status request: %w", err)
+	}); err != nil {
+		return nil, fmt.Errorf("failed to subscribe to agents.reply: %w", err)
 	}
 
-	if err := c.bus.Publish(eventbus.NewEvent("system", "", "agents/", "client", packed, true)); err != nil {
+	if err := c.bus.Publish(req); err != nil {
 		return nil, fmt.Errorf("failed to publish status request: %w", err)
 	}
 

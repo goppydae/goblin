@@ -20,7 +20,8 @@ type AgentControl interface {
 type ViewMode int
 
 const (
-	ViewOverview ViewMode = iota // Tab 1: Cluster + Jobs + Agents
+	ViewOverview ViewMode = iota // Tab 0: Local/Cluster Agents
+	ViewGlobal                   // Tab 1: Global Agents Spec
 	ViewLogs                     // Tab 2: Unified log stream
 	ViewDetail                   // Detail view for specific agent
 )
@@ -199,6 +200,8 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.view {
 	case ViewOverview:
 		return m.handleListKeys(msg)
+	case ViewGlobal:
+		return m.handleListKeys(msg)
 	case ViewLogs:
 		return m.handleLogsKeys(msg)
 	case ViewDetail:
@@ -221,10 +224,13 @@ func (m Model) handleListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case "tab":
-		// Switch between Overview and Logs tabs
+		// Switch between Overview, Global, and Logs tabs
 		if m.view == ViewOverview {
-			m.view = ViewLogs
+			m.view = ViewGlobal
 			m.currentTab = 1
+		} else if m.view == ViewGlobal {
+			m.view = ViewLogs
+			m.currentTab = 2
 
 			// Initialize log viewer for cluster logs
 			m.logViewer = NewLogViewer("cluster", m.width, m.height)
@@ -407,6 +413,8 @@ func (m Model) View() string {
 	switch m.view {
 	case ViewOverview:
 		return m.renderList()
+	case ViewGlobal:
+		return m.renderList()
 	case ViewLogs:
 		return m.logViewer.View()
 	case ViewDetail:
@@ -432,12 +440,15 @@ func (m Model) renderList() string {
 		Foreground(lipgloss.Color("241"))
 
 	overviewTab := "[Overview]"
+	globalTab := "[Global]"
 	logsTab := "[Logs]"
 
 	if m.view == ViewOverview {
-		s += activeTabStyle.Render(overviewTab) + inactiveTabStyle.Render(logsTab)
+		s += activeTabStyle.Render(overviewTab) + inactiveTabStyle.Render(globalTab) + inactiveTabStyle.Render(logsTab)
+	} else if m.view == ViewGlobal {
+		s += inactiveTabStyle.Render(overviewTab) + activeTabStyle.Render(globalTab) + inactiveTabStyle.Render(logsTab)
 	} else {
-		s += inactiveTabStyle.Render(overviewTab) + activeTabStyle.Render(logsTab)
+		s += inactiveTabStyle.Render(overviewTab) + inactiveTabStyle.Render(globalTab) + activeTabStyle.Render(logsTab)
 	}
 	s += "\n\n"
 
@@ -488,6 +499,16 @@ func (m Model) renderList() string {
 	// Agent rows (filtered)
 	displayIdx := 0
 	for _, agent := range m.agents {
+		// Separation Logic:
+		// ViewOverview shows only real instances (NOT global-spec)
+		// ViewGlobal shows ONLY global-spec items
+		if m.view == ViewOverview && agent.Type == "global-spec" {
+			continue
+		}
+		if m.view == ViewGlobal && agent.Type != "global-spec" {
+			continue
+		}
+
 		if !m.filter.Matches(agent) {
 			continue
 		}

@@ -1,4 +1,0 @@
-{"ts": "2025-12-18T22:11:18.584171Z", "actor": "sysop", "intent": "verify_schema", "scope": "goblin", "action": "test", "result": "ok", "evidence": ["tools/cvr/log_action.py"], "mode": "normal"}
-{"ts": "2025-12-20T17:38:51.109162Z", "actor": "sysop", "intent": "/finish", "scope": "workspace", "action": "post-verify", "result": "ok", "evidence": ["tools/verify_all.sh"], "mode": "normal"}
-{"ts": "2025-12-20T17:38:52.041191Z", "actor": "sysop", "intent": "/finish", "scope": "workspace", "action": "post-execution-review", "result": "ok", "evidence": ["artifacts/history/runs/"], "mode": "normal"}
-{"ts": "2025-12-20T17:38:52.940791Z", "actor": "sysop", "intent": "/finish", "scope": "workspace", "action": "commit-message", "result": "ok", "evidence": ["git"], "mode": "normal"}

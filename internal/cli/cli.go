@@ -11,11 +11,13 @@ import (
 	"github.com/goppydae/gapi/core/tui"
 	gapicli "github.com/goppydae/gapi/pkg/cli"
 	"github.com/goppydae/goblin/internal/supervisor"
+	"github.com/goppydae/goblin/internal/version"
 )
 
 var RootCmd = &cobra.Command{
-	Use:   "goblinctl",
-	Short: "Goblin distributed supervisor control",
+	Use:     "goblinctl",
+	Short:   "Goblin distributed supervisor control",
+	Version: version.Version,
 }
 
 var clusterCmd = &cobra.Command{

@@ -604,6 +604,7 @@ func (a *PythonAgent) publishStatusWithRunID(state, message, rid string) {
 		Message:  message,
 		Time:     timestamppb.Now(),
 		Hostname: a.hostname,
+		RunId:    rid, // structural run id; the run_id= text above is kept for back-compat
 	}
 	anyp, _ := anypb.New(st)
 	ev := eventbus.NewEvent[*anypb.Any]("system", "", "agent/lifecycle.status", a.id, anyp, true)

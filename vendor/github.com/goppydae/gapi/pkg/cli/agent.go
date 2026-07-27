@@ -82,7 +82,6 @@ func init() {
 	agentCmd.AddCommand(agentCleanCmd)
 	agentCmd.AddCommand(agentNewCmd)
 	rootCmd.AddCommand(agentCmd)
-	rootCmd.AddCommand(agentReloadCmd)
 }
 
 func runAgentBuild(cmd *cobra.Command, args []string) error {

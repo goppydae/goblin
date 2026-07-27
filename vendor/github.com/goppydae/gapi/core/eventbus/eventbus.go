@@ -137,6 +137,14 @@ func (b *EventBus[T]) Subscribe(scope, namespace, topic string, fn Handler[T]) e
 	return nil
 }
 
+// SubscribePrefix subscribes to every topic that begins with topicPrefix.
+//
+// TYPE HAZARD: a prefix matches sibling topics that may carry different payload
+// types — e.g. SubscribePrefix("system","","agent/lifecycle") fires for both
+// "agent/lifecycle.action" (LifecycleControl) and "agent/lifecycle.status"
+// (LifecycleStatus). A handler that assumes one proto type will panic on
+// UnmarshalTo/type-assert when the other arrives. Prefer an exact Subscribe when
+// the handler is payload-typed, or use SubscribePrefixTyped to filter by type.
 func (b *EventBus[T]) SubscribePrefix(scope, namespace, topicPrefix string, fn Handler[T]) error {
 	if !validScopes[scope] {
 		return fmt.Errorf("invalid scope: %s", scope)
@@ -158,6 +166,28 @@ func (bus *EventBus[T]) SubscribeOnce(scope, namespace, topic string, handler Ha
 	var once sync.Once
 	var wrapper Handler[T]
 	wrapper = func(e Event[T]) {
+		once.Do(func() {
+			handler(e)
+			bus.Unsubscribe(scope, namespace, topic, wrapper)
+		})
+	}
+	return bus.Subscribe(scope, namespace, topic, wrapper)
+}
+
+// SubscribeCorrelated calls handler at most once, for the first event on the
+// exact topic whose ID equals corrID, then unsubscribes. Events with any other
+// ID are ignored (not consumed). This is the request/reply correlation
+// primitive: a caller publishes a request, then waits for the reply whose ID the
+// responder echoed from the request — so concurrent callers sharing one reply
+// topic don't steal each other's responses. The Envelope carries the ID over the
+// wire, so this works across transports.
+func (bus *EventBus[T]) SubscribeCorrelated(scope, namespace, topic, corrID string, handler Handler[T]) error {
+	var once sync.Once
+	var wrapper Handler[T]
+	wrapper = func(e Event[T]) {
+		if e.ID != corrID {
+			return
+		}
 		once.Do(func() {
 			handler(e)
 			bus.Unsubscribe(scope, namespace, topic, wrapper)
@@ -216,6 +246,32 @@ func (bus *EventBus[T]) SubscribePrefixWithContext(ctx context.Context, scope, n
 	}()
 
 	return nil
+}
+
+// SubscribePrefixTyped subscribes to a topic prefix but invokes handler only for
+// events whose *anypb.Any payload unmarshals into type M. It is the type-safe
+// companion to SubscribePrefix: events carrying a different proto type (a sibling
+// topic under the same prefix), or a nil/undecodable payload, are silently
+// skipped instead of crashing a type-specific handler.
+func SubscribePrefixTyped[M proto.Message](
+	bus *EventBus[*anypb.Any],
+	scope, namespace, topicPrefix string,
+	handler func(e Event[*anypb.Any], msg M),
+) error {
+	return bus.SubscribePrefix(scope, namespace, topicPrefix, func(e Event[*anypb.Any]) {
+		if e.Payload == nil {
+			return
+		}
+		decoded, err := e.Payload.UnmarshalNew()
+		if err != nil {
+			return
+		}
+		typed, ok := decoded.(M)
+		if !ok {
+			return
+		}
+		handler(e, typed)
+	})
 }
 
 // ---- Publish / Dispatch ----
