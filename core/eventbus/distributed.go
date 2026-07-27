@@ -181,13 +181,14 @@ func (bus *DistributedEventBus) PublishLeader(namespace, topic string, payload m
 
 // dispatch sends an event to all registered handlers
 func (bus *DistributedEventBus) dispatch(event Event) error {
+	// Snapshot the handler set under the lock: the inner map must not be
+	// iterated outside it, or Unsubscribe's delete races the iteration.
 	bus.mu.RLock()
-	handlers, exists := bus.subscribers[event.Topic]
-	bus.mu.RUnlock()
-
-	if !exists {
-		return nil // No subscribers, not an error
+	handlers := make([]EventHandler, 0, len(bus.subscribers[event.Topic]))
+	for _, handler := range bus.subscribers[event.Topic] {
+		handlers = append(handlers, handler)
 	}
+	bus.mu.RUnlock()
 
 	// Call handlers asynchronously
 	for _, handler := range handlers {
