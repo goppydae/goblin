@@ -179,11 +179,6 @@ type MemberInfo struct {
 
 // Members returns the list of cluster members
 func (s *SchedulerRPC) Members(req *struct{}, resp *[]MemberInfo) error {
-	// Define interface for membership with Members() method
-	type membershipInterface interface {
-		Members() []interface{}
-	}
-
 	leaderAddr := ""
 	if s.consensus != nil {
 		leaderAddr = s.consensus.Leader()

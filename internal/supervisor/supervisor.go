@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -78,7 +79,7 @@ func New(cfg Config) *Supervisor {
 }
 
 // Run starts the supervisor and blocks until context is canceled
-func (s *Supervisor) Run(ctx context.Context) error {
+func (s *Supervisor) Run(ctx context.Context) (err error) {
 	nodeID := s.cfg.NodeID
 	if nodeID == "" {
 		host, _ := os.Hostname()
@@ -216,10 +217,17 @@ func (s *Supervisor) Run(ctx context.Context) error {
 
 	membership, err := cluster.NewMembership(nodeID, serfHost, serfPort, advAddr, s.cfg.AdvertisePort, tags, secretKey, serfTransport)
 	if err != nil {
-		serfTransport.Shutdown() // Cleanup on failure
-		return fmt.Errorf("failed to create membership: %w", err)
+		err = fmt.Errorf("failed to create membership: %w", err)
+		if serr := serfTransport.Shutdown(); serr != nil { // Cleanup on failure
+			return errors.Join(err, serr)
+		}
+		return err
 	}
-	defer membership.Shutdown()
+	defer func() {
+		if serr := membership.Shutdown(); serr != nil && err == nil {
+			err = fmt.Errorf("shutdown membership: %w", serr)
+		}
+	}()
 
 	fmt.Printf("✅ Serf membership initialized (%s) [QUIC]\n", s.cfg.SerfAddr)
 
@@ -237,7 +245,11 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create consensus: %w", err)
 	}
-	defer consensus.Shutdown()
+	defer func() {
+		if serr := consensus.Shutdown(); serr != nil && err == nil {
+			err = fmt.Errorf("shutdown consensus: %w", serr)
+		}
+	}()
 
 	fmt.Printf("✅ Raft consensus initialized (%s)\n", s.cfg.RaftAddr)
 
@@ -286,7 +298,12 @@ func (s *Supervisor) Run(ctx context.Context) error {
 						"status": member.Status.String(),
 						"tags":   member.Tags,
 					}
-					bus.PublishLocal("system", topic, payload, []string{"cluster", member.Name})
+					// Serf event handler is a callback terminus: there is
+					// no caller to propagate to, so a publish failure is
+					// logged.
+					if err := bus.PublishLocal("system", topic, payload, []string{"cluster", member.Name}); err != nil {
+						log.Printf("publish %s for %s: %v", topic, member.Name, err)
+					}
 				}
 			}
 		}
@@ -477,7 +494,9 @@ func (s *Supervisor) Run(ctx context.Context) error {
 				go handleQUICConn(conn, bus, membership)
 			default:
 				log.Printf("Unknown ALPN protocol: %s", conn.ConnectionState().TLS.NegotiatedProtocol)
-				conn.CloseWithError(0, "unknown protocol")
+				if err := conn.CloseWithError(0, "unknown protocol"); err != nil {
+					log.Printf("close unknown-protocol connection: %v", err)
+				}
 			}
 		}
 	}()
@@ -654,7 +673,11 @@ func (cm *CertManager) Watch(ctx context.Context) {
 }
 
 func handleQUICStream(stream *quic.Stream, bus eventbus.EventBus, m *cluster.Membership) {
-	defer stream.Close()
+	defer func() {
+		if err := stream.Close(); err != nil {
+			log.Printf("close GAPI stream: %v", err)
+		}
+	}()
 
 	// GAPI Protocol: 4-byte BigEndian length prefix + Protobuf Envelope
 	var lenBuf [4]byte
@@ -704,8 +727,11 @@ func handleQUICStream(stream *quic.Stream, bus eventbus.EventBus, m *cluster.Mem
 			payloadMap["raw_proto_type"] = env.Payload.TypeUrl
 		}
 
-		// Use PublishLocal
-		bus.PublishLocal("agent", topic, payloadMap, []string{"source:" + env.Source})
+		// Stream handler is a goroutine terminus: there is no caller to
+		// propagate to, so a publish failure is logged.
+		if err := bus.PublishLocal("agent", topic, payloadMap, []string{"source:" + env.Source}); err != nil {
+			log.Printf("publish %s from %s: %v", topic, env.Source, err)
+		}
 	}
 }
 

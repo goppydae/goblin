@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
@@ -52,7 +53,9 @@ func (l *QUICStreamLayer) Accept() (net.Conn, error) {
 
 	stream, err := conn.AcceptStream(ctx)
 	if err != nil {
-		conn.CloseWithError(1, "failed to accept stream")
+		if cerr := conn.CloseWithError(1, "failed to accept stream"); cerr != nil {
+			return nil, errors.Join(err, cerr)
+		}
 		return nil, err
 	}
 
@@ -99,7 +102,9 @@ func (l *QUICStreamLayer) Dial(addr raft.ServerAddress, timeout time.Duration) (
 
 	stream, err := conn.OpenStreamSync(ctx)
 	if err != nil {
-		conn.CloseWithError(1, "failed to open stream")
+		if cerr := conn.CloseWithError(1, "failed to open stream"); cerr != nil {
+			return nil, errors.Join(err, cerr)
+		}
 		return nil, err
 	}
 
@@ -129,8 +134,10 @@ func (c *QUICConn) Close() error {
 	// Closing the stream closes the stream.
 	// We also close the connection here because we are mapping 1 conn to 1 stream for simplicity in this adapter.
 	// Hashicorp Raft maintains persistent connections, so closing usually means "disconnect peer".
-	c.Stream.Close()
-	return c.Conn.CloseWithError(0, "closed")
+	if err := c.Stream.Close(); err != nil {
+		return err
+	}
+	return c.CloseWithError(0, "closed")
 }
 
 func (c *QUICConn) LocalAddr() net.Addr {

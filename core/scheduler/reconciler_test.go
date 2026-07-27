@@ -29,7 +29,9 @@ func TestReconcileScaleUp(t *testing.T) {
 		Replicas:  3,
 		Resources: &goblinv1.ResourceReq{Cpu: 0.1, Memory: 10},
 	}
-	s.RegisterAgent(ctx, spec)
+	if err := s.RegisterAgent(ctx, spec); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
 
 	// 2. Reconcile
 	if err := s.ReconcileAgents(ctx); err != nil {
@@ -61,15 +63,19 @@ func TestReconcileScaleDown(t *testing.T) {
 
 	// 1. Register Spec (Replicas=1)
 	spec := &goblinv1.AgentSpec{Id: "agent-down", Replicas: 1}
-	s.RegisterAgent(ctx, spec)
+	if err := s.RegisterAgent(ctx, spec); err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
 
 	// 2. Create 3 existing instances
 	inst1 := &goblinv1.AgentInstance{InstanceId: "i1", SpecId: "agent-down", State: "running", NodeId: "n1"}
 	inst2 := &goblinv1.AgentInstance{InstanceId: "i2", SpecId: "agent-down", State: "running", NodeId: "n1"}
 	inst3 := &goblinv1.AgentInstance{InstanceId: "i3", SpecId: "agent-down", State: "running", NodeId: "n1"}
-	s.SaveInstance(ctx, inst1)
-	s.SaveInstance(ctx, inst2)
-	s.SaveInstance(ctx, inst3)
+	for _, inst := range []*goblinv1.AgentInstance{inst1, inst2, inst3} {
+		if err := s.SaveInstance(ctx, inst); err != nil {
+			t.Fatalf("SaveInstance %s: %v", inst.InstanceId, err)
+		}
+	}
 
 	// 3. Reconcile
 	if err := s.ReconcileAgents(ctx); err != nil {

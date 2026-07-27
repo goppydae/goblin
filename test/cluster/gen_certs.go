@@ -62,8 +62,12 @@ func generateCA() (*x509.Certificate, *rsa.PrivateKey, error) {
 		return nil, nil, err
 	}
 
-	writePem(filepath.Join(certDir, "ca.crt"), "CERTIFICATE", caBytes)
-	writeKey(filepath.Join(certDir, "ca.key"), caKey)
+	if err := writePem(filepath.Join(certDir, "ca.crt"), "CERTIFICATE", caBytes); err != nil {
+		return nil, nil, err
+	}
+	if err := writeKey(filepath.Join(certDir, "ca.key"), caKey); err != nil {
+		return nil, nil, err
+	}
 
 	return ca, caKey, nil
 }
@@ -91,26 +95,38 @@ func generateNodeCert(id string, ca *x509.Certificate, caKey *rsa.PrivateKey) er
 		return err
 	}
 
-	writePem(filepath.Join(certDir, id+".crt"), "CERTIFICATE", certBytes)
-	writeKey(filepath.Join(certDir, id+".key"), key)
+	if err := writePem(filepath.Join(certDir, id+".crt"), "CERTIFICATE", certBytes); err != nil {
+		return err
+	}
+	if err := writeKey(filepath.Join(certDir, id+".key"), key); err != nil {
+		return err
+	}
 
 	return nil
 }
 
-func writePem(path, typeStr string, bytes []byte) {
+func writePem(path, typeStr string, bytes []byte) (err error) {
 	out, err := os.Create(path)
 	if err != nil {
-		panic(err)
+		return err
 	}
-	defer out.Close()
-	pem.Encode(out, &pem.Block{Type: typeStr, Bytes: bytes})
+	defer func() {
+		if cerr := out.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
+	return pem.Encode(out, &pem.Block{Type: typeStr, Bytes: bytes})
 }
 
-func writeKey(path string, key *rsa.PrivateKey) {
+func writeKey(path string, key *rsa.PrivateKey) (err error) {
 	out, err := os.Create(path)
 	if err != nil {
-		panic(err)
+		return err
 	}
-	defer out.Close()
-	pem.Encode(out, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	defer func() {
+		if cerr := out.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
+	return pem.Encode(out, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
 }

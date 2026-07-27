@@ -33,7 +33,9 @@ func TestStore_Watch(t *testing.T) {
 	go func() {
 		// Give subscription time to register
 		time.Sleep(50 * time.Millisecond)
-		bus.PublishLocal("test_ns", "store.change", payload, nil)
+		if err := bus.PublishLocal("test_ns", "store.change", payload, nil); err != nil {
+			t.Errorf("PublishLocal: %v", err)
+		}
 	}()
 
 	// 3. Verify event received
@@ -48,12 +50,14 @@ func TestStore_Watch(t *testing.T) {
 
 	// 4. Test filtering
 	// Publish event for different key
-	bus.PublishLocal("test_ns", "store.change", map[string]interface{}{
+	if err := bus.PublishLocal("test_ns", "store.change", map[string]interface{}{
 		"op":        "set",
 		"namespace": "test_ns",
 		"key":       "key2",
 		"value":     "val2",
-	}, nil)
+	}, nil); err != nil {
+		t.Fatalf("PublishLocal: %v", err)
+	}
 
 	select {
 	case e := <-ch:

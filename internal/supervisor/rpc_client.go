@@ -43,7 +43,7 @@ func NewQUICRPCClient(addr string, tlsConfig *tls.Config) (*QUICRPCClient, error
 }
 
 // Call makes an RPC call and returns the response
-func (c *QUICRPCClient) Call(method string, request interface{}, response interface{}) error {
+func (c *QUICRPCClient) Call(method string, request interface{}, response interface{}) (err error) {
 	// Marshal request payload
 	payload, err := json.Marshal(request)
 	if err != nil {
@@ -68,7 +68,11 @@ func (c *QUICRPCClient) Call(method string, request interface{}, response interf
 	if err != nil {
 		return fmt.Errorf("failed to open stream: %w", err)
 	}
-	defer stream.Close()
+	defer func() {
+		if cerr := stream.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("close stream: %w", cerr)
+		}
+	}()
 
 	// Write stream type (RPC_REQUEST = 0)
 	if _, err := stream.Write([]byte{byte(goblinv1.StreamType_RPC_REQUEST)}); err != nil {

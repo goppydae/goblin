@@ -34,14 +34,17 @@ func (s *Scheduler) reconcileAgent(ctx context.Context, spec *goblinv1.AgentSpec
 	// Filter healthy/running instances
 	var active []*goblinv1.AgentInstance
 	for _, inst := range instances {
-		if inst.State == "running" || inst.State == "pending" {
+		switch inst.State {
+		case "running", "pending":
 			active = append(active, inst)
-		} else if inst.State == "failed" {
+		case "failed":
 			// Handle failure: Restart/Reschedule
 			log.Printf("⚠️ Instance %s failed. Triggering recovery...", inst.InstanceId)
 			// For now, just remove it from active list so it gets replaced
 			// In real impl, we might want to cleanup the old node first
-			s.DeleteInstance(ctx, inst.InstanceId)
+			if err := s.DeleteInstance(ctx, inst.InstanceId); err != nil {
+				return fmt.Errorf("delete failed instance %s: %w", inst.InstanceId, err)
+			}
 		}
 	}
 
@@ -168,7 +171,7 @@ func (s *Scheduler) getCandidates(ctx context.Context) ([]CandidateNode, error) 
 
 // Stubs for RPC calls (Phase 3.4 will replace these) -> Real Implementation Phase 3.5
 
-func (s *Scheduler) startAgentOnNode(ctx context.Context, nodeID string, inst *goblinv1.AgentInstance, spec *goblinv1.AgentSpec) error {
+func (s *Scheduler) startAgentOnNode(ctx context.Context, nodeID string, inst *goblinv1.AgentInstance, spec *goblinv1.AgentSpec) (err error) {
 	addr, err := s.getNodeAddress(ctx, nodeID)
 	if err != nil {
 		return err
@@ -183,7 +186,11 @@ func (s *Scheduler) startAgentOnNode(ctx context.Context, nodeID string, inst *g
 	if err != nil {
 		return fmt.Errorf("failed to create rpc client: %w", err)
 	}
-	defer client.Close()
+	defer func() {
+		if cerr := client.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("close rpc client: %w", cerr)
+		}
+	}()
 
 	// 3. Call NodeRPC
 	// We need to define StartAgentRequest within scheduler or import it from supervisor?
@@ -218,7 +225,7 @@ func (s *Scheduler) startAgentOnNode(ctx context.Context, nodeID string, inst *g
 	return s.SaveInstance(ctx, inst)
 }
 
-func (s *Scheduler) stopAgentOnNode(ctx context.Context, nodeID, instanceID string) error {
+func (s *Scheduler) stopAgentOnNode(ctx context.Context, nodeID, instanceID string) (err error) {
 	addr, err := s.getNodeAddress(ctx, nodeID)
 	if err != nil {
 		return err
@@ -231,7 +238,11 @@ func (s *Scheduler) stopAgentOnNode(ctx context.Context, nodeID, instanceID stri
 	if err != nil {
 		return fmt.Errorf("failed to create rpc client: %w", err)
 	}
-	defer client.Close()
+	defer func() {
+		if cerr := client.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("close rpc client: %w", cerr)
+		}
+	}()
 
 	payload := struct {
 		InstanceID string

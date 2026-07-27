@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"sync"
 	"time"
@@ -166,7 +167,7 @@ func (t *QUICSerfTransport) Shutdown() error {
 	t.connsMu.Lock()
 	defer t.connsMu.Unlock()
 	for _, conn := range t.conns {
-		conn.CloseWithError(0, "shutdown")
+		err = errors.Join(err, conn.CloseWithError(0, "shutdown"))
 	}
 	t.conns = nil
 
@@ -220,7 +221,11 @@ func (t *QUICSerfTransport) getOrDial(addr string) (*quic.Conn, error) {
 	// Double check
 	if existing, exists := t.conns[addr]; exists {
 		t.connsMu.Unlock()
-		newConn.CloseWithError(0, "race")
+		// The winning connection is unaffected by a failed close of the
+		// race loser; the failure only risks leaking it, so log and go on.
+		if cerr := newConn.CloseWithError(0, "race"); cerr != nil {
+			log.Printf("close raced serf connection to %s: %v", addr, cerr)
+		}
 		return existing, nil
 	}
 	t.conns[addr] = newConn

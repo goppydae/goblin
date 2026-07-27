@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"runtime"
 	"strconv"
@@ -76,7 +77,11 @@ func getTotalMemory() uint64 {
 	if err != nil {
 		return 0
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil {
+			log.Printf("close /proc/meminfo: %v", cerr)
+		}
+	}()
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {

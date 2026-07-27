@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"log"
 	"time"
 
 	"github.com/goppydae/goblin/core/consensus"
@@ -176,12 +177,16 @@ func (s *Store) Delete(ctx context.Context, namespace, key string) error {
 		return err
 	}
 
-	// Publish change event
-	s.bus.PublishLocal("kv", "store.change", map[string]interface{}{
+	// Publish change event. The delete is already committed through Raft;
+	// a publish failure must not misreport it, so it is logged rather than
+	// propagated.
+	if err := s.bus.PublishLocal("kv", "store.change", map[string]interface{}{
 		"op":        "delete",
 		"namespace": namespace,
 		"key":       key,
-	}, []string{"kv"})
+	}, []string{"kv"}); err != nil {
+		log.Printf("publish store.change for %s/%s: %v", namespace, key, err)
+	}
 
 	return nil
 }

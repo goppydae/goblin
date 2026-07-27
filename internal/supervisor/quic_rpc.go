@@ -2,19 +2,11 @@ package supervisor
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/binary"
-	"encoding/pem"
 	"fmt"
 	"io"
 	"log"
-	"math/big"
 	"sync"
-	"time"
 
 	goblinv1 "github.com/goppydae/goblin/proto"
 	"github.com/quic-go/quic-go"
@@ -46,7 +38,11 @@ func (s *QUICRPCServer) RegisterHandler(method string, handler RPCHandler) {
 
 // HandleConnection handles a single QUIC connection
 func (s *QUICRPCServer) HandleConnection(conn *quic.Conn) {
-	defer conn.CloseWithError(0, "connection closed")
+	defer func() {
+		if err := conn.CloseWithError(0, "connection closed"); err != nil {
+			log.Printf("close RPC connection: %v", err)
+		}
+	}()
 
 	for {
 		stream, err := conn.AcceptStream(context.Background())
@@ -61,7 +57,11 @@ func (s *QUICRPCServer) HandleConnection(conn *quic.Conn) {
 
 // handleStream processes a single RPC request stream
 func (s *QUICRPCServer) handleStream(stream *quic.Stream) {
-	defer stream.Close()
+	defer func() {
+		if err := stream.Close(); err != nil {
+			log.Printf("close RPC stream: %v", err)
+		}
+	}()
 
 	// Read stream type (1 byte)
 	var streamType [1]byte
@@ -93,7 +93,9 @@ func (s *QUICRPCServer) handleStream(stream *quic.Stream) {
 	// Decode protobuf request
 	var req goblinv1.RPCRequest
 	if err := proto.Unmarshal(reqData, &req); err != nil {
-		s.sendError(stream, 0, fmt.Sprintf("failed to decode request: %v", err))
+		if serr := s.sendError(stream, 0, fmt.Sprintf("failed to decode request: %v", err)); serr != nil {
+			log.Printf("send error response: %v", serr)
+		}
 		return
 	}
 
@@ -103,23 +105,29 @@ func (s *QUICRPCServer) handleStream(stream *quic.Stream) {
 	s.mu.RUnlock()
 
 	if !ok {
-		s.sendError(stream, req.RequestId, fmt.Sprintf("method not found: %s", req.Method))
+		if serr := s.sendError(stream, req.RequestId, fmt.Sprintf("method not found: %s", req.Method)); serr != nil {
+			log.Printf("send error response: %v", serr)
+		}
 		return
 	}
 
 	// Execute handler
 	respPayload, err := handler(req.Payload)
 	if err != nil {
-		s.sendError(stream, req.RequestId, err.Error())
+		if serr := s.sendError(stream, req.RequestId, err.Error()); serr != nil {
+			log.Printf("send error response: %v", serr)
+		}
 		return
 	}
 
 	// Send success response
-	s.sendResponse(stream, req.RequestId, respPayload, "")
+	if err := s.sendResponse(stream, req.RequestId, respPayload, ""); err != nil {
+		log.Printf("send RPC response: %v", err)
+	}
 }
 
 // sendResponse sends a successful RPC response
-func (s *QUICRPCServer) sendResponse(stream *quic.Stream, requestID uint32, payload []byte, errMsg string) {
+func (s *QUICRPCServer) sendResponse(stream *quic.Stream, requestID uint32, payload []byte, errMsg string) error {
 	resp := &goblinv1.RPCResponse{
 		RequestId: requestID,
 		Success:   errMsg == "",
@@ -129,55 +137,29 @@ func (s *QUICRPCServer) sendResponse(stream *quic.Stream, requestID uint32, payl
 
 	respData, err := proto.Marshal(resp)
 	if err != nil {
-		log.Printf("Failed to marshal response: %v", err)
-		return
+		return fmt.Errorf("marshal response: %w", err)
 	}
 
 	// Write stream type
-	stream.Write([]byte{byte(goblinv1.StreamType_RPC_RESPONSE)})
+	if _, err := stream.Write([]byte{byte(goblinv1.StreamType_RPC_RESPONSE)}); err != nil {
+		return fmt.Errorf("write stream type: %w", err)
+	}
 
 	// Write response length
 	var lenBuf [4]byte
 	binary.BigEndian.PutUint32(lenBuf[:], uint32(len(respData)))
-	stream.Write(lenBuf[:])
+	if _, err := stream.Write(lenBuf[:]); err != nil {
+		return fmt.Errorf("write response length: %w", err)
+	}
 
 	// Write response data
-	stream.Write(respData)
+	if _, err := stream.Write(respData); err != nil {
+		return fmt.Errorf("write response data: %w", err)
+	}
+	return nil
 }
 
 // sendError sends an error RPC response
-func (s *QUICRPCServer) sendError(stream *quic.Stream, requestID uint32, errMsg string) {
-	s.sendResponse(stream, requestID, nil, errMsg)
-}
-
-// generateSelfSignedCert creates a self-signed certificate for development
-func generateSelfSignedCert() (tls.Certificate, error) {
-	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return tls.Certificate{}, err
-	}
-
-	template := x509.Certificate{
-		SerialNumber:          big.NewInt(1),
-		NotBefore:             time.Now(),
-		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
-		KeyUsage:              x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		BasicConstraintsValid: true,
-	}
-
-	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
-	if err != nil {
-		return tls.Certificate{}, err
-	}
-
-	privBytes, err := x509.MarshalECPrivateKey(priv)
-	if err != nil {
-		return tls.Certificate{}, err
-	}
-
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: privBytes})
-
-	return tls.X509KeyPair(certPEM, keyPEM)
+func (s *QUICRPCServer) sendError(stream *quic.Stream, requestID uint32, errMsg string) error {
+	return s.sendResponse(stream, requestID, nil, errMsg)
 }

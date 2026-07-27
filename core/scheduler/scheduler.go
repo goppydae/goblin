@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -154,7 +155,11 @@ func (s *Scheduler) Assign(ctx context.Context, jobID, nodeID string) error {
 
 	if s.bus != nil {
 		payload := map[string]interface{}{"job_id": jobID, "node_id": nodeID}
-		s.bus.PublishLocal("system", "job.assigned", payload, []string{"job", jobID})
+		// The assignment is already persisted; a publish failure must not
+		// misreport the write, so it is logged rather than propagated.
+		if err := s.bus.PublishLocal("system", "job.assigned", payload, []string{"job", jobID}); err != nil {
+			log.Printf("publish job.assigned for %s: %v", jobID, err)
+		}
 	}
 	return nil
 }
@@ -183,7 +188,11 @@ func (s *Scheduler) Migrate(ctx context.Context, jobID, fromNode, toNode string)
 	fmt.Printf("🔄 Job %s migrated from %s to %s\n", jobID, fromNode, toNode)
 	if s.bus != nil {
 		payload := map[string]interface{}{"job_id": jobID, "from_node": fromNode, "to_node": toNode}
-		s.bus.PublishLocal("system", "job.migrated", payload, []string{"job", jobID})
+		// The migration is already persisted; a publish failure must not
+		// misreport the write, so it is logged rather than propagated.
+		if err := s.bus.PublishLocal("system", "job.migrated", payload, []string{"job", jobID}); err != nil {
+			log.Printf("publish job.migrated for %s: %v", jobID, err)
+		}
 	}
 	return nil
 }
@@ -377,7 +386,12 @@ func (s *Scheduler) SubmitJob(ctx context.Context, job *Job) error {
 	fmt.Printf("✅ Job %s scheduled on node %s\n", job.ID, nodeID)
 	if s.bus != nil {
 		payload := map[string]interface{}{"job_id": job.ID, "node_id": nodeID}
-		s.bus.PublishLocal("system", "job.submitted", payload, []string{"job", job.ID})
+		// The job is already registered and assigned; a publish failure
+		// must not misreport the submission, so it is logged rather than
+		// propagated.
+		if err := s.bus.PublishLocal("system", "job.submitted", payload, []string{"job", job.ID}); err != nil {
+			log.Printf("publish job.submitted for %s: %v", job.ID, err)
+		}
 	}
 	return nil
 }

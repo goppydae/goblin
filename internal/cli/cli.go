@@ -25,6 +25,14 @@ var clusterCmd = &cobra.Command{
 	Short: "Cluster management operations",
 }
 
+// closeClient joins a client close failure into the command's returned
+// error unless a primary error is already set.
+func closeClient(client *QUICRPCClient, err *error) {
+	if cerr := client.Close(); cerr != nil && *err == nil {
+		*err = fmt.Errorf("close rpc client: %w", cerr)
+	}
+}
+
 // ... helper code ...
 
 var (
@@ -38,9 +46,6 @@ var (
 
 	tlsCA       string
 	tlsInsecure bool
-
-	publishNamespace string
-	publishTags      []string
 )
 
 var startCmd = &cobra.Command{
@@ -114,7 +119,7 @@ var runCmd = &cobra.Command{
 	Use:   "run <job-file.yaml>",
 	Short: "Submit a job to the cluster (YAML or JSON)",
 	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) (err error) {
 		// Read job spec from YAML/JSON file
 		data, err := os.ReadFile(args[0])
 		if err != nil {
@@ -132,7 +137,7 @@ var runCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to connect to QUIC RPC at %s: %w", apiAddr, err)
 		}
-		defer client.Close()
+		defer closeClient(client, &err)
 
 		// Call SchedulerRPC.SubmitJob
 		var resp string
@@ -149,7 +154,7 @@ var drainCmd = &cobra.Command{
 	Use:   "drain <node-id>",
 	Short: "Drain all jobs from a node",
 	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) (err error) {
 		nodeID := args[0]
 
 		// Connect to QUIC RPC
@@ -157,7 +162,7 @@ var drainCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to connect to QUIC RPC at %s: %w", apiAddr, err)
 		}
-		defer client.Close()
+		defer closeClient(client, &err)
 
 		// Call SchedulerRPC.DrainNode
 		var migratedJobs []string
@@ -177,7 +182,7 @@ var migrateCmd = &cobra.Command{
 	Use:   "migrate <job-id> <to-node>",
 	Short: "Migrate a job to another node",
 	Args:  cobra.ExactArgs(2),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) (err error) {
 		req := map[string]string{
 			"JobID":  args[0],
 			"ToNode": args[1],
@@ -188,7 +193,7 @@ var migrateCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to connect to QUIC RPC at %s: %w", apiAddr, err)
 		}
-		defer client.Close()
+		defer closeClient(client, &err)
 
 		// Call SchedulerRPC.MigrateJob
 		var resp string
@@ -209,12 +214,12 @@ var publishCmd = &cobra.Command{
 	Use:   "publish [event-name] [payload]",
 	Short: "Publish user event to cluster",
 	Args:  cobra.ExactArgs(2),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) (err error) {
 		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
 		if err != nil {
 			return err
 		}
-		defer client.Close()
+		defer closeClient(client, &err)
 
 		topic := args[0]
 		payload := []byte(args[1])
@@ -242,12 +247,12 @@ var publishCmd = &cobra.Command{
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show cluster status",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) (err error) {
 		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
 		if err != nil {
 			return err
 		}
-		defer client.Close()
+		defer closeClient(client, &err)
 
 		// Call SchedulerRPC.Members
 		var members []supervisor.MemberInfo

@@ -19,7 +19,7 @@ func NewClusterController(addr string) *ClusterController {
 	return &ClusterController{apiAddr: addr}
 }
 
-func (c *ClusterController) FetchStatus(ctx context.Context) ([]tui.AgentStatus, error) {
+func (c *ClusterController) FetchStatus(ctx context.Context) (_ []tui.AgentStatus, err error) {
 	// Connect to Serf RPC
 	host := c.apiAddr
 	if idx := strings.LastIndex(c.apiAddr, ":"); idx > 0 {
@@ -31,7 +31,11 @@ func (c *ClusterController) FetchStatus(ctx context.Context) ([]tui.AgentStatus,
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Serf RPC at %s: %w", serfRPCAddr, err)
 	}
-	defer client.Close()
+	defer func() {
+		if cerr := client.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("close rpc client: %w", cerr)
+		}
+	}()
 
 	// Get cluster members
 	var members []serf.Member

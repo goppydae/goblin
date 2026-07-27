@@ -3,7 +3,6 @@ package scheduler
 import (
 	"fmt"
 	"math/rand"
-	"time"
 
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
@@ -88,8 +87,4 @@ func calculateBinpackScore(res NodeResources) float64 {
 	}
 	// Simple average of usage. Higher is better for binpacking (filling nodes).
 	return (cpuPct + memPct) / 2.0
-}
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
 }

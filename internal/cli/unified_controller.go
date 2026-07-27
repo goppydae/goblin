@@ -27,7 +27,7 @@ func NewUnifiedController(rpcAddr, gapiAddr string) *UnifiedController {
 }
 
 // FetchStatus returns combined status from cluster members, jobs, and local agents
-func (u *UnifiedController) FetchStatus(ctx context.Context) ([]tui.AgentStatus, error) {
+func (u *UnifiedController) FetchStatus(ctx context.Context) (_ []tui.AgentStatus, err error) {
 	var statuses []tui.AgentStatus
 
 	// Connect to QUIC RPC
@@ -35,7 +35,7 @@ func (u *UnifiedController) FetchStatus(ctx context.Context) ([]tui.AgentStatus,
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to QUIC RPC: %w", err)
 	}
-	defer client.Close()
+	defer closeClient(client, &err)
 
 	// Section 1: Cluster Members
 	type MemberShort struct {
@@ -140,7 +140,12 @@ func (u *UnifiedController) GetLogs(ctx context.Context, id string) (<-chan stri
 			ch <- fmt.Sprintf("[ERROR] Failed to connect to QUIC RPC: %v", err)
 			return
 		}
-		defer client.Close()
+		// Goroutine terminus: no caller to propagate to, so log.
+		defer func() {
+			if cerr := client.Close(); cerr != nil {
+				log.Printf("close rpc client: %v", cerr)
+			}
+		}()
 
 		ch <- "[CLUSTER] Connected to cluster event stream (QUIC)"
 		ch <- "--- Initial Cluster State ---"

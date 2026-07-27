@@ -106,8 +106,11 @@ func TestInstanceStorage(t *testing.T) {
 		SpecId:     "agent-2", // Different spec
 	}
 
-	s.SaveInstance(ctx, inst2)
-	s.SaveInstance(ctx, inst3)
+	for _, inst := range []*goblinv1.AgentInstance{inst2, inst3} {
+		if err := s.SaveInstance(ctx, inst); err != nil {
+			t.Fatalf("SaveInstance %s: %v", inst.InstanceId, err)
+		}
+	}
 
 	// Filter by agent-1
 	list, err := s.ListInstances(ctx, "agent-1")

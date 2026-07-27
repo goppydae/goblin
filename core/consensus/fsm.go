@@ -138,8 +138,12 @@ func (f *FSM) Snapshot() (raft.FSMSnapshot, error) {
 // Restore restores the FSM from a snapshot. Both the versioned encoding and
 // the legacy bare-state-map encoding are accepted; legacy keys restore at
 // version 1 (they exist, so CAS create-if-absent semantics must not fire).
-func (f *FSM) Restore(rc io.ReadCloser) error {
-	defer rc.Close()
+func (f *FSM) Restore(rc io.ReadCloser) (err error) {
+	defer func() {
+		if cerr := rc.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	raw, err := io.ReadAll(rc)
 	if err != nil {

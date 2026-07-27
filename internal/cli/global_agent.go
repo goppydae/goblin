@@ -23,7 +23,7 @@ var globalAgentRegisterCmd = &cobra.Command{
 	Use:   "register <spec-file>",
 	Short: "Register or update a global agent specification",
 	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) (err error) {
 		// Read spec
 		data, err := os.ReadFile(args[0])
 		if err != nil {
@@ -48,7 +48,7 @@ var globalAgentRegisterCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		defer client.Close()
+		defer closeClient(client, &err)
 
 		var resp string
 		if err := client.Call("SchedulerRPC.RegisterGlobalAgent", &spec, &resp); err != nil {
@@ -62,12 +62,12 @@ var globalAgentRegisterCmd = &cobra.Command{
 var globalAgentListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all global agent specifications",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) (err error) {
 		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
 		if err != nil {
 			return err
 		}
-		defer client.Close()
+		defer closeClient(client, &err)
 
 		var specs []*goblinv1.AgentSpec
 		if err := client.Call("SchedulerRPC.ListGlobalAgents", struct{}{}, &specs); err != nil {
@@ -87,12 +87,12 @@ var globalAgentGetCmd = &cobra.Command{
 	Use:   "get <id>",
 	Short: "Get details of a global agent",
 	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) (err error) {
 		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
 		if err != nil {
 			return err
 		}
-		defer client.Close()
+		defer closeClient(client, &err)
 
 		id := args[0]
 		var spec goblinv1.AgentSpec
@@ -111,12 +111,12 @@ var globalAgentDeleteCmd = &cobra.Command{
 	Use:   "delete <id>",
 	Short: "Delete a global agent specification",
 	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) (err error) {
 		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
 		if err != nil {
 			return err
 		}
-		defer client.Close()
+		defer closeClient(client, &err)
 
 		id := args[0]
 		var resp string
@@ -132,18 +132,18 @@ var globalAgentScaleCmd = &cobra.Command{
 	Use:   "scale <id> <replicas>",
 	Short: "Scale a global agent",
 	Args:  cobra.ExactArgs(2),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) (err error) {
 		id := args[0]
 		replicas := 0
 		if _, err := fmt.Sscanf(args[1], "%d", &replicas); err != nil {
-			return fmt.Errorf("invalid replicas: %v", err)
+			return fmt.Errorf("invalid replicas: %w", err)
 		}
 
 		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
 		if err != nil {
 			return err
 		}
-		defer client.Close()
+		defer closeClient(client, &err)
 
 		req := supervisor.ScaleAgentRequest{
 			AgentID:  id,
