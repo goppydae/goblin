@@ -59,7 +59,7 @@ func NewQUICServer(addr string, cert tls.Certificate) (*QUIC, error) {
 		return nil, err
 	}
 	q := &QUIC{listener: ln}
-	go q.acceptLoop()
+	go q.acceptLoop(ln)
 	return q, nil
 }
 
@@ -111,12 +111,16 @@ func CreateClientTLSConfig(cfg TLSConfig) (*tls.Config, error) {
 
 // ---- Server / Client loops ----
 
-func (q *QUIC) acceptLoop() {
-	log.Printf("[INFO] QUIC listener started on %s", q.listener.Addr())
+// acceptLoop takes the listener as an argument rather than reading the
+// mutable q.listener field: Close() nils that field under q.mu, and an
+// unlocked field read here races it. Close() closing the listener makes
+// Accept return ErrServerClosed, which remains the shutdown signal.
+func (q *QUIC) acceptLoop(ln *quic.Listener) {
+	log.Printf("[INFO] QUIC listener started on %s", ln.Addr())
 	var tempDelay time.Duration
 
 	for {
-		conn, err := q.listener.Accept(context.Background())
+		conn, err := ln.Accept(context.Background())
 		if err != nil {
 			// Check for intentional shutdown
 			if errors.Is(err, quic.ErrServerClosed) {
