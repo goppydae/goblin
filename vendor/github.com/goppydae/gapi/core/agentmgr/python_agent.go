@@ -448,7 +448,7 @@ func (a *PythonAgent) Stop(ctx context.Context) error {
 			_ = a.armLocked()
 		}
 		a.mu.Unlock()
-		return err
+		return ignoreStopSignalExit(err)
 	case <-ctx.Done():
 		_ = a.cmd.Process.Kill()
 		select {

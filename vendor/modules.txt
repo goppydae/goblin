@@ -83,6 +83,7 @@ github.com/goppydae/gapi/internal/logging/logcore
 github.com/goppydae/gapi/internal/logging/logevent
 github.com/goppydae/gapi/internal/logging/logoutput
 github.com/goppydae/gapi/internal/statewatch
+github.com/goppydae/gapi/internal/toposort
 github.com/goppydae/gapi/pkg/cli
 github.com/goppydae/gapi/pkg/proto
 # github.com/goppydae/magelib v0.0.0-00010101000000-000000000000 => ../magelib

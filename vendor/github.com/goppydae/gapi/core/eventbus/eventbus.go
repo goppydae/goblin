@@ -45,10 +45,19 @@ type Handler[T any] func(Event[T])
 
 // ---- EventBus Implementation ----
 
+// subEntry pairs a handler with a bus-unique id. Handlers created at one
+// code site are distinct closure instances sharing one code pointer, so the
+// id - not any function-pointer comparison - is subscription identity.
+type subEntry[T any] struct {
+	id uint64
+	fn Handler[T]
+}
+
 type EventBus[T any] struct {
 	mu         sync.RWMutex
-	subs       map[string][]Handler[T]
-	prefixSubs map[string][]Handler[T]
+	subs       map[string][]subEntry[T]
+	prefixSubs map[string][]subEntry[T]
+	nextSubID  uint64
 	transport  Transport[T]
 	closed     bool
 }
@@ -57,8 +66,8 @@ type Options struct{}
 
 func NewEventBus[T any](t Transport[T], _ ...Options) *EventBus[T] {
 	b := &EventBus[T]{
-		subs:       make(map[string][]Handler[T]),
-		prefixSubs: make(map[string][]Handler[T]),
+		subs:       make(map[string][]subEntry[T]),
+		prefixSubs: make(map[string][]subEntry[T]),
 		transport:  t,
 	}
 	if t != nil {
@@ -108,10 +117,51 @@ func fullKey(scope, namespace, topic string) string {
 
 func (b *EventBus[T]) ensureInitLocked() {
 	if b.subs == nil {
-		b.subs = make(map[string][]Handler[T])
+		b.subs = make(map[string][]subEntry[T])
 	}
 	if b.prefixSubs == nil {
-		b.prefixSubs = make(map[string][]Handler[T])
+		b.prefixSubs = make(map[string][]subEntry[T])
+	}
+}
+
+// addSubLocked appends fn under key k in m and returns its unique id.
+func (b *EventBus[T]) addSubLocked(m map[string][]subEntry[T], k string, fn Handler[T]) uint64 {
+	b.nextSubID++
+	id := b.nextSubID
+	m[k] = append(m[k], subEntry[T]{id: id, fn: fn})
+	return id
+}
+
+// removeSubByID removes the entry with the given id from the exact-topic
+// subscriptions. Safe to call from handler goroutines.
+func (b *EventBus[T]) removeSubByID(k string, id uint64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	entries := b.subs[k]
+	for i, e := range entries {
+		if e.id == id {
+			b.subs[k] = append(entries[:i], entries[i+1:]...)
+			break
+		}
+	}
+	if len(b.subs[k]) == 0 {
+		delete(b.subs, k)
+	}
+}
+
+// removePrefixSubByID is removeSubByID for prefix subscriptions.
+func (b *EventBus[T]) removePrefixSubByID(k string, id uint64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	entries := b.prefixSubs[k]
+	for i, e := range entries {
+		if e.id == id {
+			b.prefixSubs[k] = append(entries[:i], entries[i+1:]...)
+			break
+		}
+	}
+	if len(b.prefixSubs[k]) == 0 {
+		delete(b.prefixSubs, k)
 	}
 }
 
@@ -129,7 +179,7 @@ func (b *EventBus[T]) Subscribe(scope, namespace, topic string, fn Handler[T]) e
 		return fmt.Errorf("eventbus closed")
 	}
 	b.ensureInitLocked()
-	b.subs[k] = append(b.subs[k], fn)
+	b.addSubLocked(b.subs, k, fn)
 
 	// Update subscriber count metric
 	metrics.UpdateSubscriberCount(topic, len(b.subs[k]))
@@ -157,7 +207,7 @@ func (b *EventBus[T]) SubscribePrefix(scope, namespace, topicPrefix string, fn H
 		return fmt.Errorf("eventbus closed")
 	}
 	b.ensureInitLocked()
-	b.prefixSubs[k] = append(b.prefixSubs[k], fn)
+	b.addSubLocked(b.prefixSubs, k, fn)
 	return nil
 }
 
@@ -168,15 +218,29 @@ func (b *EventBus[T]) SubscribePrefix(scope, namespace, topicPrefix string, fn H
 // request/reply, or WaitForTopic for bounded phase gates. Scheduled for
 // removal; see deprecation.jsonl.
 func (bus *EventBus[T]) SubscribeOnce(scope, namespace, topic string, handler Handler[T]) error {
+	if !validScopes[scope] {
+		return fmt.Errorf("invalid scope: %s", scope)
+	}
+	k := fullKey(scope, namespace, topic)
+
+	bus.mu.Lock()
+	defer bus.mu.Unlock()
+	if bus.closed {
+		return fmt.Errorf("eventbus closed")
+	}
+	bus.ensureInitLocked()
+
 	var once sync.Once
-	var wrapper Handler[T]
-	wrapper = func(e Event[T]) {
+	bus.nextSubID++
+	id := bus.nextSubID
+	wrapper := func(e Event[T]) {
 		once.Do(func() {
 			handler(e)
-			bus.Unsubscribe(scope, namespace, topic, wrapper)
+			bus.removeSubByID(k, id)
 		})
 	}
-	return bus.Subscribe(scope, namespace, topic, wrapper)
+	bus.subs[k] = append(bus.subs[k], subEntry[T]{id: id, fn: wrapper})
+	return nil
 }
 
 // SubscribeCorrelated calls handler at most once, for the first event on the
@@ -187,30 +251,55 @@ func (bus *EventBus[T]) SubscribeOnce(scope, namespace, topic string, handler Ha
 // topic don't steal each other's responses. The Envelope carries the ID over the
 // wire, so this works across transports.
 func (bus *EventBus[T]) SubscribeCorrelated(scope, namespace, topic, corrID string, handler Handler[T]) error {
+	if !validScopes[scope] {
+		return fmt.Errorf("invalid scope: %s", scope)
+	}
+	k := fullKey(scope, namespace, topic)
+
+	bus.mu.Lock()
+	defer bus.mu.Unlock()
+	if bus.closed {
+		return fmt.Errorf("eventbus closed")
+	}
+	bus.ensureInitLocked()
+
+	// Self-removal is by unique id: concurrent callers subscribing from the
+	// same code site are distinct closure instances with one shared code
+	// pointer, so pointer-identity removal would strip another caller's
+	// live subscription (lost replies).
 	var once sync.Once
-	var wrapper Handler[T]
-	wrapper = func(e Event[T]) {
+	bus.nextSubID++
+	id := bus.nextSubID
+	wrapper := func(e Event[T]) {
 		if e.ID != corrID {
 			return
 		}
 		once.Do(func() {
 			handler(e)
-			bus.Unsubscribe(scope, namespace, topic, wrapper)
+			bus.removeSubByID(k, id)
 		})
 	}
-	return bus.Subscribe(scope, namespace, topic, wrapper)
+	bus.subs[k] = append(bus.subs[k], subEntry[T]{id: id, fn: wrapper})
+	return nil
 }
 
 // Unsubscribe removes a single handler from an exact topic.
+//
+// LIMITATION: func values are only comparable by code pointer, which every
+// closure instance from one code site shares - so this can only distinguish
+// handlers defined at different code sites. Do not use it to remove one of
+// several same-callsite subscriptions; the one-shot APIs (SubscribeOnce,
+// SubscribeCorrelated, WaitForTopic, SubscribePrefixWithContext) remove
+// themselves by unique id instead.
 func (bus *EventBus[T]) Unsubscribe(scope, namespace, topic string, target Handler[T]) {
 	k := fullKey(scope, namespace, topic)
 
 	bus.mu.Lock()
 	defer bus.mu.Unlock()
-	handlers := bus.subs[k]
-	for i, h := range handlers {
-		if fmt.Sprintf("%p", h) == fmt.Sprintf("%p", target) {
-			bus.subs[k] = append(handlers[:i], handlers[i+1:]...)
+	entries := bus.subs[k]
+	for i, e := range entries {
+		if fmt.Sprintf("%p", e.fn) == fmt.Sprintf("%p", target) {
+			bus.subs[k] = append(entries[:i], entries[i+1:]...)
 			break
 		}
 	}
@@ -220,15 +309,16 @@ func (bus *EventBus[T]) Unsubscribe(scope, namespace, topic string, target Handl
 }
 
 // UnsubscribePrefix removes a single handler from a prefix subscription.
+// Shares Unsubscribe's code-pointer limitation.
 func (bus *EventBus[T]) UnsubscribePrefix(scope, namespace, topicPrefix string, target Handler[T]) {
 	k := "__MATCH:" + fullKey(scope, namespace, topicPrefix)
 
 	bus.mu.Lock()
 	defer bus.mu.Unlock()
-	handlers := bus.prefixSubs[k]
-	for i, h := range handlers {
-		if fmt.Sprintf("%p", h) == fmt.Sprintf("%p", target) {
-			bus.prefixSubs[k] = append(handlers[:i], handlers[i+1:]...)
+	entries := bus.prefixSubs[k]
+	for i, e := range entries {
+		if fmt.Sprintf("%p", e.fn) == fmt.Sprintf("%p", target) {
+			bus.prefixSubs[k] = append(entries[:i], entries[i+1:]...)
 			break
 		}
 	}
@@ -241,13 +331,26 @@ func (bus *EventBus[T]) UnsubscribePrefix(scope, namespace, topicPrefix string, 
 // This prevents subscription leaks in long-running operations by removing the subscription
 // when the context is cancelled or times out.
 func (bus *EventBus[T]) SubscribePrefixWithContext(ctx context.Context, scope, namespace, topicPrefix string, handler Handler[T]) error {
-	if err := bus.SubscribePrefix(scope, namespace, topicPrefix, handler); err != nil {
-		return err
+	if !validScopes[scope] {
+		return fmt.Errorf("invalid scope: %s", scope)
 	}
+	k := "__MATCH:" + fullKey(scope, namespace, topicPrefix)
+
+	bus.mu.Lock()
+	if bus.closed {
+		bus.mu.Unlock()
+		return fmt.Errorf("eventbus closed")
+	}
+	bus.ensureInitLocked()
+	// Cleanup removes by unique id: concurrent same-callsite subscribers
+	// (e.g. statewatch waiting on several agents) must not remove each
+	// other's live subscriptions on context cancellation.
+	id := bus.addSubLocked(bus.prefixSubs, k, handler)
+	bus.mu.Unlock()
 
 	go func() {
 		<-ctx.Done()
-		bus.UnsubscribePrefix(scope, namespace, topicPrefix, handler)
+		bus.removePrefixSubByID(k, id)
 	}()
 
 	return nil
@@ -332,16 +435,16 @@ func (b *EventBus[T]) dispatch(e Event[T]) error {
 
 	// Exact match
 	if handlers, ok := b.subs[k]; ok {
-		for _, fn := range handlers {
-			go fn(e)
+		for _, sub := range handlers {
+			go sub.fn(e)
 		}
 	}
 	// Prefix match
 	for key, handlers := range b.prefixSubs {
 		prefix := strings.TrimPrefix(key, "__MATCH:")
 		if strings.HasPrefix(k, prefix) {
-			for _, fn := range handlers {
-				go fn(e)
+			for _, sub := range handlers {
+				go sub.fn(e)
 			}
 		}
 	}

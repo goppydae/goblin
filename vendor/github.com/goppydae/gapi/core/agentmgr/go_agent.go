@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -33,6 +34,11 @@ type GoAgent struct {
 	stdout io.ReadCloser
 	stderr io.ReadCloser
 	cmd    *exec.Cmd
+
+	// waitOnce/waitErr serialize cmd.Wait between the oneshot path and
+	// Stop (mirrors PythonAgent).
+	waitOnce sync.Once
+	waitErr  error
 
 	mu   sync.RWMutex
 	ctrl *lifecycle.Controller
@@ -102,11 +108,17 @@ func (a *GoAgent) Dependencies() []string {
 	return append(append([]string(nil), a.requires...), a.wants...)
 }
 func (a *GoAgent) Controller() *lifecycle.Controller { return a.ctrl }
+
+// Describe mirrors PythonAgent.Describe key-for-key: the Go/Python describe
+// schema is a parity contract (the cross-ADK suite asserts it), so the two
+// implementations must emit the same keys - notably "language" (not "lang"),
+// "path", and the resource limits.
 func (a *GoAgent) Describe() map[string]string {
 	return map[string]string{
 		"id":            a.id,
 		"type":          a.typ,
-		"lang":          "go",
+		"language":      "go",
+		"path":          a.path,
 		"state":         a.ctrl.State(),
 		"requires":      strings.Join(a.requires, ","),
 		"wants":         strings.Join(a.wants, ","),
@@ -114,6 +126,8 @@ func (a *GoAgent) Describe() map[string]string {
 		"required_by":   strings.Join(a.requiredBy, ","),
 		"capabilities":  strings.Join(a.capabilities, ","),
 		"listen_stream": a.listenSpec,
+		"cpu_limit":     a.cpuLimit,
+		"mem_limit":     a.memLimit,
 		"deps":          strings.Join(a.requires, ","),
 	}
 }
@@ -297,6 +311,7 @@ func (a *GoAgent) Start(ctx context.Context) error {
 	a.startTime = time.Now()
 
 	var err error
+	a.waitOnce = sync.Once{} // Reset for new run
 	a.stdout, err = a.cmd.StdoutPipe()
 	if err != nil {
 		return err
@@ -328,15 +343,24 @@ func (a *GoAgent) Start(ctx context.Context) error {
 		}
 	}
 
+	// Oneshot behavior: wait for completion. Mirrors PythonAgent.Start -
+	// the lock is released around Wait so the stream handlers (which take
+	// RLock via publishStatus) cannot deadlock against us, and the lock-free
+	// publishStatusWithRunID is used while the lock is held.
 	if a.typ == "oneshot" {
-		a.publishStatus("STARTING", "oneshot running")
+		rid := a.nextRunID
+		a.publishStatusWithRunID("STARTING", "oneshot running", rid)
+
+		a.mu.Unlock()
 		err := a.cmd.Wait()
+		a.mu.Lock()
+
 		if err != nil {
-			a.publishStatus("FAILED", fmt.Sprintf("oneshot failed: %v", err))
+			a.publishStatusWithRunID("FAILED", fmt.Sprintf("oneshot failed: %v", err), rid)
 			a.cleanupAfterExit()
 			return fmt.Errorf("oneshot agent failed: %w", err)
 		}
-		a.publishStatus("COMPLETED", "oneshot success")
+		a.publishStatusWithRunID("COMPLETED", "oneshot success", rid)
 		a.cleanupAfterExit()
 		return nil
 	}
@@ -346,38 +370,69 @@ func (a *GoAgent) Start(ctx context.Context) error {
 
 func (a *GoAgent) Stop(ctx context.Context) error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 
 	if a.cmd == nil || a.cmd.Process == nil {
+		a.mu.Unlock()
 		return nil
 	}
 
+	rid := a.nextRunID
 	_ = a.cmd.Process.Signal(syscall.SIGTERM)
 
 	done := make(chan error, 1)
-	go func() { done <- a.cmd.Wait() }()
+	go func() {
+		a.waitOnce.Do(func() {
+			a.waitErr = a.cmd.Wait()
+		})
+		done <- a.waitErr
+	}()
+
+	// Release the lock while waiting so the stream handlers (which take
+	// RLock via publishStatus) can drain output; holding it here was a
+	// guaranteed self-deadlock at the publishStatus below (mirrors
+	// PythonAgent.Stop).
+	a.mu.Unlock()
 
 	select {
 	case err := <-done:
-		a.publishStatus("STOPPED", "process exited")
+		a.mu.Lock()
+		a.publishStatusWithRunID("STOPPED", "process exited", rid)
 		a.cleanupAfterExit()
 		if a.listenSpec != "" && a.trafficHandler != nil {
 			_ = a.armLocked()
 		}
-		return err
+		a.mu.Unlock()
+		return ignoreStopSignalExit(err)
 	case <-ctx.Done():
 		_ = a.cmd.Process.Kill()
 		select {
 		case <-done:
 		case <-time.After(750 * time.Millisecond):
 		}
-		a.publishStatus("STOPPED", "killed after timeout")
+		a.mu.Lock()
+		a.publishStatusWithRunID("STOPPED", "killed after timeout", rid)
 		a.cleanupAfterExit()
 		if a.listenSpec != "" && a.trafficHandler != nil {
 			_ = a.armLocked()
 		}
+		a.mu.Unlock()
 		return context.DeadlineExceeded
 	}
+}
+
+// ignoreStopSignalExit maps a child exit caused by our own stop signals
+// (SIGTERM/SIGKILL) to success: that exit is the intended outcome of Stop,
+// not a failure. Any other error passes through.
+func ignoreStopSignalExit(err error) error {
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		if status, ok := ee.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+			if status.Signal() == syscall.SIGTERM || status.Signal() == syscall.SIGKILL {
+				return nil
+			}
+		}
+	}
+	return err
 }
 
 func (a *GoAgent) cleanupAfterExit() {
@@ -478,13 +533,21 @@ func (a *GoAgent) streamStderr(r io.Reader) {
 	}
 }
 
+// publishStatus reads the run id under the lock; it must NOT be called with
+// a.mu held - lock-holding callers use publishStatusWithRunID.
 func (a *GoAgent) publishStatus(state, message string) {
-	if a.bus == nil {
-		return
-	}
 	a.mu.RLock()
 	rid := a.nextRunID
 	a.mu.RUnlock()
+	a.publishStatusWithRunID(state, message, rid)
+}
+
+// publishStatusWithRunID is lock-free and safe to call with a.mu held
+// (mirrors PythonAgent).
+func (a *GoAgent) publishStatusWithRunID(state, message, rid string) {
+	if a.bus == nil {
+		return
+	}
 
 	if rid != "" && !strings.Contains(message, "run_id=") {
 		if message == "" {
