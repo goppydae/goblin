@@ -306,7 +306,24 @@ func (s *SchedulerRPC) RegisterGlobalAgent(spec *goblinv1.AgentSpec, resp *strin
 		*resp = fmt.Sprintf("failed: %v", err)
 		return err
 	}
+	s.scheduler.KickReconcile()
 	*resp = fmt.Sprintf("agent %s registered successfully", spec.Id)
+	return nil
+}
+
+// ListAgentInstancesRequest filters instance listing; empty SpecID
+// returns every instance.
+type ListAgentInstancesRequest struct {
+	SpecID string
+}
+
+// ListAgentInstances returns the scheduler's instance records.
+func (s *SchedulerRPC) ListAgentInstances(req *ListAgentInstancesRequest, resp *[]*goblinv1.AgentInstance) error {
+	instances, err := s.scheduler.ListInstances(context.Background(), req.SpecID)
+	if err != nil {
+		return fmt.Errorf("list instances: %w", err)
+	}
+	*resp = instances
 	return nil
 }
 
@@ -352,6 +369,7 @@ func (s *SchedulerRPC) ScaleAgent(req *ScaleAgentRequest, resp *string) error {
 		return fmt.Errorf("failed to update agent: %w", err)
 	}
 
+	s.scheduler.KickReconcile()
 	*resp = fmt.Sprintf("agent %s scaled to %d replicas", req.AgentID, req.Replicas)
 	return nil
 }
@@ -362,6 +380,7 @@ func (s *SchedulerRPC) DeleteGlobalAgent(agentID *string, resp *string) error {
 		*resp = fmt.Sprintf("failed: %v", err)
 		return err
 	}
+	s.scheduler.KickReconcile()
 	*resp = fmt.Sprintf("agent %s deleted", *agentID)
 	return nil
 }

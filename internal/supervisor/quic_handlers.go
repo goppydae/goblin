@@ -101,6 +101,18 @@ func RegisterSchedulerHandlers(server *QUICRPCServer, rpc *SchedulerRPC) {
 	})
 
 	// RegisterGlobalAgent handler
+	server.RegisterHandler("SchedulerRPC.ListAgentInstances", func(payload []byte) ([]byte, error) {
+		var req ListAgentInstancesRequest
+		if err := json.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("invalid request: %w", err)
+		}
+		var out []*goblinv1.AgentInstance
+		if err := rpc.ListAgentInstances(&req, &out); err != nil {
+			return nil, err
+		}
+		return json.Marshal(out)
+	})
+
 	server.RegisterHandler("SchedulerRPC.RegisterGlobalAgent", func(payload []byte) ([]byte, error) {
 		var spec goblinv1.AgentSpec
 		if err := proto.Unmarshal(payload, &spec); err != nil {

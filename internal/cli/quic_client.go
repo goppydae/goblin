@@ -38,7 +38,11 @@ func NewQUICRPCClient(addr string, tlsConfig transport.TLSConfig) (*QUICRPCClien
 		KeepAlivePeriod: 10 * time.Second,
 	}
 
-	conn, err := quic.DialAddr(context.Background(), addr, tlsConf, quicConfig)
+	// A dead peer must fail dispatch fast, not hang it: unbounded
+	// dials left failover instances pending forever (2b e2e).
+	dialCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, err := quic.DialAddr(dialCtx, addr, tlsConf, quicConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial %s: %w", addr, err)
 	}

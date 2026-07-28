@@ -13,6 +13,7 @@ import (
 
 // ReconcileAgents ensures the actual state matches the desired state for all agents.
 func (s *Scheduler) ReconcileAgents(ctx context.Context) error {
+	s.noteReconcileBaseline()
 	specs, err := s.ListAgents(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list agent specs: %w", err)
@@ -35,6 +36,15 @@ func (s *Scheduler) reconcileAgent(ctx context.Context, spec *goblinv1.AgentSpec
 	// Filter healthy/running instances
 	var active []*goblinv1.AgentInstance
 	for _, inst := range instances {
+		// Heartbeat verdict overrides recorded state: a node that
+		// reported failure, or has gone silent past the staleness
+		// window, makes its running instances dead (phase 2b).
+		if inst.State == "running" && s.instanceUnhealthy(inst.InstanceId) {
+			inst.State = "failed"
+		}
+		if inst.State == "pending" && s.pendingStale(inst.InstanceId) {
+			inst.State = "failed"
+		}
 		switch inst.State {
 		case "running", "pending":
 			active = append(active, inst)
@@ -46,6 +56,7 @@ func (s *Scheduler) reconcileAgent(ctx context.Context, spec *goblinv1.AgentSpec
 			if err := s.DeleteInstance(ctx, inst.InstanceId); err != nil {
 				return fmt.Errorf("delete failed instance %s: %w", inst.InstanceId, err)
 			}
+			s.forgetHeartbeat(inst.InstanceId)
 		}
 	}
 
@@ -110,7 +121,12 @@ func (s *Scheduler) createInstance(ctx context.Context, spec *goblinv1.AgentSpec
 	go func() {
 		if err := s.startAgentOnNode(ctx, nodeID, instance, spec); err != nil {
 			slog.Default().LogAttrs(ctx, slog.LevelError, "failed to start agent on node", logattr.InstanceID(instance.InstanceId), logattr.NodeID(nodeID), logattr.Err(err))
-			// TODO: Mark instance as failed?
+			// A dispatch failure must not leave a pending ghost: mark
+			// the instance failed so the next reconcile re-places it.
+			instance.State = "failed"
+			if serr := s.SaveInstance(ctx, instance); serr != nil {
+				slog.Default().LogAttrs(ctx, slog.LevelError, "failed to mark instance failed", logattr.InstanceID(instance.InstanceId), logattr.Err(serr))
+			}
 		}
 	}()
 
@@ -145,6 +161,19 @@ func (s *Scheduler) getCandidates(ctx context.Context) ([]CandidateNode, error) 
 		usageMap = make(map[string]nodeUsage)
 	}
 
+	// Count scheduled instances per node so spread placement sees them:
+	// job usage alone would pile every instance onto one node. Instances
+	// saved earlier in the same reconcile pass are visible here, so
+	// multi-replica placement spreads within a single pass too.
+	instCounts := make(map[string]int)
+	if instances, ierr := s.ListInstances(ctx, ""); ierr == nil {
+		for _, inst := range instances {
+			if inst.State == "running" || inst.State == "pending" {
+				instCounts[inst.NodeId]++
+			}
+		}
+	}
+
 	for _, m := range members {
 		if m.Status != 1 { // Alive
 			continue
@@ -165,7 +194,7 @@ func (s *Scheduler) getCandidates(ctx context.Context) ([]CandidateNode, error) 
 				UsedCPU:    u.cpuUsed,
 				TotalMem:   u.memTotal,
 				UsedMem:    u.memUsed,
-				AgentCount: u.jobCount, // We might need separate agent count vs job count
+				AgentCount: u.jobCount + instCounts[m.Name],
 			},
 		})
 	}
@@ -267,8 +296,12 @@ func (s *Scheduler) getNodeAddress(ctx context.Context, nodeID string) (string, 
 	members := s.cluster.Members()
 	for _, m := range members {
 		if m.Name == nodeID {
-			// Prefer advertise address or tag
-			return fmt.Sprintf("%s:%d", m.Addr, m.Port), nil
+			// Nodes broadcast their RPC endpoint in the api_addr tag;
+			// the serf address/port is gossip, not RPC.
+			if api := m.Tags["api_addr"]; api != "" {
+				return api, nil
+			}
+			return "", fmt.Errorf("node %s has no api_addr tag", nodeID)
 		}
 	}
 	return "", fmt.Errorf("node %s not found", nodeID)
@@ -285,13 +318,17 @@ func (s *Scheduler) RunReconciler(ctx context.Context, interval time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// Only the leader writes; followers skip the tick (R7).
-			if !s.leading() {
-				continue
-			}
-			if err := s.ReconcileAgents(ctx); err != nil {
-				slog.Default().LogAttrs(ctx, slog.LevelError, "reconcile cycle failed", logattr.Err(err))
-			}
+		case <-s.reconcileKick:
+		}
+		// Only the leader writes; followers skip the pass (R7). Losing
+		// leadership clears the heartbeat grace baseline so regaining
+		// it starts fresh.
+		if !s.leading() {
+			s.clearReconcileBaseline()
+			continue
+		}
+		if err := s.ReconcileAgents(ctx); err != nil {
+			slog.Default().LogAttrs(ctx, slog.LevelError, "reconcile cycle failed", logattr.Err(err))
 		}
 	}
 }

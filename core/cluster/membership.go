@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/goppydae/goblin/internal/logattr"
 	"github.com/hashicorp/memberlist"
@@ -134,11 +135,20 @@ func (m *Membership) handleEvents() {
 // pair for one node must never be observed reordered.
 func (m *Membership) dispatchHandler() {
 	for event := range m.handlerCh {
-		m.handlerMu.RLock()
-		handler := m.handler
-		m.handlerMu.RUnlock()
-		if handler != nil {
-			handler(event)
+		// Block until a handler exists rather than dropping: at boot,
+		// peer joins land milliseconds after membership creation while
+		// the supervisor is still constructing raft - before it can call
+		// SetEventHandler. Dropping those events cost the bootstrap node
+		// every early join, so no voter was ever admitted (2b e2e).
+		for {
+			m.handlerMu.RLock()
+			handler := m.handler
+			m.handlerMu.RUnlock()
+			if handler != nil {
+				handler(event)
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
 		}
 	}
 }

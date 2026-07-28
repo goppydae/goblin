@@ -58,3 +58,36 @@ func TestHandleEvents_SlowHandlerDoesNotStallEventLoop(t *testing.T) {
 
 	close(m.eventCh) // shuts down both goroutines
 }
+
+// TestHandleEvents_PreHandlerEventsDeliveredLate verifies events that
+// arrive before SetEventHandler are held and delivered, never dropped:
+// boot-time joins precede the supervisor's handler registration.
+func TestHandleEvents_PreHandlerEventsDeliveredLate(t *testing.T) {
+	m := &Membership{
+		eventCh:   make(chan serf.Event, 4),
+		handlerCh: make(chan serf.Event, 4),
+	}
+	go m.handleEvents()
+	go m.dispatchHandler()
+
+	m.eventCh <- serf.UserEvent{Name: "early-1"}
+	m.eventCh <- serf.UserEvent{Name: "early-2"}
+	time.Sleep(50 * time.Millisecond) // let them reach the dispatcher
+
+	handled := make(chan string, 4)
+	m.SetEventHandler(func(e serf.Event) {
+		handled <- e.(serf.UserEvent).Name
+	})
+
+	for _, want := range []string{"early-1", "early-2"} {
+		select {
+		case got := <-handled:
+			if got != want {
+				t.Fatalf("got %q, want %q", got, want)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("pre-handler event %q was dropped", want)
+		}
+	}
+	close(m.eventCh)
+}

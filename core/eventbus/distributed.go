@@ -1,13 +1,19 @@
 package eventbus
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
+	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/goppydae/goblin/core/cluster"
 	"github.com/goppydae/goblin/core/consensus"
+	"github.com/goppydae/goblin/internal/logattr"
+	"github.com/hashicorp/serf/serf"
 )
 
 // Event represents a distributed event
@@ -52,12 +58,31 @@ func NewDistributedEventBus(nodeID string, membership *cluster.Membership, conse
 		consensus:   consensus,
 	}
 
-	// Start listening for Serf user events if membership is available
-	if membership != nil {
-		go bus.listenSerfEvents()
-	}
-
 	return bus
+}
+
+// HandleSerfEvent ingests a Serf event into the bus: goblin.event user
+// events from other nodes are unmarshaled and dispatched to local
+// subscribers. The supervisor's single Serf handler calls this - Serf
+// supports one handler, so the bus cannot register its own (this closes
+// the proto-2 'distributed eventbus integration point' seam).
+func (bus *DistributedEventBus) HandleSerfEvent(e serf.Event) {
+	ue, ok := e.(serf.UserEvent)
+	if !ok || ue.Name != "goblin.event" {
+		return
+	}
+	var event Event
+	if err := json.Unmarshal(ue.Payload, &event); err != nil {
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "failed to unmarshal cluster event", logattr.Err(err))
+		return
+	}
+	// PublishCluster already dispatched locally on the origin node.
+	if event.NodeID == bus.nodeID {
+		return
+	}
+	if err := bus.dispatch(event); err != nil {
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "failed to dispatch cluster event", logattr.Topic(event.Topic), logattr.Err(err))
+	}
 }
 
 // Subscription represents an active event subscription
@@ -208,13 +233,12 @@ func (bus *DistributedEventBus) HandleRemoteEvent(eventJSON []byte) error {
 	return bus.dispatch(event)
 }
 
-// listenSerfEvents listens for Serf user events and dispatches them
-func (bus *DistributedEventBus) listenSerfEvents() {
-	// This would integrate with Serf's event channel
-	// For now, it's a placeholder for the integration point
-}
+// eventIDCounter disambiguates IDs minted in the same microsecond: the
+// timestamp alone collides under rapid calls, and a collision as a
+// subscription key silently drops a subscriber's handler.
+var eventIDCounter atomic.Uint64
 
 // generateEventID creates a unique event ID
 func generateEventID() string {
-	return time.Now().Format("20060102150405.000000")
+	return time.Now().Format("20060102150405.000000") + "-" + strconv.FormatUint(eventIDCounter.Add(1), 10)
 }

@@ -3,6 +3,7 @@ package consensus
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -24,7 +25,11 @@ type Consensus struct {
 }
 
 // NewConsensus creates a new Raft-based consensus manager
-func NewConsensus(nodeID, dataDir, bindAddr string, tlsCfg *tls.Config) (*Consensus, error) {
+// NewConsensus builds the Raft engine. bootstrap must be true on exactly
+// one seed node (the one with no join target): every node bootstrapping
+// its own single-node cluster yields N independent rafts that gossip but
+// never share state - the failure mode the 2b e2e exposed.
+func NewConsensus(nodeID, dataDir, bindAddr string, tlsCfg *tls.Config, bootstrap bool) (*Consensus, error) {
 	// Create data directory
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create data dir: %w", err)
@@ -98,16 +103,22 @@ func NewConsensus(nodeID, dataDir, bindAddr string, tlsCfg *tls.Config) (*Consen
 		dataDir:   dataDir,
 	}
 
-	// Bootstrap if single node
-	configuration := raft.Configuration{
-		Servers: []raft.Server{
-			{
-				ID:      config.LocalID,
-				Address: raftTransport.LocalAddr(),
+	// Bootstrap only the seed node; joiners wait to be admitted as
+	// voters by the leader. ErrCantBootstrap means state already exists
+	// (a restart) - not an error.
+	if bootstrap {
+		configuration := raft.Configuration{
+			Servers: []raft.Server{
+				{
+					ID:      config.LocalID,
+					Address: raftTransport.LocalAddr(),
+				},
 			},
-		},
+		}
+		if err := r.BootstrapCluster(configuration).Error(); err != nil && !errors.Is(err, raft.ErrCantBootstrap) {
+			return nil, fmt.Errorf("bootstrap raft cluster: %w", err)
+		}
 	}
-	r.BootstrapCluster(configuration)
 
 	return c, nil
 }

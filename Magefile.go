@@ -130,11 +130,13 @@ func EnvCheck() error {
 	)
 }
 
-// TestCluster runs cluster coordination tests
+// TestCluster runs the process-based 3-node cluster e2e (build tag
+// 'cluster' keeps it out of the ordinary suite). The harness builds
+// goblind and the fixture agent itself.
 func TestCluster() error {
-	mg.Deps(Build)
-	fmt.Println("Running cluster tests...")
-	return sh.RunV("./test/cluster/test_cluster.sh")
+	mg.Deps(checkHermetic)
+	fmt.Println("Running 3-node cluster e2e (-race, -tags cluster)...")
+	return sh.RunV("go", "test", "-race", "-tags", "cluster", "-timeout", "15m", "-v", "-run", "TestClusterEndToEnd", "./test/cluster/")
 }
 
 // TestScheduler runs scheduler tests

@@ -273,7 +273,7 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 	}
 
 	// Create Raft consensus
-	consensus, err := consensus.NewConsensus(nodeID, s.cfg.RaftDir, s.cfg.RaftAddr, tlsCfg)
+	consensus, err := consensus.NewConsensus(nodeID, s.cfg.RaftDir, s.cfg.RaftAddr, tlsCfg, s.cfg.JoinAddr == "")
 	if err != nil {
 		return fmt.Errorf("failed to create consensus: %w", err)
 	}
@@ -290,6 +290,9 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 
 	// Bridge Serf events to EventBus
 	membership.SetEventHandler(func(e serf.Event) {
+		// The distributed bus ingests goblin.event user events here:
+		// Serf supports a single handler, so the supervisor fans out.
+		bus.HandleSerfEvent(e)
 		switch ev := e.(type) {
 		case serf.MemberEvent:
 			for _, member := range ev.Members {
@@ -297,20 +300,23 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 				switch ev.EventType() {
 				case serf.EventMemberJoin:
 					topic = "cluster.node.joined"
-					// Auto-join Raft if Leader. Retried with backoff: a
-					// leader change between the Serf event and the AddVoter
-					// commit must not silently orphan the voter (R6). The
-					// goroutine keeps the Serf dispatch goroutine unblocked.
-					if consensus.IsLeader() {
-						raftAddr, ok := member.Tags["raft_addr"]
-						if ok {
-							slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "adding raft voter", logattr.Member(member.Name), logattr.Addr(raftAddr))
-							go func(name, addr string) {
-								if err := addVoterWithRetry(context.Background(), consensus, name, addr); err != nil {
-									slog.Default().LogAttrs(context.Background(), slog.LevelError, "failed to add voter", logattr.Member(name), logattr.Err(err))
-								}
-							}(member.Name, raftAddr)
-						}
+					// Every node races addVoterWithRetry for every join:
+					// only the (eventual) leader's attempt lands, and the
+					// rest expire quietly with ErrNotAdmitting. Gating on
+					// instantaneous leadership here is the bug that left
+					// three independent single-node rafts (R6 + 2b e2e).
+					if raftAddr, ok := member.Tags["raft_addr"]; ok && member.Name != nodeID {
+						slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "adding raft voter", logattr.Member(member.Name), logattr.Addr(raftAddr))
+						go func(name, addr string) {
+							err := addVoterWithRetry(context.Background(), consensus, name, addr)
+							switch {
+							case err == nil:
+							case errors.Is(err, ErrNotAdmitting):
+								slog.Default().LogAttrs(context.Background(), slog.LevelDebug, "voter admission left to the leader", logattr.Member(name))
+							default:
+								slog.Default().LogAttrs(context.Background(), slog.LevelError, "failed to add voter", logattr.Member(name), logattr.Err(err))
+							}
+						}(member.Name, raftAddr)
 					}
 				case serf.EventMemberLeave:
 					topic = "cluster.node.left"
@@ -476,10 +482,69 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 	RegisterSchedulerHandlers(quicServer, schedulerRPC)
 
 	// Register Node handlers
-	nodeRPC := &NodeRPC{agentMgr: agentMgr}
+	instTracker := newInstanceTracker()
+	nodeRPC := &NodeRPC{agentMgr: agentMgr, tracker: instTracker}
 	RegisterNodeHandlers(quicServer, nodeRPC)
 
 	slog.Default().LogAttrs(ctx, slog.LevelInfo, "scheduler and node rpc handlers registered")
+
+	// Local lifecycle status updates the tracker: an instance whose
+	// process dies publishes FAILED/STOPPED on the local bus, and the
+	// next heartbeat reports it so the leader can re-place (phase 2b).
+	if err := localBus.Subscribe("system", "", gapieventbus.TopicAgentLifecycleStatus, func(e gapieventbus.Event[*anypb.Any]) {
+		var st protopkg.LifecycleStatus
+		if e.Payload == nil || e.Payload.UnmarshalTo(&st) != nil {
+			return
+		}
+		switch st.State {
+		case "RUNNING":
+			instTracker.SetIfTracked(st.AgentId, "running")
+		case "FAILED", "STOPPED":
+			// A deliberate stop removes the instance from the tracker
+			// before the event arrives; anything still tracked died.
+			instTracker.SetIfTracked(st.AgentId, "failed")
+		}
+	}); err != nil {
+		return fmt.Errorf("subscribe instance status: %w", err)
+	}
+
+	// Heartbeat publisher: this node's instance states, cluster-wide,
+	// every cadence. The kernel bus is the transport; cadence and topic
+	// are orchestrator policy (scheduler.HeartbeatCadence).
+	go func() {
+		ticker := time.NewTicker(scheduler.HeartbeatCadence)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				for id, state := range instTracker.Snapshot() {
+					if err := bus.PublishCluster("system", "instance.heartbeat", map[string]interface{}{
+						"instance_id": id,
+						"node_id":     nodeID,
+						"state":       state,
+					}, nil); err != nil {
+						slog.Default().LogAttrs(ctx, slog.LevelWarn, "publish instance heartbeat failed", logattr.InstanceID(id), logattr.Err(err))
+					}
+				}
+			}
+		}
+	}()
+
+	// Leader side: heartbeats feed the reconciler's health view.
+	bus.Subscribe("instance.heartbeat", func(e eventbus.Event) {
+		id, _ := e.Payload["instance_id"].(string)
+		node, _ := e.Payload["node_id"].(string)
+		state, _ := e.Payload["state"].(string)
+		if id != "" {
+			sched.ObserveHeartbeat(id, node, state, time.Now())
+		}
+	})
+
+	// The reconcile loop itself: leader-gated inside, kickable via
+	// RegisterGlobalAgent/ScaleAgent for sub-interval placement latency.
+	go sched.RunReconciler(ctx, 2*time.Second)
 
 	// Prepare TLS for QUIC API
 	// tlsCfg is now guaranteed to be non-nil (loaded from file or generated ephemeral)

@@ -10,9 +10,19 @@ import (
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
 
-// NodeRPC exposes node-level operations execution via RPC
+// starter is the execution surface an instantiated agent must expose.
+// GoAgent satisfies it; the Instantiate contract guarantees go agents.
+type starter interface {
+	Start(ctx context.Context) error
+	Stop(ctx context.Context) error
+}
+
+// NodeRPC executes the leader's placement decisions on this node: a
+// scheduled instance becomes a real process under the embedded GAPI
+// agent manager (the proto-2 Phase 3 node-dispatch seam, now closed).
 type NodeRPC struct {
 	agentMgr *gapiagentmgr.AgentManager
+	tracker  *instanceTracker
 }
 
 // StartAgentRequest defines payload for starting an agent instance
@@ -21,46 +31,37 @@ type StartAgentRequest struct {
 	Spec       *goblinv1.AgentSpec
 }
 
-// StartAgentInstance installs and starts an agent
+// StartAgentInstance instantiates the spec's agent type - which must be
+// installed and discovery-verified on this node - and starts it under
+// the instance id. Specs reference installed types; they never carry
+// commands, so the discovery security model (R20) holds for scheduled
+// work.
 func (n *NodeRPC) StartAgentInstance(req *StartAgentRequest, resp *string) error {
 	if n.agentMgr == nil {
 		return fmt.Errorf("agent manager not initialized on this node")
 	}
+	if req.Spec == nil {
+		return fmt.Errorf("start request for %s carries no spec", req.InstanceID)
+	}
 
-	// 1. Install (Prepare)
-	// For MVP, "install" means notifying GAPI agent manager to track this ID/Type.
-	// Since GAPI current discovery logic relies on disk paths, we might need a way to
-	// dynamically register a "virtual" agent or download it.
-	//
-	// As per implementation plan/earlier phases, we treat global agents as "managed" agents.
-	// We might need to assume the code exists or use a generic runner.
-	//
-	// Let's assume the "Type" corresponds to a known installed agent type or path.
-	// If req.Spec.Type matches a local agent, we start it with the instance ID context.
-	//
-	// WAIT: GAPI's AgentManager.Install methods usually take a path.
-	// If we are just starting "python-trader", it must exist locally.
-	//
-	// Let's implement a simplified flow:
-	// We map Global Agent "Type" to a local GAPI agent.
-	// We assign the Global InstanceID to it?
-	// GAPI Agent ID is usually derived from path.
-	//
-	// Ideally: GAPI supports "Instances" of a "Module".
-	// Current GAPI might not support multiple instances of same agent?
-	//
-	// Let's checking GAPI Architecture or assume we can just "Start" it.
-	// "agent.Controller().Start()"
+	a, err := n.agentMgr.Instantiate(req.InstanceID, req.Spec.Type)
+	if err != nil {
+		return fmt.Errorf("instantiate %q as %s: %w", req.Spec.Type, req.InstanceID, err)
+	}
 
-	// For MVP: We will treat Global Agents as generic processes managed by GAPI.
-	// Since GAPI doesn't fully support dynamic multi-instance yet, let's use a workaround:
-	// We just log "Starting..." and return success to simulate orchestration.
-	// Real implementation requires GAPI changes to support "Job/Task" execution (ephemeral agents).
+	runner, ok := a.(starter)
+	if !ok {
+		n.agentMgr.Deregister(req.InstanceID)
+		return fmt.Errorf("agent type %q does not support direct execution", req.Spec.Type)
+	}
+	if err := runner.Start(context.Background()); err != nil {
+		n.agentMgr.Deregister(req.InstanceID)
+		return fmt.Errorf("start instance %s: %w", req.InstanceID, err)
+	}
 
-	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "node rpc start agent requested", logattr.InstanceID(req.InstanceID), logattr.Type(req.Spec.Type))
-
-	// In a real system, we'd do: n.agentMgr.Start(req.InstanceID, req.Spec...)
-
+	n.tracker.Set(req.InstanceID, "running")
+	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "instance started",
+		logattr.InstanceID(req.InstanceID), logattr.Type(req.Spec.Type))
 	*resp = fmt.Sprintf("instance %s started on node", req.InstanceID)
 	return nil
 }
@@ -70,15 +71,30 @@ type StopAgentRequest struct {
 	InstanceID string
 }
 
-// StopAgentInstance stops an agent
+// StopAgentInstance stops and deregisters an instance. Unknown instances
+// succeed: a stop for something already gone is the desired state.
 func (n *NodeRPC) StopAgentInstance(req *StopAgentRequest, resp *string) error {
 	if n.agentMgr == nil {
 		return fmt.Errorf("agent manager not initialized")
 	}
 
-	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "node rpc stop agent requested", logattr.InstanceID(req.InstanceID))
-	// Real system: n.agentMgr.Stop(req.InstanceID)
+	// Remove from the tracker first so the exit's lifecycle event is not
+	// misread as an unexpected failure.
+	n.tracker.Remove(req.InstanceID)
 
+	a := n.agentMgr.Get(req.InstanceID)
+	if a == nil {
+		*resp = fmt.Sprintf("instance %s not present (already stopped)", req.InstanceID)
+		return nil
+	}
+	if runner, ok := a.(starter); ok {
+		if err := runner.Stop(context.Background()); err != nil {
+			return fmt.Errorf("stop instance %s: %w", req.InstanceID, err)
+		}
+	}
+	n.agentMgr.Deregister(req.InstanceID)
+
+	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "instance stopped", logattr.InstanceID(req.InstanceID))
 	*resp = fmt.Sprintf("instance %s stopped on node", req.InstanceID)
 	return nil
 }

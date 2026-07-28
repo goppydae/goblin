@@ -158,8 +158,38 @@ var globalAgentScaleCmd = &cobra.Command{
 	},
 }
 
+var globalAgentInstancesCmd = &cobra.Command{
+	Use:   "instances [spec-id]",
+	Short: "List scheduled instances (all specs when no id is given)",
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) (err error) {
+		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
+		if err != nil {
+			return err
+		}
+		defer closeClient(client, &err)
+
+		req := supervisor.ListAgentInstancesRequest{}
+		if len(args) == 1 {
+			req.SpecID = args[0]
+		}
+		var instances []*goblinv1.AgentInstance
+		if err := client.Call("SchedulerRPC.ListAgentInstances", &req, &instances); err != nil {
+			return err
+		}
+
+		fmt.Println("INSTANCE\t\t\tSPEC\t\tNODE\t\tSTATE")
+		fmt.Println("--------\t\t\t----\t\t----\t\t-----")
+		for _, inst := range instances {
+			fmt.Printf("%s\t%s\t%s\t%s\n", inst.InstanceId, inst.SpecId, inst.NodeId, inst.State)
+		}
+		return nil
+	},
+}
+
 func init() {
 	globalAgentCmd.AddCommand(globalAgentRegisterCmd)
+	globalAgentCmd.AddCommand(globalAgentInstancesCmd)
 	globalAgentCmd.AddCommand(globalAgentListCmd)
 	globalAgentCmd.AddCommand(globalAgentGetCmd)
 	globalAgentCmd.AddCommand(globalAgentDeleteCmd)

@@ -8,8 +8,10 @@ import (
 	"math/rand"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	gapiclock "github.com/goppydae/gapi/core/clock"
 	"github.com/goppydae/goblin/core/eventbus"
 	"github.com/goppydae/goblin/internal/logattr"
 	"github.com/hashicorp/serf/serf"
@@ -49,6 +51,18 @@ type Scheduler struct {
 	// isLeader gates reconciliation: only the Raft leader writes; followers
 	// read and react (review R7). nil means standalone mode (always leader).
 	isLeader func() bool
+
+	// clk drives heartbeat staleness; tests inject a MockClock.
+	clk gapiclock.Clock
+	// hbMu guards heartbeats and leadSince.
+	hbMu       sync.Mutex
+	heartbeats map[string]heartbeat
+	// pendingSince tracks when a pending instance was first observed,
+	// so dispatch losses cannot hold replica slots forever.
+	pendingSince map[string]time.Time
+	leadSince    time.Time
+	// reconcileKick requests an immediate reconcile pass (buffered 1).
+	reconcileKick chan struct{}
 }
 
 // NewScheduler creates a new Scheduler instance. isLeader is the leadership
@@ -61,6 +75,10 @@ func NewScheduler(store KVStore, c Cluster, bus eventbus.EventBus, isLeader func
 		bus:           bus,
 		clientFactory: clientFactory,
 		isLeader:      isLeader,
+		clk:           gapiclock.RealClock{},
+		heartbeats:    make(map[string]heartbeat),
+		pendingSince:  make(map[string]time.Time),
+		reconcileKick: make(chan struct{}, 1),
 	}
 	s.placement = NewPlacementEngine()
 	return s
