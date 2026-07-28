@@ -325,8 +325,13 @@ func (a *GoAgent) Start(ctx context.Context) error {
 		}
 	}
 
-	// Direct execution of the binary
-	cmd := exec.CommandContext(ctx, a.path, "--start")
+	// Direct execution of the binary. exec.Command, not
+	// exec.CommandContext: ctx bounds the *start operation*, not the
+	// agent's lifetime. Binding the child to it hands os/exec a watchdog
+	// that SIGKILLs the agent the instant that context is done - which is
+	// the moment the caller's start call returns (GAPI-DIV-028). The
+	// process is owned by Stop, which sends SIGTERM and escalates.
+	cmd := exec.Command(a.path, "--start")
 
 	cmd.Env = os.Environ()
 	if a.nextRunID != "" {

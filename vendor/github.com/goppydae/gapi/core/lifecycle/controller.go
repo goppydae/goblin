@@ -203,9 +203,17 @@ func (c *Controller) ApplyWithContext(ctx context.Context, a Action) error {
 		{
 			// Derive from the caller's context so cancellation, deadlines, and
 			// tracing propagate into the runner instead of being discarded.
-			ctx, cancel := context.WithTimeout(ctx, c.WaitStart)
-			defer cancel()
-			if err := c.runner.Start(ctx); err != nil {
+			//
+			// This context bounds the Start *call* and nothing else. cancel is
+			// invoked as soon as Start returns rather than deferred to this
+			// function's exit, so the window in which it could reach a started
+			// process is as small as the language allows - and Runner
+			// implementations must not tie a spawned process to it at all
+			// (GAPI-DIV-028). Readiness has its own deadline below.
+			startCtx, cancel := context.WithTimeout(ctx, c.WaitStart)
+			err := c.runner.Start(startCtx)
+			cancel()
+			if err != nil {
 				_ = c.sm.TransitionTo(StateError)
 				return err
 			}

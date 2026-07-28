@@ -80,7 +80,7 @@ github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX
 github.com/google/gofuzz v1.0.0/go.mod h1:dBl0BpW6vV/+mYPU4Po3pmUjxk6FQPldtuIdl/M65Eg=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
-github.com/goppydae/gapi v0.1.0-proto2 h1:bbAwiNv72ULNTV4GS9YUUliCcU4tIwVCNkywsuzT3gg=
+github.com/goppydae/gapi v0.1.0-proto2 h1:9uBLZZBYzPdO+z1YiH8obuJnjnALd6Ev6Noni+GiIAU=
 github.com/goppydae/gapi v0.1.0-proto2/go.mod h1:dyD6fLCDqrwYklt0u+TW3h3eU83OnQgW46P2NA5Kxgo=
 github.com/goppydae/magelib v0.1.0 h1:AfdM/1BQYRYmo3TnTaPOjTzoDy27+d3ktT5HUZSqHo0=
 github.com/goppydae/magelib v0.1.0/go.mod h1:8CHMyugJA6y7cXLEfvIhc+h/DKYwCgnKuRboJRMSLmY=

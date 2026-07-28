@@ -346,8 +346,14 @@ func (a *PythonAgent) Start(ctx context.Context) error {
 		}
 	}
 
-	cmd := exec.CommandContext(
-		ctx, "python3", "-u", a.runner,
+	// exec.Command, not exec.CommandContext, and the distinction is
+	// load-bearing: ctx bounds the *start operation*, not the agent's
+	// lifetime. Binding the child to it hands os/exec a watchdog that
+	// SIGKILLs the agent the instant that context is done - which is the
+	// moment the caller's start call returns (GAPI-DIV-028). The process is
+	// owned by Stop, which sends SIGTERM and escalates on its own schedule.
+	cmd := exec.Command(
+		"python3", "-u", a.runner,
 		"--module", a.path,
 		"--id", a.id,
 		"--type", a.typ,
