@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/google/uuid"
+	"github.com/goppydae/gapi/internal/ident"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
@@ -30,7 +30,7 @@ type Event[T any] struct {
 
 func NewEvent[T any](scope, namespace, topic, source string, payload T, broadcast bool, tags ...string) Event[T] {
 	return Event[T]{
-		ID:        uuid.New().String(),
+		ID:        ident.NewV7String(),
 		Scope:     scope,
 		Namespace: namespace,
 		Topic:     topic,

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/goppydae/gapi/internal/ident"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -183,7 +183,7 @@ func (c *Controller) ApplyWithContext(ctx context.Context, a Action) error {
 			return err
 		}
 
-		runID := uuid.New().String()
+		runID := ident.NewV7String()
 		if s, ok := c.runner.(RunIDSetter); ok {
 			s.SetRunID(runID)
 		}

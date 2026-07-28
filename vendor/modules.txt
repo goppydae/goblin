@@ -72,11 +72,13 @@ github.com/goppydae/gapi/core/eventbus
 github.com/goppydae/gapi/core/lifecycle
 github.com/goppydae/gapi/core/logging
 github.com/goppydae/gapi/core/metrics
+github.com/goppydae/gapi/core/procsig
 github.com/goppydae/gapi/core/schema
 github.com/goppydae/gapi/core/state
 github.com/goppydae/gapi/core/transport
 github.com/goppydae/gapi/core/tui
 github.com/goppydae/gapi/core/version
+github.com/goppydae/gapi/internal/ident
 github.com/goppydae/gapi/internal/logattr
 github.com/goppydae/gapi/internal/safeio
 github.com/goppydae/gapi/internal/statewatch
