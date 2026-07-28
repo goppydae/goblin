@@ -139,6 +139,14 @@ func TestCluster() error {
 	return sh.RunV("go", "test", "-race", "-tags", "cluster", "-timeout", "15m", "-v", "-run", "TestClusterEndToEnd", "./test/cluster/")
 }
 
+// TestPid1 runs the goblind PID-1 container smoke (Phase 0 before the
+// cluster stack; reversed teardown as container init) via rootless podman.
+func TestPid1() error {
+	mg.Deps(checkHermetic)
+	fmt.Println("Running goblind PID-1 container smoke (rootless podman)...")
+	return sh.RunV("go", "test", "-tags", "pid1", "-timeout", "10m", "-v", "-run", "TestGoblindPid1Smoke", "./test/pid1/")
+}
+
 // TestScheduler runs scheduler tests
 func TestScheduler() error {
 	mg.Deps(checkHermetic)

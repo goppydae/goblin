@@ -25,6 +25,11 @@ var (
 	advertisePort      int
 	raftDir            string
 	joinAddr           string
+	pid1Mode           bool
+	noEarlyMounts      bool
+	watchdogDevice     string
+	watchdogInterval   time.Duration
+	shutdownGrace      time.Duration
 	encryptionKey      string
 	tlsCertFile        string
 	tlsKeyFile         string
@@ -61,6 +66,11 @@ var rootCmd = &cobra.Command{
 			AdvertisePort:      advertisePort,
 			RaftDir:            raftDir,
 			JoinAddr:           joinAddr,
+			Pid1Mode:           pid1Mode,
+			NoEarlyMounts:      noEarlyMounts,
+			WatchdogDevice:     watchdogDevice,
+			WatchdogInterval:   watchdogInterval,
+			ShutdownGrace:      shutdownGrace,
 			Tags:               tags,
 			EncryptionKey:      encryptionKey,
 			CertFile:           tlsCertFile,
@@ -131,6 +141,11 @@ func init() {
 	rootCmd.Flags().StringVar(&nodeID, "id", "", "Unique Node ID (default: hostname)")
 	rootCmd.Flags().StringVar(&listenAddr, "listen-addr", "127.0.0.1:29000", "Single control-plane bind address (QUIC; carries GAPI, RPC, Serf, and Raft via ALPN)")
 	rootCmd.Flags().StringVar(&advertiseAddr, "advertise-addr", "", "Advertise address (if different from bind)")
+	rootCmd.Flags().BoolVar(&pid1Mode, "pid1", false, "Run as PID 1: kernel Phase 0 boot before the cluster stack; reversed teardown on shutdown")
+	rootCmd.Flags().BoolVar(&noEarlyMounts, "no-early-mounts", false, "Skip the Phase 0 mount table (container environments)")
+	rootCmd.Flags().StringVar(&watchdogDevice, "watchdog-device", "", "Hardware watchdog device to keep alive (empty: disabled)")
+	rootCmd.Flags().DurationVar(&watchdogInterval, "watchdog-interval", 10*time.Second, "Watchdog keepalive kick interval")
+	rootCmd.Flags().DurationVar(&shutdownGrace, "shutdown-grace", 10*time.Second, "Per-phase shutdown grace (drain + agent stop) before forcing")
 	rootCmd.Flags().StringVar(&raftDir, "data", "./data/raft", "Data directory for Raft log")
 	rootCmd.Flags().StringVar(&joinAddr, "join", "", "Join existing cluster peer (host:port)")
 	rootCmd.Flags().StringVar(&metricsAddr, "metrics-addr", "", "Prometheus metrics listen address (empty: disabled)")

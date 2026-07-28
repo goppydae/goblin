@@ -82,6 +82,14 @@ type Config struct {
 	// R13). Zero disables the gate - the topic has no producer unless a
 	// network agent is deployed.
 	NetworkGateTimeout time.Duration
+	// Pid1Mode activates the embedded kernel's Phase 0 pre-userspace
+	// boot before any cluster code, and the reversed teardown on
+	// shutdown (goblin-architecture.md). goblind IS the init process.
+	Pid1Mode         bool
+	NoEarlyMounts    bool
+	WatchdogDevice   string
+	WatchdogInterval time.Duration
+	ShutdownGrace    time.Duration
 }
 
 // Supervisor manages the Goblin daemon components
@@ -113,6 +121,21 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 		}
 	}()
 	slog.SetDefault(logger)
+
+	// Phase 0 (PID-1 mode): the embedded kernel's pre-userspace
+	// obligations run before any cluster code - a hung network layer
+	// can never block init duties (goblin-architecture.md boot phases).
+	runCtx, runCancel := context.WithCancel(ctx)
+	defer runCancel()
+	var pid1 *pid1Completion
+	if s.cfg.Pid1Mode {
+		p, perr := s.enablePid1(runCtx, runCancel)
+		if perr != nil {
+			return fmt.Errorf("phase 0: %w", perr)
+		}
+		pid1 = p
+	}
+	ctx = runCtx
 
 	nodeID := s.cfg.NodeID
 	if nodeID == "" {
@@ -786,7 +809,29 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 	slog.Default().LogAttrs(ctx, slog.LevelInfo, "listening for cluster events")
 
 	<-ctx.Done()
-	slog.Default().LogAttrs(ctx, slog.LevelInfo, "shutting down")
+	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "shutting down")
+
+	if pid1 != nil {
+		// Reversed teardown: drain local jobs to peers (bounded), leave
+		// serf gracefully, stop the raft engine, then hand the local
+		// teardown (StopAll -> sync -> umount -> reboot) to the kernel
+		// executor. The drain deadline derives from Background, not the
+		// already-cancelled run context (Go manifesto section 11).
+		drainCtx, cancel := context.WithTimeout(context.Background(), pid1.grace)
+		if _, derr := sched.DrainNode(drainCtx, nodeID); derr != nil {
+			slog.Default().LogAttrs(drainCtx, slog.LevelWarn, "drain during shutdown failed", logattr.Err(derr))
+		}
+		cancel()
+		if lerr := membership.Leave(); lerr != nil {
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "serf leave during shutdown failed", logattr.Err(lerr))
+		}
+		if cerr := consensus.Shutdown(); cerr != nil {
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "raft shutdown failed", logattr.Err(cerr))
+		}
+		if s.agentMgr != nil {
+			pid1.complete(context.Background(), s.agentMgr)
+		}
+	}
 	return nil
 }
 
