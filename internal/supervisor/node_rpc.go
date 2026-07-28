@@ -1,9 +1,12 @@
 package supervisor
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 
 	gapiagentmgr "github.com/goppydae/gapi/core/agentmgr"
+	"github.com/goppydae/goblin/internal/logattr"
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
 
@@ -54,7 +57,7 @@ func (n *NodeRPC) StartAgentInstance(req *StartAgentRequest, resp *string) error
 	// We just log "Starting..." and return success to simulate orchestration.
 	// Real implementation requires GAPI changes to support "Job/Task" execution (ephemeral agents).
 
-	fmt.Printf("🚀 [NodeRPC] Request to start agent %s (Type: %s)\n", req.InstanceID, req.Spec.Type)
+	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "node rpc start agent requested", logattr.InstanceID(req.InstanceID), logattr.Type(req.Spec.Type))
 
 	// In a real system, we'd do: n.agentMgr.Start(req.InstanceID, req.Spec...)
 
@@ -73,7 +76,7 @@ func (n *NodeRPC) StopAgentInstance(req *StopAgentRequest, resp *string) error {
 		return fmt.Errorf("agent manager not initialized")
 	}
 
-	fmt.Printf("🛑 [NodeRPC] Request to stop agent %s\n", req.InstanceID)
+	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "node rpc stop agent requested", logattr.InstanceID(req.InstanceID))
 	// Real system: n.agentMgr.Stop(req.InstanceID)
 
 	*resp = fmt.Sprintf("instance %s stopped on node", req.InstanceID)

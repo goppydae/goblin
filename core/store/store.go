@@ -3,11 +3,12 @@ package store
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/goppydae/goblin/core/consensus"
 	"github.com/goppydae/goblin/core/eventbus"
+	"github.com/goppydae/goblin/internal/logattr"
 	goblinv1 "github.com/goppydae/goblin/proto"
 	"google.golang.org/protobuf/proto"
 )
@@ -185,7 +186,7 @@ func (s *Store) Delete(ctx context.Context, namespace, key string) error {
 		"namespace": namespace,
 		"key":       key,
 	}, []string{"kv"}); err != nil {
-		log.Printf("publish store.change for %s/%s: %v", namespace, key, err)
+		slog.Default().LogAttrs(ctx, slog.LevelWarn, "publish store.change failed", logattr.Namespace(namespace), logattr.Key(key), logattr.Err(err))
 	}
 
 	return nil

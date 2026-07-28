@@ -3,11 +3,12 @@ package cli
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/goppydae/gapi/core/transport"
 	"github.com/goppydae/gapi/core/tui"
+	"github.com/goppydae/goblin/internal/logattr"
 	"github.com/goppydae/goblin/internal/supervisor"
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
@@ -74,7 +75,7 @@ func (u *UnifiedController) FetchStatus(ctx context.Context) (_ []tui.AgentStatu
 	var localAgents []supervisor.LocalAgentInfo
 	if err := client.Call("SchedulerRPC.ListLocalAgents", struct{}{}, &localAgents); err != nil {
 		// Log warning but continue - local agents may not be enabled
-		log.Printf("Warning: Could not fetch local agents: %v", err)
+		slog.Default().LogAttrs(ctx, slog.LevelWarn, "could not fetch local agents", logattr.Err(err))
 	} else {
 		for _, agent := range localAgents {
 			statuses = append(statuses, tui.AgentStatus{
@@ -88,7 +89,7 @@ func (u *UnifiedController) FetchStatus(ctx context.Context) (_ []tui.AgentStatu
 	// Section 2.5: Global Agents (Specs)
 	var globalSpecs []*goblinv1.AgentSpec
 	if err := client.Call("SchedulerRPC.ListGlobalAgents", struct{}{}, &globalSpecs); err != nil {
-		log.Printf("[Warning] Failed to list global agents: %v", err)
+		slog.Default().LogAttrs(ctx, slog.LevelWarn, "failed to list global agents", logattr.Err(err))
 	} else {
 		for _, spec := range globalSpecs {
 			// Format state to show replicas
@@ -143,7 +144,7 @@ func (u *UnifiedController) GetLogs(ctx context.Context, id string) (<-chan stri
 		// Goroutine terminus: no caller to propagate to, so log.
 		defer func() {
 			if cerr := client.Close(); cerr != nil {
-				log.Printf("close rpc client: %v", cerr)
+				slog.Default().LogAttrs(ctx, slog.LevelWarn, "close rpc client failed", logattr.Err(cerr))
 			}
 		}()
 

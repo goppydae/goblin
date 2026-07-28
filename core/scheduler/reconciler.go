@@ -3,10 +3,11 @@ package scheduler
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/goppydae/goblin/internal/logattr"
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
 
@@ -19,7 +20,7 @@ func (s *Scheduler) ReconcileAgents(ctx context.Context) error {
 
 	for _, spec := range specs {
 		if err := s.reconcileAgent(ctx, spec); err != nil {
-			log.Printf("❌ Failed to reconcile agent %s: %v", spec.Id, err)
+			slog.Default().LogAttrs(ctx, slog.LevelError, "failed to reconcile agent", logattr.SpecID(spec.Id), logattr.Err(err))
 		}
 	}
 	return nil
@@ -39,7 +40,7 @@ func (s *Scheduler) reconcileAgent(ctx context.Context, spec *goblinv1.AgentSpec
 			active = append(active, inst)
 		case "failed":
 			// Handle failure: Restart/Reschedule
-			log.Printf("⚠️ Instance %s failed. Triggering recovery...", inst.InstanceId)
+			slog.Default().LogAttrs(ctx, slog.LevelWarn, "instance failed, triggering recovery", logattr.InstanceID(inst.InstanceId))
 			// For now, just remove it from active list so it gets replaced
 			// In real impl, we might want to cleanup the old node first
 			if err := s.DeleteInstance(ctx, inst.InstanceId); err != nil {
@@ -54,22 +55,22 @@ func (s *Scheduler) reconcileAgent(ctx context.Context, spec *goblinv1.AgentSpec
 	if currentCount < desiredCount {
 		// Scale Up
 		needed := desiredCount - currentCount
-		log.Printf("📈 Scaling up agent %s: need %d more instances", spec.Id, needed)
+		slog.Default().LogAttrs(ctx, slog.LevelInfo, "scaling up agent", logattr.SpecID(spec.Id), logattr.Count(needed))
 		for i := 0; i < needed; i++ {
 			if err := s.createInstance(ctx, spec); err != nil {
-				log.Printf("❌ Failed to create instance for %s: %v", spec.Id, err)
+				slog.Default().LogAttrs(ctx, slog.LevelError, "failed to create instance", logattr.SpecID(spec.Id), logattr.Err(err))
 			}
 		}
 	} else if currentCount > desiredCount {
 		// Scale Down
 		excess := currentCount - desiredCount
-		log.Printf("📉 Scaling down agent %s: removing %d instances", spec.Id, excess)
+		slog.Default().LogAttrs(ctx, slog.LevelInfo, "scaling down agent", logattr.SpecID(spec.Id), logattr.Count(excess))
 		// Simple strategy: Remove newest (or random)
 		// 'active' might not be sorted. Just pick last 'excess' elements.
 		for i := 0; i < excess; i++ {
 			inst := active[len(active)-1-i]
 			if err := s.terminateInstance(ctx, inst); err != nil {
-				log.Printf("❌ Failed to terminate instance %s: %v", inst.InstanceId, err)
+				slog.Default().LogAttrs(ctx, slog.LevelError, "failed to terminate instance", logattr.InstanceID(inst.InstanceId), logattr.Err(err))
 			}
 		}
 	}
@@ -108,7 +109,7 @@ func (s *Scheduler) createInstance(ctx context.Context, spec *goblinv1.AgentSpec
 	// at shutdown instead of outliving the supervisor.
 	go func() {
 		if err := s.startAgentOnNode(ctx, nodeID, instance, spec); err != nil {
-			log.Printf("❌ Failed to start agent %s on node %s: %v", instance.InstanceId, nodeID, err)
+			slog.Default().LogAttrs(ctx, slog.LevelError, "failed to start agent on node", logattr.InstanceID(instance.InstanceId), logattr.NodeID(nodeID), logattr.Err(err))
 			// TODO: Mark instance as failed?
 		}
 	}()
@@ -119,7 +120,7 @@ func (s *Scheduler) createInstance(ctx context.Context, spec *goblinv1.AgentSpec
 func (s *Scheduler) terminateInstance(ctx context.Context, inst *goblinv1.AgentInstance) error {
 	// 1. Trigger Stop on Node
 	if err := s.stopAgentOnNode(ctx, inst.NodeId, inst.InstanceId); err != nil {
-		log.Printf("⚠️ Failed to stop agent on node (continuing cleanup): %v", err)
+		slog.Default().LogAttrs(ctx, slog.LevelWarn, "failed to stop agent on node, continuing cleanup", logattr.Err(err))
 	}
 
 	// 2. Delete Record
@@ -140,7 +141,7 @@ func (s *Scheduler) getCandidates(ctx context.Context) ([]CandidateNode, error) 
 	usageMap, err := s.calculateUsage(ctx, members)
 	if err != nil {
 		// Fallback to empty usage if fail? Or error?
-		log.Printf("⚠️ Failed to calculate usage: %v", err)
+		slog.Default().LogAttrs(ctx, slog.LevelWarn, "failed to calculate usage", logattr.Err(err))
 		usageMap = make(map[string]nodeUsage)
 	}
 
@@ -214,13 +215,13 @@ func (s *Scheduler) startAgentOnNode(ctx context.Context, nodeID string, inst *g
 		Spec:       spec,
 	}
 
-	log.Printf("📞 [RPC] Calling StartAgentInstance on %s (%s)...", nodeID, addr)
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "calling start agent instance", logattr.NodeID(nodeID), logattr.Addr(addr))
 	var resp string
 	if err := client.Call("NodeRPC.StartAgentInstance", &payload, &resp); err != nil {
 		return fmt.Errorf("rpc call failed: %w", err)
 	}
 
-	log.Printf("✅ [RPC] Success: %s", resp)
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "start agent rpc succeeded", logattr.Response(resp))
 
 	// Update State to Running
 	inst.State = "running"
@@ -252,13 +253,13 @@ func (s *Scheduler) stopAgentOnNode(ctx context.Context, nodeID, instanceID stri
 		InstanceID: instanceID,
 	}
 
-	log.Printf("📞 [RPC] Calling StopAgentInstance on %s (%s)...", nodeID, addr)
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "calling stop agent instance", logattr.NodeID(nodeID), logattr.Addr(addr))
 	var resp string
 	if err := client.Call("NodeRPC.StopAgentInstance", &payload, &resp); err != nil {
 		return fmt.Errorf("rpc call failed: %w", err)
 	}
 
-	log.Printf("✅ [RPC] Stop Success: %s", resp)
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "stop agent rpc succeeded", logattr.Response(resp))
 	return nil
 }
 
@@ -278,7 +279,7 @@ func (s *Scheduler) RunReconciler(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	log.Println("🔄 Reconciler started")
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "reconciler started")
 	for {
 		select {
 		case <-ctx.Done():
@@ -289,7 +290,7 @@ func (s *Scheduler) RunReconciler(ctx context.Context, interval time.Duration) {
 				continue
 			}
 			if err := s.ReconcileAgents(ctx); err != nil {
-				log.Printf("❌ Reconcile cycle failed: %v", err)
+				slog.Default().LogAttrs(ctx, slog.LevelError, "reconcile cycle failed", logattr.Err(err))
 			}
 		}
 	}

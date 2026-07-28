@@ -1,9 +1,11 @@
 package consensus
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -64,7 +66,7 @@ func NewConsensus(nodeID, dataDir, bindAddr string, tlsCfg *tls.Config) (*Consen
 		tlsCfg = &tls.Config{InsecureSkipVerify: true}
 	}
 	if len(tlsCfg.Certificates) == 0 && tlsCfg.GetCertificate == nil {
-		fmt.Println("⚠️  Generating self-signed certificate for Raft QUIC transport")
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "generating self-signed certificate for raft quic transport")
 		cert, err := transport.GenerateInsecureSelfSignedCert()
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate self-signed cert: %w", err)

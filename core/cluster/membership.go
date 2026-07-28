@@ -1,10 +1,12 @@
 package cluster
 
 import (
+	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 
+	"github.com/goppydae/goblin/internal/logattr"
 	"github.com/hashicorp/memberlist"
 	"github.com/hashicorp/serf/serf"
 )
@@ -129,16 +131,16 @@ func (m *Membership) handleMemberEvent(event serf.MemberEvent) {
 	for _, member := range event.Members {
 		switch event.EventType() {
 		case serf.EventMemberJoin:
-			log.Printf("[cluster] Node joined: %s (%s)", member.Name, member.Addr)
+			slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "node joined", logattr.Member(member.Name), logattr.Addr(member.Addr.String()))
 		case serf.EventMemberLeave:
-			log.Printf("[cluster] Node left: %s", member.Name)
+			slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "node left", logattr.Member(member.Name))
 		case serf.EventMemberFailed:
-			log.Printf("[cluster] Node failed: %s", member.Name)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "node failed", logattr.Member(member.Name))
 		}
 	}
 }
 
 // handleUserEvent processes user events
 func (m *Membership) handleUserEvent(event serf.UserEvent) {
-	log.Printf("[cluster] User event: %s (payload: %d bytes)", event.Name, len(event.Payload))
+	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "user event received", logattr.Event(event.Name), logattr.Bytes(len(event.Payload)))
 }

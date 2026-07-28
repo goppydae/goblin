@@ -1,11 +1,13 @@
 package consensus
 
 import (
+	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/boltdb/bolt"
+	"github.com/goppydae/goblin/internal/logattr"
 	metrics "github.com/hashicorp/go-metrics/compat"
 	"github.com/hashicorp/raft"
 )
@@ -99,7 +101,7 @@ func (b *BoltStore) initialize() error {
 	}
 	defer func() {
 		if err := tx.Rollback(); err != nil && !errors.Is(err, bolt.ErrTxClosed) {
-			log.Printf("Rollback failed: %v", err)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "rollback failed", logattr.Err(err))
 		}
 	}()
 
@@ -127,7 +129,7 @@ func (b *BoltStore) FirstIndex() (uint64, error) {
 	}
 	defer func() {
 		if err := tx.Rollback(); err != nil && !errors.Is(err, bolt.ErrTxClosed) {
-			log.Printf("Rollback failed: %v", err)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "rollback failed", logattr.Err(err))
 		}
 	}()
 
@@ -147,7 +149,7 @@ func (b *BoltStore) LastIndex() (uint64, error) {
 	}
 	defer func() {
 		if err := tx.Rollback(); err != nil && !errors.Is(err, bolt.ErrTxClosed) {
-			log.Printf("Rollback failed: %v", err)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "rollback failed", logattr.Err(err))
 		}
 	}()
 
@@ -167,7 +169,7 @@ func (b *BoltStore) GetLog(idx uint64, raftlog *raft.Log) error {
 	}
 	defer func() {
 		if err := tx.Rollback(); err != nil && !errors.Is(err, bolt.ErrTxClosed) {
-			log.Printf("Rollback failed: %v", err)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "rollback failed", logattr.Err(err))
 		}
 	}()
 
@@ -194,7 +196,7 @@ func (b *BoltStore) StoreLogs(logs []*raft.Log) error {
 	}
 	defer func() {
 		if err := tx.Rollback(); err != nil && !errors.Is(err, bolt.ErrTxClosed) {
-			log.Printf("Rollback failed: %v", err)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "rollback failed", logattr.Err(err))
 		}
 	}()
 
@@ -241,7 +243,7 @@ func (b *BoltStore) DeleteRange(min, max uint64) error {
 	}
 	defer func() {
 		if err := tx.Rollback(); err != nil && !errors.Is(err, bolt.ErrTxClosed) {
-			log.Printf("Rollback failed: %v", err)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "rollback failed", logattr.Err(err))
 		}
 	}()
 
@@ -269,7 +271,7 @@ func (b *BoltStore) Set(k, v []byte) error {
 	}
 	defer func() {
 		if err := tx.Rollback(); err != nil && !errors.Is(err, bolt.ErrTxClosed) {
-			log.Printf("Rollback failed: %v", err)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "rollback failed", logattr.Err(err))
 		}
 	}()
 
@@ -289,7 +291,7 @@ func (b *BoltStore) Get(k []byte) ([]byte, error) {
 	}
 	defer func() {
 		if err := tx.Rollback(); err != nil && !errors.Is(err, bolt.ErrTxClosed) {
-			log.Printf("Rollback failed: %v", err)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "rollback failed", logattr.Err(err))
 		}
 	}()
 

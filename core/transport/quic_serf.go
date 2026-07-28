@@ -5,11 +5,12 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"sync"
 	"time"
 
+	"github.com/goppydae/goblin/internal/logattr"
 	"github.com/hashicorp/memberlist"
 	"github.com/quic-go/quic-go"
 )
@@ -224,7 +225,7 @@ func (t *QUICSerfTransport) getOrDial(addr string) (*quic.Conn, error) {
 		// The winning connection is unaffected by a failed close of the
 		// race loser; the failure only risks leaking it, so log and go on.
 		if cerr := newConn.CloseWithError(0, "race"); cerr != nil {
-			log.Printf("close raced serf connection to %s: %v", addr, cerr)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "close raced serf connection failed", logattr.Addr(addr), logattr.Err(cerr))
 		}
 		return existing, nil
 	}

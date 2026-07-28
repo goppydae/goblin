@@ -10,10 +10,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"math"
+
 	goblinv1 "github.com/goppydae/goblin/proto"
 	"github.com/quic-go/quic-go"
 	"google.golang.org/protobuf/proto"
-	"math"
 )
 
 // QUICRPCClient is a client for making RPC calls over QUIC

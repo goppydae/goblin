@@ -3,7 +3,9 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
+	"github.com/goppydae/goblin/internal/logattr"
 	goblinv1 "github.com/goppydae/goblin/proto"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -64,7 +66,7 @@ func (s *Scheduler) ListAgents(ctx context.Context) ([]*goblinv1.AgentSpec, erro
 		if err := protojson.Unmarshal(data, &spec); err != nil {
 			// Log warning but continue? Or fail?
 			// For now, continue and skip malformed data (robustness)
-			fmt.Printf("⚠️ Failed to unmarshal spec: %v\n", err)
+			slog.Default().LogAttrs(ctx, slog.LevelWarn, "failed to unmarshal spec", logattr.Err(err))
 			continue
 		}
 		specs = append(specs, &spec)

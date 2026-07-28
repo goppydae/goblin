@@ -3,8 +3,10 @@ package supervisor
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
+
+	"github.com/goppydae/goblin/internal/logattr"
 )
 
 // voterAdmitter is the slice of the consensus engine that voter admission
@@ -50,11 +52,11 @@ func addVoterWithRetryOpts(ctx context.Context, c voterAdmitter, name, addr stri
 		lastErr = c.AddVoter(name, addr)
 		if lastErr == nil {
 			if attempt > 1 {
-				log.Printf("Cluster: added Raft voter %s at %s after %d attempts", name, addr, attempt)
+				slog.Default().LogAttrs(ctx, slog.LevelInfo, "raft voter added", logattr.Member(name), logattr.Addr(addr), logattr.Attempt(attempt))
 			}
 			return nil
 		}
-		log.Printf("Cluster: AddVoter %s attempt %d failed: %v (retrying in %s)", name, attempt, lastErr, backoff)
+		slog.Default().LogAttrs(ctx, slog.LevelWarn, "add voter attempt failed, retrying", logattr.Member(name), logattr.Attempt(attempt), logattr.Err(lastErr), logattr.Backoff(backoff))
 
 		select {
 		case <-ctx.Done():

@@ -3,7 +3,9 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
+	"github.com/goppydae/goblin/internal/logattr"
 	goblinv1 "github.com/goppydae/goblin/proto"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -58,7 +60,7 @@ func (s *Scheduler) ListInstances(ctx context.Context, specID string) ([]*goblin
 	for _, data := range items {
 		var instance goblinv1.AgentInstance
 		if err := protojson.Unmarshal(data, &instance); err != nil {
-			fmt.Printf("⚠️ Failed to unmarshal instance: %v\n", err)
+			slog.Default().LogAttrs(ctx, slog.LevelWarn, "failed to unmarshal instance", logattr.Err(err))
 			continue
 		}
 

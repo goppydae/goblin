@@ -13,7 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
@@ -29,9 +29,11 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	gapiagentmgr "github.com/goppydae/gapi/core/agentmgr"
+	gapiconfig "github.com/goppydae/gapi/core/config"
 	gapicrypto "github.com/goppydae/gapi/core/crypto"
 	gapieventbus "github.com/goppydae/gapi/core/eventbus"
 	gapilifecycle "github.com/goppydae/gapi/core/lifecycle"
+	gapilogging "github.com/goppydae/gapi/core/logging"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
 	"github.com/goppydae/goblin/core/cluster"
 	"github.com/goppydae/goblin/core/consensus"
@@ -40,6 +42,7 @@ import (
 	"github.com/goppydae/goblin/core/scheduler"
 	"github.com/goppydae/goblin/core/store"
 	"github.com/goppydae/goblin/core/transport"
+	"github.com/goppydae/goblin/internal/logattr"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -65,6 +68,9 @@ type Config struct {
 	// AgentVerifyKey is the path to the Ed25519 public key that verifies
 	// agent-binary signatures; falls back to $RUNTIME_VERIFY_KEY.
 	AgentVerifyKey string
+	// Logging mirrors gapi's logging configuration (level, format, file
+	// rotation, Loki); handlers are built by the kernel's core/logging.
+	Logging gapiconfig.LoggingConfig
 }
 
 // Supervisor manages the Goblin daemon components
@@ -80,13 +86,27 @@ func New(cfg Config) *Supervisor {
 
 // Run starts the supervisor and blocks until context is canceled
 func (s *Supervisor) Run(ctx context.Context) (err error) {
+	// Logging first: everything after this logs through slog.
+	logger, logCloser, err := gapilogging.Build(&s.cfg.Logging)
+	if err != nil {
+		return fmt.Errorf("init logging: %w", err)
+	}
+	defer func() {
+		if cerr := logCloser.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("close log sink: %w", cerr)
+		}
+	}()
+	slog.SetDefault(logger)
+
 	nodeID := s.cfg.NodeID
 	if nodeID == "" {
 		host, _ := os.Hostname()
 		nodeID = host
 	}
 
-	fmt.Printf("🚀 Goblin supervisor starting as '%s'...\n", nodeID)
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "goblin supervisor starting", logattr.NodeID(nodeID))
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "detected resources",
+		slog.String("cpu_cores", s.cfg.Tags["cpu"]), slog.String("memory_bytes", s.cfg.Tags["memory"]))
 
 	// Decode Encryption Key
 	var secretKey []byte
@@ -99,7 +119,7 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 			return fmt.Errorf("encryption key must be 16, 24, or 32 bytes (got %d)", len(key))
 		}
 		secretKey = key
-		fmt.Println("🔒 Serf encryption enabled")
+		slog.Default().LogAttrs(ctx, slog.LevelInfo, "serf encryption enabled")
 	}
 
 	// Load TLS Config
@@ -117,7 +137,7 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 			GetClientCertificate: cm.GetClientCertificate,
 			MinVersion:           tls.VersionTLS12,
 		}
-		fmt.Println("🔒 TLS enabled (Dynamic Reloading)")
+		slog.Default().LogAttrs(ctx, slog.LevelInfo, "tls enabled with dynamic reloading")
 
 		// If CA provided, enable Client Auth for mTLS
 		if s.cfg.CAFile != "" {
@@ -130,9 +150,9 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 			tlsCfg.ClientCAs = caPool
 			tlsCfg.ClientAuth = tls.RequireAndVerifyClientCert
 			tlsCfg.RootCAs = caPool
-			fmt.Println("🔒 Raft mTLS enabled")
+			slog.Default().LogAttrs(ctx, slog.LevelInfo, "raft mtls enabled")
 		} else {
-			fmt.Println("⚠️ TLS enabled but no CA provided - mTLS disabled")
+			slog.Default().LogAttrs(ctx, slog.LevelWarn, "tls enabled but no ca provided, mtls disabled")
 		}
 	} else {
 		// Fail closed in production: an unverified ephemeral-cert listener
@@ -152,7 +172,7 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 			InsecureSkipVerify: true,
 			NextProtos:         []string{"gapi-quic", "goblin-rpc", "serf-quic"},
 		}
-		fmt.Println("⚠️ Security warning: Encryption disabled (using ephemeral self-signed cert)")
+		slog.Default().LogAttrs(ctx, slog.LevelWarn, "encryption disabled, using ephemeral self-signed cert")
 	}
 
 	// Create Serf membership
@@ -172,7 +192,7 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 			if !resolved {
 				raftAddr = fmt.Sprintf("%s:%s", ips[0].String(), port)
 			}
-			fmt.Printf("ℹ️ Resolved raft address '%s' to '%s'\n", s.cfg.RaftAddr, raftAddr)
+			slog.Default().LogAttrs(ctx, slog.LevelInfo, "resolved raft address", logattr.From(s.cfg.RaftAddr), logattr.To(raftAddr))
 		}
 	}
 
@@ -199,7 +219,7 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 			if !resolved {
 				advAddr = ips[0].String()
 			}
-			fmt.Printf("ℹ️ Resolved advertise address '%s' to '%s'\n", s.cfg.AdvertiseAddr, advAddr)
+			slog.Default().LogAttrs(ctx, slog.LevelInfo, "resolved advertise address", logattr.From(s.cfg.AdvertiseAddr), logattr.To(advAddr))
 		}
 	}
 	// Create QUIC Serf Transport
@@ -234,14 +254,14 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 		}
 	}()
 
-	fmt.Printf("✅ Serf membership initialized (%s) [QUIC]\n", s.cfg.SerfAddr)
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "serf membership initialized", logattr.Addr(s.cfg.SerfAddr))
 
 	// Join if requested
 	if s.cfg.JoinAddr != "" {
 		if err := membership.Join([]string{s.cfg.JoinAddr}); err != nil {
-			log.Printf("⚠️ Failed to join cluster at %s: %v", s.cfg.JoinAddr, err)
+			slog.Default().LogAttrs(ctx, slog.LevelWarn, "failed to join cluster", logattr.Addr(s.cfg.JoinAddr), logattr.Err(err))
 		} else {
-			fmt.Printf("✅ Joined cluster via %s\n", s.cfg.JoinAddr)
+			slog.Default().LogAttrs(ctx, slog.LevelInfo, "joined cluster", logattr.Addr(s.cfg.JoinAddr))
 		}
 	}
 
@@ -256,7 +276,7 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 		}
 	}()
 
-	fmt.Printf("✅ Raft consensus initialized (%s)\n", s.cfg.RaftAddr)
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "raft consensus initialized", logattr.Addr(s.cfg.RaftAddr))
 
 	// Create distributed event bus
 	bus := eventbus.NewDistributedEventBus(nodeID, membership, consensus)
@@ -277,10 +297,10 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 					if consensus.IsLeader() {
 						raftAddr, ok := member.Tags["raft_addr"]
 						if ok {
-							log.Printf("Cluster: Adding Raft voter %s at %s", member.Name, raftAddr)
+							slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "adding raft voter", logattr.Member(member.Name), logattr.Addr(raftAddr))
 							go func(name, addr string) {
 								if err := addVoterWithRetry(context.Background(), consensus, name, addr); err != nil {
-									log.Printf("Failed to add voter %s: %v", name, err)
+									slog.Default().LogAttrs(context.Background(), slog.LevelError, "failed to add voter", logattr.Member(name), logattr.Err(err))
 								}
 							}(member.Name, raftAddr)
 						}
@@ -307,7 +327,7 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 					// no caller to propagate to, so a publish failure is
 					// logged.
 					if err := bus.PublishLocal("system", topic, payload, []string{"cluster", member.Name}); err != nil {
-						log.Printf("publish %s for %s: %v", topic, member.Name, err)
+						slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "publish failed", logattr.Topic(topic), logattr.Member(member.Name), logattr.Err(err))
 					}
 				}
 			}
@@ -316,7 +336,7 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 
 	// Create Store
 	kvStore := store.NewStore(consensus, bus)
-	fmt.Println("✅ Distributed KV Store initialized")
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "distributed kv store initialized")
 
 	// Create Scheduler
 	sched := scheduler.NewScheduler(kvStore, membership, bus, consensus.IsLeader, func(addr string) (scheduler.RPCClient, error) {
@@ -337,7 +357,7 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 		// Let's use the address passed in.
 		return NewQUICRPCClient(addr, tlsCfg)
 	})
-	fmt.Println("✅ Scheduler initialized")
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "scheduler initialized")
 
 	// Initialize local agent manager (always enabled)
 	var agentMgr *gapiagentmgr.AgentManager
@@ -373,11 +393,9 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 	// Discover agents using GAPI's standard search paths
 	discovered, err := agentMgr.DiscoverFromPaths()
 	if err != nil {
-		log.Printf("⚠️  Agent discovery warning: %v", err)
+		slog.Default().LogAttrs(ctx, slog.LevelWarn, "agent discovery warning", logattr.Err(err))
 	} else {
-		// strconv.Itoa: digits-only formatting breaks the (spurious) taint
-		// chain gosec G706 traces from discovery paths into this log call.
-		log.Printf("✅ Local agent manager initialized (%s agents discovered)", strconv.Itoa(len(discovered)))
+		slog.Default().LogAttrs(ctx, slog.LevelInfo, "local agent manager initialized", logattr.Count(len(discovered)))
 	}
 
 	s.agentMgr = agentMgr
@@ -389,7 +407,7 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 		consensus:  consensus,
 		agentMgr:   agentMgr, // Wire agent manager to RPC
 	}
-	fmt.Println("✅ Scheduler RPC created")
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "scheduler rpc created")
 
 	// Subscribe to cluster events (After RPC init so we can log to history)
 	clusterEvents := []string{
@@ -419,7 +437,7 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 			}
 
 			if msg != "" {
-				log.Printf("[cluster] %s", msg)
+				slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "cluster event", logattr.Message(msg))
 				schedulerRPC.AddEvent(msg)
 			}
 		})
@@ -427,7 +445,7 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 
 	bus.Subscribe("global.alert", func(e eventbus.Event) {
 		msg := fmt.Sprintf("Alert: %v", e.Payload)
-		log.Printf("[alert] %s", msg)
+		slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "alert event", logattr.Message(msg))
 		schedulerRPC.AddEvent(msg)
 	})
 
@@ -441,7 +459,7 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 	nodeRPC := &NodeRPC{agentMgr: agentMgr}
 	RegisterNodeHandlers(quicServer, nodeRPC)
 
-	fmt.Println("✅ Scheduler & Node RPC handlers registered")
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "scheduler and node rpc handlers registered")
 
 	// Prepare TLS for QUIC API
 	// tlsCfg is now guaranteed to be non-nil (loaded from file or generated ephemeral)
@@ -477,9 +495,10 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 
 		listener, err := quic.ListenAddr(s.cfg.APIAddr, tlsCfg, quicConfig)
 		if err != nil {
-			log.Fatalf("QUIC listen failed: %v", err)
+			slog.Default().LogAttrs(ctx, slog.LevelError, "quic listen failed", logattr.Err(err))
+			os.Exit(1)
 		}
-		log.Printf("📡 GAPI & RPC Listener on %s...", s.cfg.APIAddr)
+		slog.Default().LogAttrs(ctx, slog.LevelInfo, "gapi and rpc listener started", logattr.Addr(s.cfg.APIAddr))
 
 		for {
 			conn, err := listener.Accept(ctx)
@@ -488,7 +507,7 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 				case <-ctx.Done():
 					return
 				default:
-					log.Printf("QUIC accept error: %v", err)
+					slog.Default().LogAttrs(ctx, slog.LevelWarn, "quic accept error", logattr.Err(err))
 					continue
 				}
 			}
@@ -500,9 +519,9 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 			case "gapi-quic":
 				go handleQUICConn(conn, bus, membership)
 			default:
-				log.Printf("Unknown ALPN protocol: %s", conn.ConnectionState().TLS.NegotiatedProtocol)
+				slog.Default().LogAttrs(ctx, slog.LevelWarn, "unknown alpn protocol", logattr.Protocol(conn.ConnectionState().TLS.NegotiatedProtocol))
 				if err := conn.CloseWithError(0, "unknown protocol"); err != nil {
-					log.Printf("close unknown-protocol connection: %v", err)
+					slog.Default().LogAttrs(ctx, slog.LevelWarn, "close unknown-protocol connection failed", logattr.Err(err))
 				}
 			}
 		}
@@ -511,13 +530,13 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 	if s.cfg.MetricsAddr != "" {
 		go func() {
 			http.Handle("/metrics", promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{}))
-			log.Printf("📊 Metrics server listening on %s", s.cfg.MetricsAddr)
+			slog.Default().LogAttrs(ctx, slog.LevelInfo, "metrics server listening", logattr.Addr(s.cfg.MetricsAddr))
 			srv := &http.Server{
 				Addr:              s.cfg.MetricsAddr,
 				ReadHeaderTimeout: 5 * time.Second,
 			}
 			if err := srv.ListenAndServe(); err != nil {
-				log.Printf("⚠️ Metrics server failed: %v", err)
+				slog.Default().LogAttrs(ctx, slog.LevelWarn, "metrics server failed", logattr.Err(err))
 			}
 		}()
 	}
@@ -555,11 +574,11 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 				if leaderID != lastLeaderID {
 					if leaderID == "" {
 						msg := "Leader Election: Lost leader"
-						log.Printf("[cluster] %s", msg)
+						slog.Default().LogAttrs(ctx, slog.LevelInfo, "cluster event", logattr.Message(msg))
 						schedulerRPC.AddEvent(msg)
 					} else {
 						msg := fmt.Sprintf("Leader Election: New Leader is %s", leaderID)
-						log.Printf("[cluster] %s", msg)
+						slog.Default().LogAttrs(ctx, slog.LevelInfo, "cluster event", logattr.Message(msg))
 						schedulerRPC.AddEvent(msg)
 					}
 				}
@@ -596,10 +615,10 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 		}
 	}()
 
-	fmt.Println("📡 Listening for cluster events...")
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "listening for cluster events")
 
 	<-ctx.Done()
-	fmt.Println("\n🛑 Shutting down...")
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "shutting down")
 	return nil
 }
 
@@ -671,11 +690,11 @@ func (cm *CertManager) Watch(ctx context.Context) {
 				continue
 			}
 			if info.ModTime().After(lastMod) {
-				log.Printf("🔄 Detected certificate change, reloading...")
+				slog.Default().LogAttrs(ctx, slog.LevelInfo, "certificate change detected, reloading")
 				if err := cm.Load(); err != nil {
-					log.Printf("❌ Failed to reload cert: %v", err)
+					slog.Default().LogAttrs(ctx, slog.LevelError, "failed to reload certificate", logattr.Err(err))
 				} else {
-					log.Printf("✅ Certificate reloaded successfully")
+					slog.Default().LogAttrs(ctx, slog.LevelInfo, "certificate reloaded")
 					lastMod = info.ModTime()
 				}
 			}
@@ -686,7 +705,7 @@ func (cm *CertManager) Watch(ctx context.Context) {
 func handleQUICStream(stream *quic.Stream, bus eventbus.EventBus, m *cluster.Membership) {
 	defer func() {
 		if err := stream.Close(); err != nil {
-			log.Printf("close GAPI stream: %v", err)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "close gapi stream failed", logattr.Err(err))
 		}
 	}()
 
@@ -700,20 +719,20 @@ func handleQUICStream(stream *quic.Stream, bus eventbus.EventBus, m *cluster.Mem
 
 	// Limit message size
 	if l > 10<<20 { // 10MB limit
-		log.Printf("GAPI message too large: %d", l)
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "gapi message too large", logattr.Bytes(int(l)))
 		return
 	}
 
 	data := make([]byte, l)
 	if _, err := io.ReadFull(stream, data); err != nil {
-		log.Printf("Failed to read GAPI payload: %v", err)
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "failed to read gapi payload", logattr.Err(err))
 		return
 	}
 
 	// Handle GAPI Envelope
 	var env protopkg.Envelope
 	if err := proto.Unmarshal(data, &env); err != nil {
-		log.Printf("Failed to unmarshal GAPI envelope: %v", err)
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "failed to unmarshal gapi envelope", logattr.Err(err))
 		return
 	}
 
@@ -726,7 +745,7 @@ func handleQUICStream(stream *quic.Stream, bus eventbus.EventBus, m *cluster.Mem
 		topic = env.Topic[i+1:]
 	}
 
-	log.Printf("📨 [GAPI] Received Event: %s (Scope: %s, Source: %s)", env.Topic, scope, env.Source)
+	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "gapi event received", logattr.Topic(env.Topic), logattr.Scope(scope), logattr.Source(env.Source))
 
 	// If it's a lifecycle status, log it explicitly
 	if env.Type == "event" {
@@ -741,7 +760,7 @@ func handleQUICStream(stream *quic.Stream, bus eventbus.EventBus, m *cluster.Mem
 		// Stream handler is a goroutine terminus: there is no caller to
 		// propagate to, so a publish failure is logged.
 		if err := bus.PublishLocal("agent", topic, payloadMap, []string{"source:" + env.Source}); err != nil {
-			log.Printf("publish %s from %s: %v", topic, env.Source, err)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "publish failed", logattr.Topic(topic), logattr.Source(env.Source), logattr.Err(err))
 		}
 	}
 }

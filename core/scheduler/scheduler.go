@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"math/rand"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/goppydae/goblin/core/eventbus"
+	"github.com/goppydae/goblin/internal/logattr"
 	"github.com/hashicorp/serf/serf"
 )
 
@@ -158,7 +159,7 @@ func (s *Scheduler) Assign(ctx context.Context, jobID, nodeID string) error {
 		// The assignment is already persisted; a publish failure must not
 		// misreport the write, so it is logged rather than propagated.
 		if err := s.bus.PublishLocal("system", "job.assigned", payload, []string{"job", jobID}); err != nil {
-			log.Printf("publish job.assigned for %s: %v", jobID, err)
+			slog.Default().LogAttrs(ctx, slog.LevelWarn, "publish job.assigned failed", logattr.JobID(jobID), logattr.Err(err))
 		}
 	}
 	return nil
@@ -182,16 +183,16 @@ func (s *Scheduler) Migrate(ctx context.Context, jobID, fromNode, toNode string)
 
 	key := fmt.Sprintf("/jobs/assignments/%s/%s", fromNode, jobID)
 	if err := s.store.Delete(ctx, "default", key); err != nil {
-		fmt.Printf("⚠️ Failed to cleanup old assignment for %s on %s: %v\n", jobID, fromNode, err)
+		slog.Default().LogAttrs(ctx, slog.LevelWarn, "failed to cleanup old assignment", logattr.JobID(jobID), logattr.NodeID(fromNode), logattr.Err(err))
 	}
 
-	fmt.Printf("🔄 Job %s migrated from %s to %s\n", jobID, fromNode, toNode)
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "job migrated", logattr.JobID(jobID), logattr.From(fromNode), logattr.To(toNode))
 	if s.bus != nil {
 		payload := map[string]interface{}{"job_id": jobID, "from_node": fromNode, "to_node": toNode}
 		// The migration is already persisted; a publish failure must not
 		// misreport the write, so it is logged rather than propagated.
 		if err := s.bus.PublishLocal("system", "job.migrated", payload, []string{"job", jobID}); err != nil {
-			log.Printf("publish job.migrated for %s: %v", jobID, err)
+			slog.Default().LogAttrs(ctx, slog.LevelWarn, "publish job.migrated failed", logattr.JobID(jobID), logattr.Err(err))
 		}
 	}
 	return nil
@@ -209,7 +210,7 @@ func (s *Scheduler) HandleNodeFailure(ctx context.Context, failedNodeID string) 
 		return nil
 	}
 
-	fmt.Printf("🚨 Node %s failed. Rescheduling %d jobs...\n", failedNodeID, len(assignments))
+	slog.Default().LogAttrs(ctx, slog.LevelWarn, "node failed, rescheduling jobs", logattr.NodeID(failedNodeID), logattr.Count(len(assignments)))
 
 	for _, jobIDBytes := range assignments {
 		jobID := string(jobIDBytes)
@@ -227,12 +228,12 @@ func (s *Scheduler) HandleNodeFailure(ctx context.Context, failedNodeID string) 
 
 		newNode, err := s.Schedule(job, StrategyLeastLoaded) // Use smart strategy
 		if err != nil {
-			fmt.Printf("❌ Failed to find new node for job %s: %v\n", jobID, err)
+			slog.Default().LogAttrs(ctx, slog.LevelError, "failed to find new node for job", logattr.JobID(jobID), logattr.Err(err))
 			continue
 		}
 
 		if err := s.Migrate(ctx, jobID, failedNodeID, newNode); err != nil {
-			fmt.Printf("❌ Migration failed for job %s: %v\n", jobID, err)
+			slog.Default().LogAttrs(ctx, slog.LevelError, "migration failed for job", logattr.JobID(jobID), logattr.Err(err))
 		}
 	}
 	return nil
@@ -383,14 +384,14 @@ func (s *Scheduler) SubmitJob(ctx context.Context, job *Job) error {
 		return fmt.Errorf("failed to assign job: %w", err)
 	}
 
-	fmt.Printf("✅ Job %s scheduled on node %s\n", job.ID, nodeID)
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "job scheduled", logattr.JobID(job.ID), logattr.NodeID(nodeID))
 	if s.bus != nil {
 		payload := map[string]interface{}{"job_id": job.ID, "node_id": nodeID}
 		// The job is already registered and assigned; a publish failure
 		// must not misreport the submission, so it is logged rather than
 		// propagated.
 		if err := s.bus.PublishLocal("system", "job.submitted", payload, []string{"job", job.ID}); err != nil {
-			log.Printf("publish job.submitted for %s: %v", job.ID, err)
+			slog.Default().LogAttrs(ctx, slog.LevelWarn, "publish job.submitted failed", logattr.JobID(job.ID), logattr.Err(err))
 		}
 	}
 	return nil
@@ -409,7 +410,7 @@ func (s *Scheduler) DrainNode(ctx context.Context, nodeID string) ([]string, err
 	}
 
 	var migratedJobs []string
-	fmt.Printf("🔄 Draining %d jobs from node %s...\n", len(assignments), nodeID)
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "draining jobs from node", logattr.Count(len(assignments)), logattr.NodeID(nodeID))
 
 	for _, jobIDBytes := range assignments {
 		jobID := string(jobIDBytes)
@@ -428,25 +429,25 @@ func (s *Scheduler) DrainNode(ctx context.Context, nodeID string) ([]string, err
 		// Schedule to a different node
 		newNode, err := s.Schedule(job, StrategyLeastLoaded)
 		if err != nil {
-			fmt.Printf("❌ Failed to find new node for job %s: %v\n", jobID, err)
+			slog.Default().LogAttrs(ctx, slog.LevelError, "failed to find new node for job", logattr.JobID(jobID), logattr.Err(err))
 			continue
 		}
 
 		// Don't migrate to the same node
 		if newNode == nodeID {
-			fmt.Printf("⚠️ No alternative node available for job %s\n", jobID)
+			slog.Default().LogAttrs(ctx, slog.LevelWarn, "no alternative node available for job", logattr.JobID(jobID))
 			continue
 		}
 
 		if err := s.Migrate(ctx, jobID, nodeID, newNode); err != nil {
-			fmt.Printf("❌ Migration failed for job %s: %v\n", jobID, err)
+			slog.Default().LogAttrs(ctx, slog.LevelError, "migration failed for job", logattr.JobID(jobID), logattr.Err(err))
 			continue
 		}
 
 		migratedJobs = append(migratedJobs, jobID)
 	}
 
-	fmt.Printf("✅ Drained %d jobs from node %s\n", len(migratedJobs), nodeID)
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "drained jobs from node", logattr.Count(len(migratedJobs)), logattr.NodeID(nodeID))
 	return migratedJobs, nil
 }
 

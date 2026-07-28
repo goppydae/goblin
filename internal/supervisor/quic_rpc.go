@@ -5,13 +5,15 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"sync"
 
+	"math"
+
+	"github.com/goppydae/goblin/internal/logattr"
 	goblinv1 "github.com/goppydae/goblin/proto"
 	"github.com/quic-go/quic-go"
 	"google.golang.org/protobuf/proto"
-	"math"
 )
 
 // RPCHandler processes RPC requests and returns responses
@@ -41,14 +43,14 @@ func (s *QUICRPCServer) RegisterHandler(method string, handler RPCHandler) {
 func (s *QUICRPCServer) HandleConnection(conn *quic.Conn) {
 	defer func() {
 		if err := conn.CloseWithError(0, "connection closed"); err != nil {
-			log.Printf("close RPC connection: %v", err)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "close rpc connection failed", logattr.Err(err))
 		}
 	}()
 
 	for {
 		stream, err := conn.AcceptStream(context.Background())
 		if err != nil {
-			log.Printf("AcceptStream error: %v", err)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "accept stream failed", logattr.Err(err))
 			return
 		}
 
@@ -60,26 +62,26 @@ func (s *QUICRPCServer) HandleConnection(conn *quic.Conn) {
 func (s *QUICRPCServer) handleStream(stream *quic.Stream) {
 	defer func() {
 		if err := stream.Close(); err != nil {
-			log.Printf("close RPC stream: %v", err)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "close rpc stream failed", logattr.Err(err))
 		}
 	}()
 
 	// Read stream type (1 byte)
 	var streamType [1]byte
 	if _, err := io.ReadFull(stream, streamType[:]); err != nil {
-		log.Printf("Failed to read stream type: %v", err)
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "failed to read stream type", logattr.Err(err))
 		return
 	}
 
 	if goblinv1.StreamType(streamType[0]) != goblinv1.StreamType_RPC_REQUEST {
-		log.Printf("Invalid stream type: %d", streamType[0])
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "invalid stream type", logattr.StreamType(int(streamType[0])))
 		return
 	}
 
 	// Read request length (4 bytes)
 	var lenBuf [4]byte
 	if _, err := io.ReadFull(stream, lenBuf[:]); err != nil {
-		log.Printf("Failed to read request length: %v", err)
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "failed to read request length", logattr.Err(err))
 		return
 	}
 	reqLen := binary.BigEndian.Uint32(lenBuf[:])
@@ -87,7 +89,7 @@ func (s *QUICRPCServer) handleStream(stream *quic.Stream) {
 	// Read request data
 	reqData := make([]byte, reqLen)
 	if _, err := io.ReadFull(stream, reqData); err != nil {
-		log.Printf("Failed to read request data: %v", err)
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "failed to read request data", logattr.Err(err))
 		return
 	}
 
@@ -95,7 +97,7 @@ func (s *QUICRPCServer) handleStream(stream *quic.Stream) {
 	var req goblinv1.RPCRequest
 	if err := proto.Unmarshal(reqData, &req); err != nil {
 		if serr := s.sendError(stream, 0, fmt.Sprintf("failed to decode request: %v", err)); serr != nil {
-			log.Printf("send error response: %v", serr)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "send error response failed", logattr.Err(serr))
 		}
 		return
 	}
@@ -107,7 +109,7 @@ func (s *QUICRPCServer) handleStream(stream *quic.Stream) {
 
 	if !ok {
 		if serr := s.sendError(stream, req.RequestId, fmt.Sprintf("method not found: %s", req.Method)); serr != nil {
-			log.Printf("send error response: %v", serr)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "send error response failed", logattr.Err(serr))
 		}
 		return
 	}
@@ -116,14 +118,14 @@ func (s *QUICRPCServer) handleStream(stream *quic.Stream) {
 	respPayload, err := handler(req.Payload)
 	if err != nil {
 		if serr := s.sendError(stream, req.RequestId, err.Error()); serr != nil {
-			log.Printf("send error response: %v", serr)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "send error response failed", logattr.Err(serr))
 		}
 		return
 	}
 
 	// Send success response
 	if err := s.sendResponse(stream, req.RequestId, respPayload, ""); err != nil {
-		log.Printf("send RPC response: %v", err)
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "send rpc response failed", logattr.Err(err))
 	}
 }
 
