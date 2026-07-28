@@ -190,8 +190,8 @@ func (b *EventBus[T]) Subscribe(scope, namespace, topic string, fn Handler[T]) e
 // SubscribePrefix subscribes to every topic that begins with topicPrefix.
 //
 // TYPE HAZARD: a prefix matches sibling topics that may carry different payload
-// types — e.g. SubscribePrefix("system","","agent/lifecycle") fires for both
-// "agent/lifecycle.action" (LifecycleControl) and "agent/lifecycle.status"
+// types — e.g. SubscribePrefix("system","",TopicPrefixAgentLifecycle) fires for both
+// TopicAgentLifecycleAction (LifecycleControl) and TopicAgentLifecycleStatus
 // (LifecycleStatus). A handler that assumes one proto type will panic on
 // UnmarshalTo/type-assert when the other arrives. Prefer an exact Subscribe when
 // the handler is payload-typed, or use SubscribePrefixTyped to filter by type.

@@ -45,7 +45,7 @@ func sendLifecycleAction(agentID, action string) tea.Cmd {
 		done := make(chan bool)
 		errChan := make(chan error)
 
-		if err := bus.SubscribePrefix("system", "", "agent/lifecycle", func(e eventbus.Event[*anypb.Any]) {
+		if err := bus.SubscribePrefix("system", "", eventbus.TopicPrefixAgentLifecycle, func(e eventbus.Event[*anypb.Any]) {
 			var status protopkg.LifecycleTransition
 			if err := e.Payload.UnmarshalTo(&status); err != nil {
 				errChan <- err
@@ -65,7 +65,7 @@ func sendLifecycleAction(agentID, action string) tea.Cmd {
 		}
 		packed, _ := anypb.New(req)
 		// Send control event
-		if err := bus.Publish(eventbus.NewEvent("system", "", "agent/lifecycle.action", "gapictl-tui", packed, true)); err != nil {
+		if err := bus.Publish(eventbus.NewEvent("system", "", eventbus.TopicAgentLifecycleAction, "gapictl-tui", packed, true)); err != nil {
 			return lifecycleActionMsg{agentID: agentID, action: action, success: false, err: err}
 		}
 

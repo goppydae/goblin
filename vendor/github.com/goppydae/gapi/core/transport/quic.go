@@ -50,7 +50,7 @@ type QUIC struct {
 func NewQUICServer(addr string, cert tls.Certificate) (*QUIC, error) {
 	tlsConf := &tls.Config{
 		Certificates: []tls.Certificate{cert},
-		NextProtos:   []string{"gapi-quic"},
+		NextProtos:   []string{ALPNGapiQUIC},
 	}
 	quicConfig := &quic.Config{
 		KeepAlivePeriod: config.QUICStreamTimeout,
@@ -90,7 +90,7 @@ func NewQUICClient(addr string, cert *tls.Certificate, tlsConfig TLSConfig) (*QU
 // CreateClientTLSConfig builds a tls.Config from the provided settings
 func CreateClientTLSConfig(cfg TLSConfig) (*tls.Config, error) {
 	tlsConf := &tls.Config{
-		NextProtos: []string{"gapi-quic"},
+		NextProtos: []string{ALPNGapiQUIC},
 	}
 
 	if cfg.InsecureSkipVerify {

@@ -600,23 +600,16 @@ func (a *PythonAgent) publishStatusWithRunID(state, message, rid string) {
 		return
 	}
 
-	if rid != "" && !strings.Contains(message, "run_id=") {
-		if message == "" {
-			message = "run_id=" + rid
-		} else {
-			message += " run_id=" + rid
-		}
-	}
 	st := &protopkg.LifecycleStatus{
 		AgentId:  a.id,
 		State:    strings.ToUpper(state),
 		Message:  message,
 		Time:     timestamppb.Now(),
 		Hostname: a.hostname,
-		RunId:    rid, // structural run id; the run_id= text above is kept for back-compat
+		RunId:    rid,
 	}
 	anyp, _ := anypb.New(st)
-	ev := eventbus.NewEvent[*anypb.Any]("system", "", "agent/lifecycle.status", a.id, anyp, true)
+	ev := eventbus.NewEvent[*anypb.Any]("system", "", eventbus.TopicAgentLifecycleStatus, a.id, anyp, true)
 	_ = a.bus.Publish(ev)
 }
 

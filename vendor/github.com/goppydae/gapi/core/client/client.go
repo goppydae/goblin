@@ -158,7 +158,7 @@ func (c *Client) LifecycleWithOpts(ctx context.Context, agentIDs []string, actio
 				results <- Result{AgentID: agentID, Err: fmt.Errorf("marshal request: %w", err)}
 				return
 			}
-			ev := eventbus.NewEvent("system", "", "agent/lifecycle.action", "client", packed, true)
+			ev := eventbus.NewEvent("system", "", eventbus.TopicAgentLifecycleAction, "client", packed, true)
 			if err := c.bus.Publish(ev); err != nil {
 				results <- Result{AgentID: agentID, Err: fmt.Errorf("publish control: %w", err)}
 				return

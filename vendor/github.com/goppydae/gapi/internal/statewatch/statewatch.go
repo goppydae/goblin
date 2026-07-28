@@ -25,7 +25,7 @@ func WaitForPendingThenTerminal(
 	statusCh := make(chan *protopkg.LifecycleStatus, 8)
 
 	// Subscribe with context-aware cleanup
-	if err := bus.SubscribePrefixWithContext(ctx, "system", "", "agent/lifecycle.status", func(e eventbus.Event[*anypb.Any]) {
+	if err := bus.SubscribePrefixWithContext(ctx, "system", "", eventbus.TopicAgentLifecycleStatus, func(e eventbus.Event[*anypb.Any]) {
 		var st protopkg.LifecycleStatus
 		if err := eventbus.UnmarshalAnyPayload(e, &st); err != nil {
 			return

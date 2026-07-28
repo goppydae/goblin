@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"strings"
 	"time"
 
@@ -34,8 +33,6 @@ type statusEvt struct {
 	when  time.Time
 	runID string
 }
-
-var reRunID = regexp.MustCompile(`(?:^|\s)run_id=([a-f0-9\-]{8,})\b`)
 
 type Controller struct {
 	id        string
@@ -77,7 +74,7 @@ func NewController(id, host string, r Runner, bus *TypedBus, deps DependencyReso
 		stateCh:   make(chan statusEvt, 64),
 	}
 
-	_ = c.bus.Subscribe("system", "", "agent/lifecycle.status", func(ev eventbus.Event[*anypb.Any]) {
+	_ = c.bus.Subscribe("system", "", eventbus.TopicAgentLifecycleStatus, func(ev eventbus.Event[*anypb.Any]) {
 		if ev.Payload == nil {
 			return
 		}
@@ -99,14 +96,9 @@ func NewController(id, host string, r Runner, bus *TypedBus, deps DependencyReso
 		if st.Time != nil {
 			when = st.Time.AsTime()
 		}
-		// Prefer the structural run_id field; fall back to parsing the message
-		// text for agents/runners that predate the LifecycleStatus.run_id field.
+		// Structural only (R16): every in-tree producer populates the
+		// run_id field; the legacy message-text parse is gone.
 		runID := strings.TrimSpace(st.GetRunId())
-		if runID == "" {
-			if m := reRunID.FindStringSubmatch(strings.TrimSpace(st.Message)); len(m) == 2 {
-				runID = m[1]
-			}
-		}
 
 		evt := statusEvt{state: got, when: when, runID: runID}
 		select {
@@ -289,7 +281,7 @@ func (c *Controller) publishControl(a protopkg.LifecycleControl_Action) {
 	// Advisory observability event: a publish failure is logged loudly but
 	// must not abort the lifecycle action itself (aborting stop/start on a
 	// closed bus would invert priorities during shutdown).
-	if err := c.bus.Publish(eventbus.NewEvent("system", "", "agent/lifecycle.control", c.id, anyMsg, true)); err != nil {
+	if err := c.bus.Publish(eventbus.NewEvent("system", "", eventbus.TopicAgentLifecycleControl, c.id, anyMsg, true)); err != nil {
 		slog.Default().LogAttrs(context.Background(), slog.LevelError, "failed to publish lifecycle control event", logattr.Module("lifecycle"), logattr.AgentID(c.id), logattr.Err(err))
 	}
 }
@@ -304,7 +296,7 @@ func (c *Controller) publishStatus(state protopkg.AgentState, message string) {
 	}
 	anyMsg, _ := anypb.New(st)
 	// Advisory observability event; see publishControl for the no-abort rationale.
-	if err := c.bus.Publish(eventbus.NewEvent("system", "", "agent/lifecycle.status", c.id, anyMsg, true)); err != nil {
+	if err := c.bus.Publish(eventbus.NewEvent("system", "", eventbus.TopicAgentLifecycleStatus, c.id, anyMsg, true)); err != nil {
 		slog.Default().LogAttrs(context.Background(), slog.LevelError, "failed to publish lifecycle status event", logattr.Module("lifecycle"), logattr.AgentID(c.id), logattr.Err(err))
 	}
 }
