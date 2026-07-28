@@ -46,6 +46,12 @@ type GoAgent struct {
 	// not double-report it.
 	stopping bool
 
+	// adoptedPid holds a CRIU-restored process (GOBLIN-DIV-018). Such a
+	// process is not a child of this program, so there is no exec.Cmd
+	// for it; it reparents to the supervisor's subreaper and its exit
+	// arrives through the reap loop rather than cmd.Wait.
+	adoptedPid int
+
 	mu   sync.RWMutex
 	ctrl *lifecycle.Controller
 
@@ -122,6 +128,11 @@ func (a *GoAgent) Pid() (int, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.cmd == nil || a.cmd.Process == nil {
+		// A CRIU-restored process has no exec.Cmd. Reporting it here is
+		// what lets NotifyExited match its eventual reap to this agent.
+		if a.adoptedPid != 0 {
+			return a.adoptedPid, true
+		}
 		return 0, false
 	}
 	return a.cmd.Process.Pid, true

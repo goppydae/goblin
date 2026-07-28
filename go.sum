@@ -34,6 +34,8 @@ github.com/charmbracelet/x/cellbuf v0.0.13-0.20250311204145-2c3ea96c31dd h1:vy0G
 github.com/charmbracelet/x/cellbuf v0.0.13-0.20250311204145-2c3ea96c31dd/go.mod h1:xe0nKWGd3eJgtqZRaN9RjMtK7xUYchjzPr7q6kcvCCs=
 github.com/charmbracelet/x/term v0.2.1 h1:AQeHeLZ1OqSXhrAWpYUtZyX1T3zVxfpZuEQMIQaGIAQ=
 github.com/charmbracelet/x/term v0.2.1/go.mod h1:oQ4enTYFV7QN4m0i9mzHrViD7TQKvNEEkHUMCmsxdUg=
+github.com/checkpoint-restore/go-criu/v7 v7.2.0 h1:qGiWA4App1gGlEfIJ68WR9jbezV9J7yZdjzglezcqKo=
+github.com/checkpoint-restore/go-criu/v7 v7.2.0/go.mod h1:u0LCWLg0w4yqqu14aXhiB4YD3a1qd8EcCEg7vda5dwo=
 github.com/circonus-labs/circonus-gometrics v2.3.1+incompatible/go.mod h1:nmEj6Dob7S7YxXgwXpfOuvO54S+tGdZdw9fuRZt25Ag=
 github.com/circonus-labs/circonusllhist v0.1.3/go.mod h1:kMXHVDlOchFAehlya5ePtbp5jckzBHf4XRpQvBOLI+I=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
@@ -80,8 +82,8 @@ github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX
 github.com/google/gofuzz v1.0.0/go.mod h1:dBl0BpW6vV/+mYPU4Po3pmUjxk6FQPldtuIdl/M65Eg=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
-github.com/goppydae/gapi v0.1.0-proto2 h1:Uvo4UydfrhYiabIpN/Hyq9ejaOT9nOg4SAxJ9RBwCSY=
-github.com/goppydae/gapi v0.1.0-proto2/go.mod h1:dyD6fLCDqrwYklt0u+TW3h3eU83OnQgW46P2NA5Kxgo=
+github.com/goppydae/gapi v0.1.0-proto2a h1:8XiIYD1B4cBkP6eCuw95ffkAzq7t4ofmczOU7GlF2u4=
+github.com/goppydae/gapi v0.1.0-proto2a/go.mod h1:mtjfXHAaUa1xaXGpK+1BbneSr6KyYovuE8Gm+mtmexw=
 github.com/goppydae/magelib v0.1.0 h1:AfdM/1BQYRYmo3TnTaPOjTzoDy27+d3ktT5HUZSqHo0=
 github.com/goppydae/magelib v0.1.0/go.mod h1:8CHMyugJA6y7cXLEfvIhc+h/DKYwCgnKuRboJRMSLmY=
 github.com/hashicorp/errwrap v1.0.0/go.mod h1:YH+1FKiLXxHSkmPseP+kNlulaMuP3n2brvKWEqk/Jc4=

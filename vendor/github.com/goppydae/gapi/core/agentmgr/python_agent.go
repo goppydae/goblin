@@ -68,6 +68,10 @@ type PythonAgent struct {
 	// stopping marks an exit as Stop-initiated so the exit watcher does
 	// not double-report it (parity with GoAgent, GAPI-DIV-026).
 	stopping bool
+
+	// adoptedPid holds a CRIU-restored process (parity with GoAgent,
+	// GOBLIN-DIV-018). Not a child of this program, so no exec.Cmd.
+	adoptedPid int
 }
 
 // Pid returns the running agent process id, or false when no process
@@ -76,6 +80,10 @@ func (a *PythonAgent) Pid() (int, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.cmd == nil || a.cmd.Process == nil {
+		// A CRIU-restored process has no exec.Cmd (parity with GoAgent).
+		if a.adoptedPid != 0 {
+			return a.adoptedPid, true
+		}
 		return 0, false
 	}
 	return a.cmd.Process.Pid, true

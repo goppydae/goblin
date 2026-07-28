@@ -6,7 +6,7 @@ toolchain go1.26.5
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/goppydae/gapi v0.1.0-proto2
+	github.com/goppydae/gapi v0.1.0-proto2a
 	github.com/goppydae/magelib v0.1.0
 	github.com/hashicorp/go-metrics v0.5.4
 	github.com/hashicorp/go-msgpack v0.5.5
@@ -36,6 +36,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.10.1 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.13-0.20250311204145-2c3ea96c31dd // indirect
 	github.com/charmbracelet/x/term v0.2.1 // indirect
+	github.com/checkpoint-restore/go-criu/v7 v7.2.0 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/fatih/color v1.13.0 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect

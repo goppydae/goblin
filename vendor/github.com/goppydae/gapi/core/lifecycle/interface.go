@@ -35,3 +35,32 @@ type Runner interface {
 type RunIDSetter interface {
 	SetRunID(string)
 }
+
+// Checkpointer is an optional capability for runners whose process can
+// be checkpointed and restored with CRIU (GOBLIN-DIV-018). Runners that
+// cannot be dumped - anything running in-process rather than as a
+// separate program - simply do not implement it, and an orchestrator
+// asserts the capability once at admission rather than discovering at
+// migration time that a workload was never movable.
+//
+// Both methods take a context on the same terms as Start: it bounds the
+// call, not the lifetime of the process the call produces.
+type Checkpointer interface {
+	// Checkpoint writes a checkpoint of the runner's process into dir,
+	// which must already exist.
+	//
+	// On success the process is STOPPED. That is deliberate: the image
+	// is the rollback artifact for a migration, and a source that keeps
+	// executing past the point its image captured has already diverged
+	// from it.
+	Checkpoint(ctx context.Context, dir string) error
+
+	// Restore recreates the process from the checkpoint in dir and
+	// adopts it, so the runner's Pid reports the restored process and
+	// Stop can terminate it.
+	//
+	// The restored process is not a child of this program - CRIU spawns
+	// it - so it is tracked by pid and reparents to the supervisor's
+	// subreaper, which is how its eventual exit is observed.
+	Restore(ctx context.Context, dir string) error
+}
