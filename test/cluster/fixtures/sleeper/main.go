@@ -12,7 +12,12 @@ import (
 	"syscall"
 )
 
-var describe = flag.Bool("describe", false, "Print agent metadata")
+var (
+	describe = flag.Bool("describe", false, "Print agent metadata")
+	// The GAPI ADK launches agents with --start; without the flag
+	// defined, flag.Parse exits 2 and the instance dies at birth.
+	_ = flag.Bool("start", false, "Run the agent (ADK launch contract)")
+)
 
 func main() {
 	flag.Parse()

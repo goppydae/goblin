@@ -4,14 +4,17 @@ package goblin.v1;
 
 option go_package = "github.com/goppydae/goblin/proto;goblinv1";
 
-// AgentSpec defines the desired state of a global agent
+// AgentSpec defines the desired state of a global agent. Identity is
+// the spec_uuid (UUIDv7, minted by the leader at registration); name
+// is the operator-facing handle and must be unique among live specs.
 message AgentSpec {
-  string id = 1;
-  string type = 2; // e.g. "python-trader"
-  int32 replicas = 3;
-  map<string, string> constraints = 4; // Node tags requirements
-  ResourceReq resources = 5;
-  string strategy = 6; // "spread", "binpack", "affinity"
+  bytes spec_uuid = 1; // 16-byte UUIDv7
+  string name = 2;     // human-readable operator handle
+  string type = 3;     // installed agent type, e.g. "sleeper"
+  int32 replicas = 4;
+  map<string, string> constraints = 5; // node tag requirements
+  ResourceReq resources = 6;
+  string strategy = 7; // "spread", "binpack", "affinity"
 }
 
 // ResourceReq defines resource requirements
@@ -20,13 +23,34 @@ message ResourceReq {
   int64 memory = 2; // in bytes
 }
 
-// AgentInstance represents a scheduled instance of an agent
+// InstanceState is the instance lifecycle FSM (DDR-6). Transitions are
+// validated by the Raft FSM; illegal transitions are rejected, and
+// UUIDs of TERMINATED/ARCHIVED instances are tombstoned forever.
+enum InstanceState {
+  // Zero value: data written before this schema surfaces as
+  // UNSPECIFIED and must be rejected, never misapplied.
+  INSTANCE_STATE_UNSPECIFIED = 0;
+  INSTANCE_STATE_ADMITTED = 1;   // UUID minted, committed through Raft
+  INSTANCE_STATE_SCHEDULED = 2;  // placement bound to a node
+  INSTANCE_STATE_STARTING = 3;   // dispatch in flight
+  INSTANCE_STATE_RUNNING = 4;
+  INSTANCE_STATE_DRAINING = 5;   // graceful scale-down in progress
+  INSTANCE_STATE_STOPPING = 6;
+  INSTANCE_STATE_TERMINATED = 7; // terminal; reason says why
+  INSTANCE_STATE_ARCHIVED = 8;   // terminal, compacted record
+}
+
+// AgentInstance is the Raft-resident instance record: immutable
+// identity plus scheduler-owned state. The mutable runtime locator
+// (node_pid, start_epoch, pid_ns_inode) deliberately lives in gossip,
+// not here (three-layer split, DDR-3/4/5).
 message AgentInstance {
-  string instance_id = 1;
-  string spec_id = 2;
+  bytes instance_uuid = 1; // 16-byte UUIDv7, minted at propose time
+  bytes spec_uuid = 2;
   string node_id = 3;
-  string state = 4; // "pending", "running", "failed"
+  InstanceState state = 4;
   HealthStatus health = 5;
+  string reason = 6; // why a terminal state was entered
 }
 
 // HealthStatus
@@ -52,7 +76,7 @@ message ListAgentsResponse {
 }
 
 message GetAgentRequest {
-  string id = 1;
+  string id = 1; // spec UUID (canonical string) or name
 }
 
 message GetAgentResponse {

@@ -15,6 +15,8 @@ import (
 func NodeID(s string) slog.Attr     { return slog.String("node_id", s) }
 func JobID(s string) slog.Attr      { return slog.String("job_id", s) }
 func SpecID(s string) slog.Attr     { return slog.String("spec_id", s) }
+func Reason(s string) slog.Attr     { return slog.String("reason", s) }
+func Signum(n int) slog.Attr        { return slog.Int("signum", n) }
 func InstanceID(s string) slog.Attr { return slog.String("instance_id", s) }
 func AgentID(s string) slog.Attr    { return slog.String("agent_id", s) }
 func Topic(s string) slog.Attr      { return slog.String("topic", s) }

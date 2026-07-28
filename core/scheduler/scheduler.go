@@ -14,6 +14,7 @@ import (
 	gapiclock "github.com/goppydae/gapi/core/clock"
 	"github.com/goppydae/goblin/core/eventbus"
 	"github.com/goppydae/goblin/internal/logattr"
+	goblinv1 "github.com/goppydae/goblin/proto"
 	"github.com/hashicorp/serf/serf"
 )
 
@@ -26,12 +27,21 @@ type RPCClient interface {
 // ClientFactory creates an RPC client for a given address
 type ClientFactory func(addr string) (RPCClient, error)
 
-// KVStore defines the interface for key-value storage operations
+// KVStore defines the interface for storage operations: the generic KV
+// half plus the typed instance-lifecycle half (admission and
+// transitions are Raft commands validated by the FSM, never plain
+// writes).
 type KVStore interface {
 	Set(ctx context.Context, namespace, key string, value []byte) error
 	Get(ctx context.Context, namespace, key string) ([]byte, bool, error)
 	Scan(ctx context.Context, namespace, prefix string) (map[string][]byte, error)
 	Delete(ctx context.Context, namespace, key string) error
+
+	Admit(ctx context.Context, specUUID, instanceUUID []byte, nodeID string) error
+	TransitionInstance(ctx context.Context, instanceUUID []byte, to goblinv1.InstanceState, reason string) error
+	SignalInstance(ctx context.Context, req *goblinv1.SignalRequest) (string, error)
+	GetInstance(ctx context.Context, instanceID string) (*goblinv1.AgentInstance, bool, error)
+	ListInstances(ctx context.Context) ([]*goblinv1.AgentInstance, error)
 }
 
 // Cluster defines the interface for cluster membership operations
@@ -61,6 +71,8 @@ type Scheduler struct {
 	// so dispatch losses cannot hold replica slots forever.
 	pendingSince map[string]time.Time
 	leadSince    time.Time
+	// locators is the gossip-fed runtime location map (LWW on HLC).
+	locators map[string]Locator
 	// reconcileKick requests an immediate reconcile pass (buffered 1).
 	reconcileKick chan struct{}
 }
@@ -77,6 +89,7 @@ func NewScheduler(store KVStore, c Cluster, bus eventbus.EventBus, isLeader func
 		isLeader:      isLeader,
 		clk:           gapiclock.RealClock{},
 		heartbeats:    make(map[string]heartbeat),
+		locators:      make(map[string]Locator),
 		pendingSince:  make(map[string]time.Time),
 		reconcileKick: make(chan struct{}, 1),
 	}

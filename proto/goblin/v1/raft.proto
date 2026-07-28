@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package goblin.v1;
 
+import "goblin/v1/scheduler.proto";
+
 option go_package = "github.com/goppydae/goblin/proto;goblinv1";
 
 // CommandType defines the operation type for the FSM
@@ -13,13 +15,53 @@ enum CommandType {
   COMMAND_TYPE_SET = 1;
   COMMAND_TYPE_DELETE = 2;
   COMMAND_TYPE_CAS = 3; // Compare-And-Swap
+  COMMAND_TYPE_ADMIT = 4;      // admit an instance (payload: admit)
+  COMMAND_TYPE_TRANSITION = 5; // lifecycle transition (payload: transition)
+  COMMAND_TYPE_SIGNAL = 6;     // authorize + log a signal (payload: signal)
 }
 
-// LogEntry represents a command in the Raft log
+// LogEntry represents a command in the Raft log. KV commands use the
+// flat namespace/key/value fields; instance-lifecycle commands carry
+// their payload in the oneof.
 message LogEntry {
   CommandType type = 1;
   string namespace = 2;
   string key = 3;
   bytes value = 4;
   uint64 cas_version = 5; // For optimistic concurrency checks
+
+  oneof payload {
+    ApplyAdmit admit = 6;
+    InstanceTransition transition = 7;
+    SignalRequest signal = 8;
+  }
+}
+
+// ApplyAdmit admits one instance. The leader mints the UUIDv7 and
+// decides placement at PROPOSE time and carries both here: Apply
+// records, never generates - the FSM must stay deterministic across
+// replicas. The instance enters INSTANCE_STATE_ADMITTED; a tombstoned
+// or already-known UUID is rejected.
+message ApplyAdmit {
+  bytes spec_uuid = 1;
+  bytes instance_uuid = 2; // minted at propose time by the leader
+  string node_id = 3;      // placement decided at propose time
+}
+
+// InstanceTransition moves an instance through the lifecycle FSM.
+// Illegal transitions are rejected as the Apply response.
+message InstanceTransition {
+  bytes instance_uuid = 1;
+  InstanceState to = 2;
+  string reason = 3; // required for terminal states
+}
+
+// SignalRequest commits a signal through the log so it is authorized
+// at the FSM (rights bitmap) and audited. Delivery happens on the
+// target node through the start_epoch + pidfd guard.
+message SignalRequest {
+  bytes instance_uuid = 1;
+  int32 signum = 2;
+  bytes token_id = 3; // authorizing capability token id
+  uint64 rights = 4;  // rights asserted; checked against the bitmap
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/goppydae/goblin/core/transport"
+	goblinv1 "github.com/goppydae/goblin/proto"
 	"github.com/hashicorp/raft"
 )
 
@@ -194,6 +195,21 @@ func (c *Consensus) GetStateWithVersion(namespace, key string) ([]byte, uint64, 
 // Scan returns all keys matching the prefix
 func (c *Consensus) Scan(namespace, prefix string) map[string][]byte {
 	return c.fsm.Scan(namespace, prefix)
+}
+
+// GetInstance returns a live instance record by canonical UUID string.
+func (c *Consensus) GetInstance(instanceID string) (*goblinv1.AgentInstance, bool) {
+	return c.fsm.GetInstance(instanceID)
+}
+
+// ListInstances returns every live instance record.
+func (c *Consensus) ListInstances() []*goblinv1.AgentInstance {
+	return c.fsm.ListInstances()
+}
+
+// IsTombstoned reports whether an instance UUID was ever terminated.
+func (c *Consensus) IsTombstoned(instanceID string) bool {
+	return c.fsm.IsTombstoned(instanceID)
 }
 
 // Stats returns Raft statistics

@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/goppydae/goblin/internal/ident"
 	"github.com/goppydae/goblin/internal/logattr"
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
@@ -21,14 +21,14 @@ func (s *Scheduler) ReconcileAgents(ctx context.Context) error {
 
 	for _, spec := range specs {
 		if err := s.reconcileAgent(ctx, spec); err != nil {
-			slog.Default().LogAttrs(ctx, slog.LevelError, "failed to reconcile agent", logattr.SpecID(spec.Id), logattr.Err(err))
+			slog.Default().LogAttrs(ctx, slog.LevelError, "failed to reconcile agent", logattr.SpecID(ident.String(spec.SpecUuid)), logattr.Err(err))
 		}
 	}
 	return nil
 }
 
 func (s *Scheduler) reconcileAgent(ctx context.Context, spec *goblinv1.AgentSpec) error {
-	instances, err := s.ListInstances(ctx, spec.Id)
+	instances, err := s.ListInstances(ctx, ident.String(spec.SpecUuid))
 	if err != nil {
 		return fmt.Errorf("failed to list instances: %w", err)
 	}
@@ -36,27 +36,36 @@ func (s *Scheduler) reconcileAgent(ctx context.Context, spec *goblinv1.AgentSpec
 	// Filter healthy/running instances
 	var active []*goblinv1.AgentInstance
 	for _, inst := range instances {
+		instID := ident.String(inst.InstanceUuid)
+		failed := ""
 		// Heartbeat verdict overrides recorded state: a node that
 		// reported failure, or has gone silent past the staleness
 		// window, makes its running instances dead (phase 2b).
-		if inst.State == "running" && s.instanceUnhealthy(inst.InstanceId) {
-			inst.State = "failed"
+		if inst.State == goblinv1.InstanceState_INSTANCE_STATE_RUNNING && s.instanceUnhealthy(instID) {
+			failed = "heartbeat lost or node reported failure"
 		}
-		if inst.State == "pending" && s.pendingStale(inst.InstanceId) {
-			inst.State = "failed"
+		if inst.State == goblinv1.InstanceState_INSTANCE_STATE_ADMITTED && s.pendingStale(instID) {
+			failed = "stuck pending past the staleness window"
 		}
-		switch inst.State {
-		case "running", "pending":
-			active = append(active, inst)
-		case "failed":
-			// Handle failure: Restart/Reschedule
-			slog.Default().LogAttrs(ctx, slog.LevelWarn, "instance failed, triggering recovery", logattr.InstanceID(inst.InstanceId))
-			// For now, just remove it from active list so it gets replaced
-			// In real impl, we might want to cleanup the old node first
-			if err := s.DeleteInstance(ctx, inst.InstanceId); err != nil {
-				return fmt.Errorf("delete failed instance %s: %w", inst.InstanceId, err)
+		switch {
+		case failed != "":
+			// Terminate through the FSM; the UUID is tombstoned and the
+			// replica count drops, so a replacement is admitted below.
+			slog.Default().LogAttrs(ctx, slog.LevelWarn, "instance failed, triggering recovery", logattr.InstanceID(instID), logattr.Reason(failed))
+			if err := s.store.TransitionInstance(ctx, inst.InstanceUuid, goblinv1.InstanceState_INSTANCE_STATE_TERMINATED, failed); err != nil {
+				return fmt.Errorf("terminate failed instance %s: %w", instID, err)
 			}
-			s.forgetHeartbeat(inst.InstanceId)
+			s.forgetHeartbeat(instID)
+		case inst.State == goblinv1.InstanceState_INSTANCE_STATE_TERMINATED:
+			// Terminal and already tombstoned: archive compacts the
+			// record (the tombstone stays forever).
+			if err := s.store.TransitionInstance(ctx, inst.InstanceUuid, goblinv1.InstanceState_INSTANCE_STATE_ARCHIVED, "archived by reconciler"); err != nil {
+				return fmt.Errorf("archive instance %s: %w", instID, err)
+			}
+			s.forgetHeartbeat(instID)
+		case inst.State >= goblinv1.InstanceState_INSTANCE_STATE_ADMITTED &&
+			inst.State <= goblinv1.InstanceState_INSTANCE_STATE_RUNNING:
+			active = append(active, inst)
 		}
 	}
 
@@ -66,22 +75,22 @@ func (s *Scheduler) reconcileAgent(ctx context.Context, spec *goblinv1.AgentSpec
 	if currentCount < desiredCount {
 		// Scale Up
 		needed := desiredCount - currentCount
-		slog.Default().LogAttrs(ctx, slog.LevelInfo, "scaling up agent", logattr.SpecID(spec.Id), logattr.Count(needed))
+		slog.Default().LogAttrs(ctx, slog.LevelInfo, "scaling up agent", logattr.SpecID(ident.String(spec.SpecUuid)), logattr.Count(needed))
 		for i := 0; i < needed; i++ {
 			if err := s.createInstance(ctx, spec); err != nil {
-				slog.Default().LogAttrs(ctx, slog.LevelError, "failed to create instance", logattr.SpecID(spec.Id), logattr.Err(err))
+				slog.Default().LogAttrs(ctx, slog.LevelError, "failed to create instance", logattr.SpecID(ident.String(spec.SpecUuid)), logattr.Err(err))
 			}
 		}
 	} else if currentCount > desiredCount {
 		// Scale Down
 		excess := currentCount - desiredCount
-		slog.Default().LogAttrs(ctx, slog.LevelInfo, "scaling down agent", logattr.SpecID(spec.Id), logattr.Count(excess))
+		slog.Default().LogAttrs(ctx, slog.LevelInfo, "scaling down agent", logattr.SpecID(ident.String(spec.SpecUuid)), logattr.Count(excess))
 		// Simple strategy: Remove newest (or random)
 		// 'active' might not be sorted. Just pick last 'excess' elements.
 		for i := 0; i < excess; i++ {
 			inst := active[len(active)-1-i]
 			if err := s.terminateInstance(ctx, inst); err != nil {
-				slog.Default().LogAttrs(ctx, slog.LevelError, "failed to terminate instance", logattr.InstanceID(inst.InstanceId), logattr.Err(err))
+				slog.Default().LogAttrs(ctx, slog.LevelError, "failed to terminate instance", logattr.InstanceID(ident.String(inst.InstanceUuid)), logattr.Err(err))
 			}
 		}
 	}
@@ -102,17 +111,18 @@ func (s *Scheduler) createInstance(ctx context.Context, spec *goblinv1.AgentSpec
 		return fmt.Errorf("placement failed: %w", err)
 	}
 
-	// 3. Create Instance Record
+	// 3. Admit through Raft. The UUIDv7 is minted here - at the leader,
+	// at propose time, before any process exists (admission-time
+	// identity, GOBLIN-DIV-014); the FSM records it and enforces
+	// never-reuse against the tombstone set.
 	instance := &goblinv1.AgentInstance{
-		InstanceId: fmt.Sprintf("%s-%s", spec.Id, uuid.New().String()[:8]),
-		SpecId:     spec.Id,
-		NodeId:     nodeID,
-		State:      "pending",
-		Health:     &goblinv1.HealthStatus{Status: "healthy"},
+		InstanceUuid: ident.NewV7(),
+		SpecUuid:     spec.SpecUuid,
+		NodeId:       nodeID,
+		State:        goblinv1.InstanceState_INSTANCE_STATE_ADMITTED,
 	}
-
-	if err := s.SaveInstance(ctx, instance); err != nil {
-		return fmt.Errorf("failed to save instance: %w", err)
+	if err := s.store.Admit(ctx, spec.SpecUuid, instance.InstanceUuid, nodeID); err != nil {
+		return fmt.Errorf("failed to admit instance: %w", err)
 	}
 
 	// 4. Trigger Start on Node (Async to avoid blocking Reconciler loop).
@@ -120,12 +130,12 @@ func (s *Scheduler) createInstance(ctx context.Context, spec *goblinv1.AgentSpec
 	// at shutdown instead of outliving the supervisor.
 	go func() {
 		if err := s.startAgentOnNode(ctx, nodeID, instance, spec); err != nil {
-			slog.Default().LogAttrs(ctx, slog.LevelError, "failed to start agent on node", logattr.InstanceID(instance.InstanceId), logattr.NodeID(nodeID), logattr.Err(err))
+			slog.Default().LogAttrs(ctx, slog.LevelError, "failed to start agent on node", logattr.InstanceID(ident.String(instance.InstanceUuid)), logattr.NodeID(nodeID), logattr.Err(err))
 			// A dispatch failure must not leave a pending ghost: mark
 			// the instance failed so the next reconcile re-places it.
-			instance.State = "failed"
-			if serr := s.SaveInstance(ctx, instance); serr != nil {
-				slog.Default().LogAttrs(ctx, slog.LevelError, "failed to mark instance failed", logattr.InstanceID(instance.InstanceId), logattr.Err(serr))
+			reason := "dispatch failed: " + err.Error()
+			if serr := s.store.TransitionInstance(ctx, instance.InstanceUuid, goblinv1.InstanceState_INSTANCE_STATE_TERMINATED, reason); serr != nil {
+				slog.Default().LogAttrs(ctx, slog.LevelError, "failed to mark instance failed", logattr.InstanceID(ident.String(instance.InstanceUuid)), logattr.Err(serr))
 			}
 		}
 	}()
@@ -134,13 +144,14 @@ func (s *Scheduler) createInstance(ctx context.Context, spec *goblinv1.AgentSpec
 }
 
 func (s *Scheduler) terminateInstance(ctx context.Context, inst *goblinv1.AgentInstance) error {
+	instID := ident.String(inst.InstanceUuid)
 	// 1. Trigger Stop on Node
-	if err := s.stopAgentOnNode(ctx, inst.NodeId, inst.InstanceId); err != nil {
+	if err := s.stopAgentOnNode(ctx, inst.NodeId, instID); err != nil {
 		slog.Default().LogAttrs(ctx, slog.LevelWarn, "failed to stop agent on node, continuing cleanup", logattr.Err(err))
 	}
 
-	// 2. Delete Record
-	return s.DeleteInstance(ctx, inst.InstanceId)
+	// 2. Terminate through the FSM (tombstoned; archived on a later pass)
+	return s.store.TransitionInstance(ctx, inst.InstanceUuid, goblinv1.InstanceState_INSTANCE_STATE_TERMINATED, "scaled down")
 }
 
 // Internal helpers
@@ -168,7 +179,8 @@ func (s *Scheduler) getCandidates(ctx context.Context) ([]CandidateNode, error) 
 	instCounts := make(map[string]int)
 	if instances, ierr := s.ListInstances(ctx, ""); ierr == nil {
 		for _, inst := range instances {
-			if inst.State == "running" || inst.State == "pending" {
+			if inst.State == goblinv1.InstanceState_INSTANCE_STATE_RUNNING ||
+				inst.State == goblinv1.InstanceState_INSTANCE_STATE_ADMITTED {
 				instCounts[inst.NodeId]++
 			}
 		}
@@ -240,7 +252,7 @@ func (s *Scheduler) startAgentOnNode(ctx context.Context, nodeID string, inst *g
 		InstanceID string
 		Spec       *goblinv1.AgentSpec
 	}{
-		InstanceID: inst.InstanceId,
+		InstanceID: ident.String(inst.InstanceUuid),
 		Spec:       spec,
 	}
 
@@ -252,9 +264,9 @@ func (s *Scheduler) startAgentOnNode(ctx context.Context, nodeID string, inst *g
 
 	slog.Default().LogAttrs(ctx, slog.LevelInfo, "start agent rpc succeeded", logattr.Response(resp))
 
-	// Update State to Running
-	inst.State = "running"
-	return s.SaveInstance(ctx, inst)
+	// Record the transition to RUNNING through the FSM
+	inst.State = goblinv1.InstanceState_INSTANCE_STATE_RUNNING
+	return s.store.TransitionInstance(ctx, inst.InstanceUuid, goblinv1.InstanceState_INSTANCE_STATE_RUNNING, "")
 }
 
 func (s *Scheduler) stopAgentOnNode(ctx context.Context, nodeID, instanceID string) (err error) {
@@ -289,6 +301,38 @@ func (s *Scheduler) stopAgentOnNode(ctx context.Context, nodeID, instanceID stri
 	}
 
 	slog.Default().LogAttrs(ctx, slog.LevelInfo, "stop agent rpc succeeded", logattr.Response(resp))
+	return nil
+}
+
+// SignalOnNode dispatches an authorized signal delivery to the target
+// node's NodeRPC; the node's epoch guard makes the final call.
+func (s *Scheduler) SignalOnNode(ctx context.Context, nodeID, instanceID string, signum int32) (err error) {
+	addr, err := s.getNodeAddress(ctx, nodeID)
+	if err != nil {
+		return err
+	}
+	if s.clientFactory == nil {
+		return fmt.Errorf("rpc client factory not initialized")
+	}
+	client, err := s.clientFactory(addr)
+	if err != nil {
+		return fmt.Errorf("failed to create rpc client: %w", err)
+	}
+	defer func() {
+		if cerr := client.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("close rpc client: %w", cerr)
+		}
+	}()
+
+	payload := struct {
+		InstanceID string
+		Signum     int32
+	}{InstanceID: instanceID, Signum: signum}
+	var resp string
+	if err := client.Call("NodeRPC.SignalAgentInstance", &payload, &resp); err != nil {
+		return fmt.Errorf("rpc call failed: %w", err)
+	}
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "signal rpc succeeded", logattr.Response(resp))
 	return nil
 }
 

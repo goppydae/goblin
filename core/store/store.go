@@ -55,18 +55,12 @@ func (s *Store) Set(ctx context.Context, namespace, key string, value []byte) er
 	}
 
 	// Publish change event
-	// The original instruction's `Code Edit` snippet was malformed and contained references to
-	// `req.Key`, `req.Value`, and `s.logger` which are not defined in this context.
-	// Assuming the intent was to add error handling to the existing `PublishLocal` call,
-	// and to keep the existing payload structure, the change is applied as follows.
 	if err := s.bus.PublishLocal("kv", "store.change", map[string]interface{}{
 		"op":        "set",
 		"namespace": namespace,
 		"key":       key,
-		"value":     string(value), // Assuming UTF-8 for now for JSON simplicity
+		"value":     string(value),
 	}, []string{"kv"}); err != nil {
-		// As s.logger is not defined, we'll return the error for now.
-		// In a real scenario, this might be logged or handled differently.
 		return err
 	}
 

@@ -35,7 +35,9 @@ import (
 	gapieventbus "github.com/goppydae/gapi/core/eventbus"
 	gapilifecycle "github.com/goppydae/gapi/core/lifecycle"
 	gapilogging "github.com/goppydae/gapi/core/logging"
+	"github.com/goppydae/gapi/core/procsig"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
+	"github.com/goppydae/goblin/core/capability"
 	"github.com/goppydae/goblin/core/cluster"
 	"github.com/goppydae/goblin/core/consensus"
 	"github.com/goppydae/goblin/core/eventbus"
@@ -43,6 +45,7 @@ import (
 	"github.com/goppydae/goblin/core/scheduler"
 	"github.com/goppydae/goblin/core/store"
 	"github.com/goppydae/goblin/core/transport"
+	"github.com/goppydae/goblin/internal/hlc"
 	"github.com/goppydae/goblin/internal/logattr"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -84,6 +87,11 @@ type Config struct {
 type Supervisor struct {
 	cfg      Config
 	agentMgr *gapiagentmgr.AgentManager // GAPI agent manager (optional)
+
+	// issuer mints capability tokens under this boot's keypair;
+	// revocations is the gossip-merged revocation Bloom filter.
+	issuer      *capability.Issuer
+	revocations *capability.Revocations
 }
 
 // New creates a new Supervisor
@@ -203,11 +211,21 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 		}
 	}
 
+	// Capability issuer: per-boot Ed25519 keypair; the public key rides
+	// the serf tags so any node resolves key_id -> key from gossip.
+	issuer, err := capability.NewIssuer(nodeID)
+	if err != nil {
+		return fmt.Errorf("init capability issuer: %w", err)
+	}
+	s.issuer = issuer
+	s.revocations = capability.NewRevocations()
+
 	tags := map[string]string{
 		"raft_addr":   raftAddr,
 		"api_addr":    s.cfg.APIAddr, // Broadcast API address
 		"schema_hash": "v1-proto-hash",
 		"version":     "0.3.3",
+		"cap_key":     issuer.KeyID() + ":" + base64.StdEncoding.EncodeToString(issuer.PublicKey()),
 	}
 	for k, v := range s.cfg.Tags {
 		tags[k] = v
@@ -428,10 +446,13 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 
 	// Register Scheduler RPC for CLI operations
 	schedulerRPC := &SchedulerRPC{
-		scheduler:  sched,
-		membership: membership,
-		consensus:  consensus,
-		agentMgr:   agentMgr, // Wire agent manager to RPC
+		scheduler:   sched,
+		membership:  membership,
+		consensus:   consensus,
+		agentMgr:    agentMgr, // Wire agent manager to RPC
+		issuer:      s.issuer,
+		revocations: s.revocations,
+		members:     membership,
 	}
 	slog.Default().LogAttrs(ctx, slog.LevelInfo, "scheduler rpc created")
 
@@ -496,6 +517,8 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 		if e.Payload == nil || e.Payload.UnmarshalTo(&st) != nil {
 			return
 		}
+		slog.Default().LogAttrs(ctx, slog.LevelDebug, "local lifecycle status",
+			logattr.InstanceID(st.AgentId), slog.String("state", st.State), slog.String("message", st.Message))
 		switch st.State {
 		case "RUNNING":
 			instTracker.SetIfTracked(st.AgentId, "running")
@@ -510,7 +533,11 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 
 	// Heartbeat publisher: this node's instance states, cluster-wide,
 	// every cadence. The kernel bus is the transport; cadence and topic
-	// are orchestrator policy (scheduler.HeartbeatCadence).
+	// are orchestrator policy (scheduler.HeartbeatCadence). The
+	// heartbeat doubles as the locator update path (DDR-3/4/5): a
+	// running instance's pid, start epoch, and pid-namespace inode ride
+	// along, stamped by this node's HLC for last-writer-wins.
+	hlcClock := hlc.New(nodeID)
 	go func() {
 		ticker := time.NewTicker(scheduler.HeartbeatCadence)
 		defer ticker.Stop()
@@ -519,12 +546,24 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				for id, state := range instTracker.Snapshot() {
-					if err := bus.PublishCluster("system", "instance.heartbeat", map[string]interface{}{
+				for id, info := range instTracker.Snapshot() {
+					stamp := hlcClock.Now()
+					payload := map[string]interface{}{
 						"instance_id": id,
 						"node_id":     nodeID,
-						"state":       state,
-					}, nil); err != nil {
+						"state":       info.State,
+						"hlc_wall":    stamp.Wall,
+						"hlc_counter": stamp.Counter,
+						"hlc_node":    stamp.Node,
+					}
+					if info.Pid > 0 {
+						if pi, err := procsig.Identify(info.Pid); err == nil {
+							payload["node_pid"] = pi.Pid
+							payload["start_epoch"] = pi.StartEpoch
+							payload["pid_ns_inode"] = pi.PidNsInode
+						}
+					}
+					if err := bus.PublishCluster("system", "instance.heartbeat", payload, nil); err != nil {
 						slog.Default().LogAttrs(ctx, slog.LevelWarn, "publish instance heartbeat failed", logattr.InstanceID(id), logattr.Err(err))
 					}
 				}
@@ -532,13 +571,57 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 		}
 	}()
 
-	// Leader side: heartbeats feed the reconciler's health view.
+	// Leader side: heartbeats feed the reconciler's health view and the
+	// locator map; the HLC merges every remote stamp it sees.
 	bus.Subscribe("instance.heartbeat", func(e eventbus.Event) {
 		id, _ := e.Payload["instance_id"].(string)
 		node, _ := e.Payload["node_id"].(string)
 		state, _ := e.Payload["state"].(string)
-		if id != "" {
-			sched.ObserveHeartbeat(id, node, state, time.Now())
+		if id == "" {
+			return
+		}
+		sched.ObserveHeartbeat(id, node, state, time.Now())
+
+		stamp := hlc.Timestamp{
+			Wall:    payloadInt64(e.Payload["hlc_wall"]),
+			Counter: payloadUint32(e.Payload["hlc_counter"]),
+			Node:    payloadString(e.Payload["hlc_node"]),
+		}
+		if stamp.IsZero() {
+			return
+		}
+		hlcClock.Observe(stamp)
+		if pid := payloadInt64(e.Payload["node_pid"]); pid > 0 {
+			sched.ObserveLocator(id, scheduler.Locator{
+				NodeID:     node,
+				Pid:        int(pid),
+				StartEpoch: payloadUint64(e.Payload["start_epoch"]),
+				PidNsInode: payloadUint64(e.Payload["pid_ns_inode"]),
+				At:         stamp,
+			})
+		}
+	})
+
+	// Revocation gossip: a revoking node broadcasts its filter; every
+	// node merges what it sees (the filter only grows, so merge order
+	// is irrelevant). Bytes ride the bus JSON as base64.
+	bus.Subscribe("capability.revocation", func(e eventbus.Event) {
+		var raw []byte
+		switch v := e.Payload["filter"].(type) {
+		case []byte:
+			raw = v
+		case string:
+			decoded, derr := base64.StdEncoding.DecodeString(v)
+			if derr != nil {
+				slog.Default().LogAttrs(ctx, slog.LevelWarn, "undecodable revocation snapshot", logattr.Err(derr))
+				return
+			}
+			raw = decoded
+		default:
+			return
+		}
+		if err := s.revocations.Ingest(raw); err != nil {
+			slog.Default().LogAttrs(ctx, slog.LevelWarn, "reject revocation snapshot", logattr.Err(err))
 		}
 	})
 

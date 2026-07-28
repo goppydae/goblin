@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/goppydae/goblin/internal/ident"
 	goblinv1 "github.com/goppydae/goblin/proto"
 	"github.com/hashicorp/serf/serf"
 )
@@ -25,7 +26,7 @@ func TestReconcileScaleUp(t *testing.T) {
 
 	// 1. Register Spec (Replicas=3)
 	spec := &goblinv1.AgentSpec{
-		Id:        "agent-scale",
+		Name:      "agent-scale",
 		Replicas:  3,
 		Resources: &goblinv1.ResourceReq{Cpu: 0.1, Memory: 10},
 	}
@@ -39,7 +40,7 @@ func TestReconcileScaleUp(t *testing.T) {
 	}
 
 	// 3. Verify Instances Created
-	instances, err := s.ListInstances(ctx, "agent-scale")
+	instances, err := s.ListInstances(ctx, ident.String(spec.SpecUuid))
 	if err != nil {
 		t.Fatalf("ListInstances failed: %v", err)
 	}
@@ -49,8 +50,9 @@ func TestReconcileScaleUp(t *testing.T) {
 	}
 
 	for _, inst := range instances {
-		if inst.State != "pending" && inst.State != "running" { // Stub starts it async
-			t.Errorf("Instance %s in unexpected state: %s", inst.InstanceId, inst.State)
+		if inst.State != goblinv1.InstanceState_INSTANCE_STATE_ADMITTED &&
+			inst.State != goblinv1.InstanceState_INSTANCE_STATE_RUNNING { // Stub starts it async
+			t.Errorf("Instance %s in unexpected state: %v", ident.String(inst.InstanceUuid), inst.State)
 		}
 	}
 }
@@ -62,28 +64,32 @@ func TestReconcileScaleDown(t *testing.T) {
 	ctx := context.Background()
 
 	// 1. Register Spec (Replicas=1)
-	spec := &goblinv1.AgentSpec{Id: "agent-down", Replicas: 1}
+	spec := &goblinv1.AgentSpec{Name: "agent-down", Replicas: 1}
 	if err := s.RegisterAgent(ctx, spec); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
 
-	// 2. Create 3 existing instances
-	inst1 := &goblinv1.AgentInstance{InstanceId: "i1", SpecId: "agent-down", State: "running", NodeId: "n1"}
-	inst2 := &goblinv1.AgentInstance{InstanceId: "i2", SpecId: "agent-down", State: "running", NodeId: "n1"}
-	inst3 := &goblinv1.AgentInstance{InstanceId: "i3", SpecId: "agent-down", State: "running", NodeId: "n1"}
-	for _, inst := range []*goblinv1.AgentInstance{inst1, inst2, inst3} {
-		if err := s.SaveInstance(ctx, inst); err != nil {
-			t.Fatalf("SaveInstance %s: %v", inst.InstanceId, err)
+	// 2. Create 3 existing running instances
+	for i := 0; i < 3; i++ {
+		instUUID := ident.NewV7()
+		if err := s.Store().Admit(ctx, spec.SpecUuid, instUUID, "n1"); err != nil {
+			t.Fatalf("Admit %d: %v", i, err)
+		}
+		if err := s.Store().TransitionInstance(ctx, instUUID, goblinv1.InstanceState_INSTANCE_STATE_RUNNING, ""); err != nil {
+			t.Fatalf("TransitionInstance %d: %v", i, err)
 		}
 	}
 
-	// 3. Reconcile
-	if err := s.ReconcileAgents(ctx); err != nil {
-		t.Fatalf("ReconcileAgents failed: %v", err)
+	// 3. Reconcile twice: pass 1 terminates the excess (tombstoning
+	// them), pass 2 archives the terminated records.
+	for i := 0; i < 2; i++ {
+		if err := s.ReconcileAgents(ctx); err != nil {
+			t.Fatalf("ReconcileAgents failed: %v", err)
+		}
 	}
 
 	// 4. Verify count = 1
-	instances, _ := s.ListInstances(ctx, "agent-down")
+	instances, _ := s.ListInstances(ctx, ident.String(spec.SpecUuid))
 	if len(instances) != 1 {
 		t.Errorf("Expected 1 instance after scale down, got %d", len(instances))
 	}
@@ -105,7 +111,7 @@ func TestRunReconcilerLeaderGate(t *testing.T) {
 	defer cancel()
 
 	spec := &goblinv1.AgentSpec{
-		Id:        "agent-gated",
+		Name:      "agent-gated",
 		Replicas:  1,
 		Resources: &goblinv1.ResourceReq{Cpu: 0.1, Memory: 10},
 	}
@@ -117,7 +123,7 @@ func TestRunReconcilerLeaderGate(t *testing.T) {
 
 	// Follower: several tick intervals pass, nothing may be scheduled.
 	time.Sleep(50 * time.Millisecond)
-	if instances, _ := s.ListInstances(ctx, "agent-gated"); len(instances) != 0 {
+	if instances, _ := s.ListInstances(ctx, ident.String(spec.SpecUuid)); len(instances) != 0 {
 		t.Fatalf("follower reconciled: %d instances created, want 0", len(instances))
 	}
 
@@ -125,12 +131,12 @@ func TestRunReconcilerLeaderGate(t *testing.T) {
 	leader.Store(true)
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if instances, _ := s.ListInstances(ctx, "agent-gated"); len(instances) == 1 {
+		if instances, _ := s.ListInstances(ctx, ident.String(spec.SpecUuid)); len(instances) == 1 {
 			return
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	instances, _ := s.ListInstances(ctx, "agent-gated")
+	instances, _ := s.ListInstances(ctx, ident.String(spec.SpecUuid))
 	t.Fatalf("leader did not reconcile: %d instances, want 1", len(instances))
 }
 
@@ -145,7 +151,7 @@ func TestNewSchedulerNilLeaderGate(t *testing.T) {
 	ctx := context.Background()
 
 	spec := &goblinv1.AgentSpec{
-		Id:        "agent-standalone",
+		Name:      "agent-standalone",
 		Replicas:  1,
 		Resources: &goblinv1.ResourceReq{Cpu: 0.1, Memory: 10},
 	}
@@ -155,7 +161,7 @@ func TestNewSchedulerNilLeaderGate(t *testing.T) {
 	if err := s.ReconcileAgents(ctx); err != nil {
 		t.Fatalf("ReconcileAgents failed: %v", err)
 	}
-	if instances, _ := s.ListInstances(ctx, "agent-standalone"); len(instances) != 1 {
+	if instances, _ := s.ListInstances(ctx, ident.String(spec.SpecUuid)); len(instances) != 1 {
 		t.Fatalf("standalone reconcile: %d instances, want 1", len(instances))
 	}
 }

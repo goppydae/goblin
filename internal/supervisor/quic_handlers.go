@@ -100,6 +100,18 @@ func RegisterSchedulerHandlers(server *QUICRPCServer, rpc *SchedulerRPC) {
 		return json.Marshal(resp)
 	})
 
+	server.RegisterHandler("SchedulerRPC.SignalAgentInstance", func(payload []byte) ([]byte, error) {
+		var req SignalAgentInstanceRequest
+		if err := json.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("invalid request: %w", err)
+		}
+		var resp string
+		if err := rpc.SignalAgentInstance(&req, &resp); err != nil {
+			return nil, err
+		}
+		return json.Marshal(resp)
+	})
+
 	// RegisterGlobalAgent handler
 	server.RegisterHandler("SchedulerRPC.ListAgentInstances", func(payload []byte) ([]byte, error) {
 		var req ListAgentInstancesRequest
@@ -217,6 +229,18 @@ func RegisterNodeHandlers(server *QUICRPCServer, rpc *NodeRPC) {
 		}
 		var resp string
 		if err := rpc.StartAgentInstance(&req, &resp); err != nil {
+			return nil, err
+		}
+		return json.Marshal(resp)
+	})
+
+	server.RegisterHandler("NodeRPC.SignalAgentInstance", func(payload []byte) ([]byte, error) {
+		var req SignalAgentRequest
+		if err := json.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("invalid request: %w", err)
+		}
+		var resp string
+		if err := rpc.SignalAgentInstance(&req, &resp); err != nil {
 			return nil, err
 		}
 		return json.Marshal(resp)

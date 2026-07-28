@@ -61,6 +61,7 @@ func (s *Scheduler) forgetHeartbeat(instanceID string) {
 	defer s.hbMu.Unlock()
 	delete(s.heartbeats, instanceID)
 	delete(s.pendingSince, instanceID)
+	delete(s.locators, instanceID)
 }
 
 // pendingStale reports whether a pending instance has waited past the

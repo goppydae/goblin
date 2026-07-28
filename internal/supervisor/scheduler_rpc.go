@@ -12,8 +12,10 @@ import (
 	"time"
 
 	gapiagentmgr "github.com/goppydae/gapi/core/agentmgr"
+	"github.com/goppydae/goblin/core/capability"
 	"github.com/goppydae/goblin/core/consensus"
 	"github.com/goppydae/goblin/core/scheduler"
+	"github.com/goppydae/goblin/internal/ident"
 	goblinv1 "github.com/goppydae/goblin/proto"
 	"google.golang.org/protobuf/proto"
 )
@@ -31,6 +33,11 @@ type SchedulerRPC struct {
 	membership interface{} // cluster.Membership
 	consensus  *consensus.Consensus
 	agentMgr   *gapiagentmgr.AgentManager // GAPI agent manager (optional)
+
+	// Signal-path collaborators (nil outside a full supervisor).
+	issuer      *capability.Issuer
+	revocations *capability.Revocations
+	members     memberTagLister
 
 	eventsMu  sync.RWMutex
 	events    []LogEvent
@@ -307,7 +314,7 @@ func (s *SchedulerRPC) RegisterGlobalAgent(spec *goblinv1.AgentSpec, resp *strin
 		return err
 	}
 	s.scheduler.KickReconcile()
-	*resp = fmt.Sprintf("agent %s registered successfully", spec.Id)
+	*resp = fmt.Sprintf("agent %s registered successfully (uuid %s)", spec.Name, ident.String(spec.SpecUuid))
 	return nil
 }
 
@@ -317,9 +324,20 @@ type ListAgentInstancesRequest struct {
 	SpecID string
 }
 
-// ListAgentInstances returns the scheduler's instance records.
+// ListAgentInstances returns the scheduler's instance records. SpecID
+// accepts either the canonical spec UUID or the operator-facing name.
 func (s *SchedulerRPC) ListAgentInstances(req *ListAgentInstancesRequest, resp *[]*goblinv1.AgentInstance) error {
-	instances, err := s.scheduler.ListInstances(context.Background(), req.SpecID)
+	specID := req.SpecID
+	if specID != "" {
+		if _, err := ident.Parse(specID); err != nil {
+			spec, gerr := s.scheduler.GetAgent(context.Background(), specID)
+			if gerr != nil {
+				return fmt.Errorf("resolve spec %q: %w", specID, gerr)
+			}
+			specID = ident.String(spec.SpecUuid)
+		}
+	}
+	instances, err := s.scheduler.ListInstances(context.Background(), specID)
 	if err != nil {
 		return fmt.Errorf("list instances: %w", err)
 	}

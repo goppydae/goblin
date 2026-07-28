@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/goppydae/gapi/core/transport"
+	"github.com/goppydae/goblin/internal/ident"
 	"github.com/goppydae/goblin/internal/supervisor"
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
@@ -74,10 +76,10 @@ var globalAgentListCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Println("ID\t\tTYPE\t\tREPLICAS\tSTRATEGY")
-		fmt.Println("--\t\t----\t\t--------\t--------")
+		fmt.Println("NAME\t\tUUID\t\t\t\t\tTYPE\t\tREPLICAS\tSTRATEGY")
+		fmt.Println("----\t\t----\t\t\t\t\t----\t\t--------\t--------")
 		for _, s := range specs {
-			fmt.Printf("%s\t%s\t%d\t\t%s\n", s.Id, s.Type, s.Replicas, s.Strategy)
+			fmt.Printf("%s\t%s\t%s\t%d\t\t%s\n", s.Name, ident.String(s.SpecUuid), s.Type, s.Replicas, s.Strategy)
 		}
 		return nil
 	},
@@ -178,17 +180,53 @@ var globalAgentInstancesCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Println("INSTANCE\t\t\tSPEC\t\tNODE\t\tSTATE")
-		fmt.Println("--------\t\t\t----\t\t----\t\t-----")
+		fmt.Println("INSTANCE\t\t\t\t\tSPEC\t\t\t\t\tNODE\t\tSTATE")
+		fmt.Println("--------\t\t\t\t\t----\t\t\t\t\t----\t\t-----")
 		for _, inst := range instances {
-			fmt.Printf("%s\t%s\t%s\t%s\n", inst.InstanceId, inst.SpecId, inst.NodeId, inst.State)
+			fmt.Printf("%s\t%s\t%s\t%s\n", ident.String(inst.InstanceUuid), ident.String(inst.SpecUuid), inst.NodeId, stateLabel(inst.State))
 		}
+		return nil
+	},
+}
+
+// stateLabel renders an InstanceState for table output: the enum name
+// without its prefix, lowercased ("running", "admitted", ...).
+func stateLabel(s goblinv1.InstanceState) string {
+	return strings.ToLower(strings.TrimPrefix(s.String(), "INSTANCE_STATE_"))
+}
+
+var globalAgentSignalCmd = &cobra.Command{
+	Use:   "signal <instance-uuid> <signum>",
+	Short: "Signal an instance (authorized and audited through Raft)",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) (err error) {
+		signum := 0
+		if _, err := fmt.Sscanf(args[1], "%d", &signum); err != nil {
+			return fmt.Errorf("invalid signal number: %w", err)
+		}
+
+		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
+		if err != nil {
+			return err
+		}
+		defer closeClient(client, &err)
+
+		req := supervisor.SignalAgentInstanceRequest{
+			InstanceID: args[0],
+			Signum:     int32(signum),
+		}
+		var resp string
+		if err := client.Call("SchedulerRPC.SignalAgentInstance", &req, &resp); err != nil {
+			return err
+		}
+		fmt.Println(resp)
 		return nil
 	},
 }
 
 func init() {
 	globalAgentCmd.AddCommand(globalAgentRegisterCmd)
+	globalAgentCmd.AddCommand(globalAgentSignalCmd)
 	globalAgentCmd.AddCommand(globalAgentInstancesCmd)
 	globalAgentCmd.AddCommand(globalAgentListCmd)
 	globalAgentCmd.AddCommand(globalAgentGetCmd)

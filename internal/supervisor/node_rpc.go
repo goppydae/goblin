@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"syscall"
 
 	gapiagentmgr "github.com/goppydae/gapi/core/agentmgr"
+	"github.com/goppydae/gapi/core/procsig"
 	"github.com/goppydae/goblin/internal/logattr"
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
@@ -60,9 +62,45 @@ func (n *NodeRPC) StartAgentInstance(req *StartAgentRequest, resp *string) error
 	}
 
 	n.tracker.Set(req.InstanceID, "running")
+	// Capture the process identity: the pid feeds the gossip locator,
+	// and the start epoch is the signal-delivery guard (DDR-5).
+	if p, ok := a.(interface{ Pid() (int, bool) }); ok {
+		if pid, running := p.Pid(); running {
+			if pi, ierr := procsig.Identify(pid); ierr == nil {
+				n.tracker.SetIdentity(req.InstanceID, pi.Pid, pi.StartEpoch)
+			} else {
+				n.tracker.SetIdentity(req.InstanceID, pid, 0)
+			}
+		}
+	}
 	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "instance started",
 		logattr.InstanceID(req.InstanceID), logattr.Type(req.Spec.Type))
 	*resp = fmt.Sprintf("instance %s started on node", req.InstanceID)
+	return nil
+}
+
+// SignalAgentRequest delivers an authorized signal to an instance on
+// this node.
+type SignalAgentRequest struct {
+	InstanceID string
+	Signum     int32
+}
+
+// SignalAgentInstance delivers a signal through the start-epoch +
+// pidfd guard. The request was already authorized at the leader's FSM;
+// this node only guards delivery: a stale epoch means the process the
+// caller meant is gone, so the delivery is refused with no retry.
+func (n *NodeRPC) SignalAgentInstance(req *SignalAgentRequest, resp *string) error {
+	info, ok := n.tracker.Get(req.InstanceID)
+	if !ok || info.Pid <= 0 {
+		return fmt.Errorf("instance %s has no running process on this node", req.InstanceID)
+	}
+	if err := procsig.Signal(info.Pid, info.StartEpoch, syscall.Signal(req.Signum)); err != nil {
+		return fmt.Errorf("deliver signal %d to instance %s: %w", req.Signum, req.InstanceID, err)
+	}
+	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "signal delivered",
+		logattr.InstanceID(req.InstanceID), logattr.Signum(int(req.Signum)))
+	*resp = fmt.Sprintf("signal %d delivered to instance %s", req.Signum, req.InstanceID)
 	return nil
 }
 

@@ -21,15 +21,90 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// AgentSpec defines the desired state of a global agent
+// InstanceState is the instance lifecycle FSM (DDR-6). Transitions are
+// validated by the Raft FSM; illegal transitions are rejected, and
+// UUIDs of TERMINATED/ARCHIVED instances are tombstoned forever.
+type InstanceState int32
+
+const (
+	// Zero value: data written before this schema surfaces as
+	// UNSPECIFIED and must be rejected, never misapplied.
+	InstanceState_INSTANCE_STATE_UNSPECIFIED InstanceState = 0
+	InstanceState_INSTANCE_STATE_ADMITTED    InstanceState = 1 // UUID minted, committed through Raft
+	InstanceState_INSTANCE_STATE_SCHEDULED   InstanceState = 2 // placement bound to a node
+	InstanceState_INSTANCE_STATE_STARTING    InstanceState = 3 // dispatch in flight
+	InstanceState_INSTANCE_STATE_RUNNING     InstanceState = 4
+	InstanceState_INSTANCE_STATE_DRAINING    InstanceState = 5 // graceful scale-down in progress
+	InstanceState_INSTANCE_STATE_STOPPING    InstanceState = 6
+	InstanceState_INSTANCE_STATE_TERMINATED  InstanceState = 7 // terminal; reason says why
+	InstanceState_INSTANCE_STATE_ARCHIVED    InstanceState = 8 // terminal, compacted record
+)
+
+// Enum value maps for InstanceState.
+var (
+	InstanceState_name = map[int32]string{
+		0: "INSTANCE_STATE_UNSPECIFIED",
+		1: "INSTANCE_STATE_ADMITTED",
+		2: "INSTANCE_STATE_SCHEDULED",
+		3: "INSTANCE_STATE_STARTING",
+		4: "INSTANCE_STATE_RUNNING",
+		5: "INSTANCE_STATE_DRAINING",
+		6: "INSTANCE_STATE_STOPPING",
+		7: "INSTANCE_STATE_TERMINATED",
+		8: "INSTANCE_STATE_ARCHIVED",
+	}
+	InstanceState_value = map[string]int32{
+		"INSTANCE_STATE_UNSPECIFIED": 0,
+		"INSTANCE_STATE_ADMITTED":    1,
+		"INSTANCE_STATE_SCHEDULED":   2,
+		"INSTANCE_STATE_STARTING":    3,
+		"INSTANCE_STATE_RUNNING":     4,
+		"INSTANCE_STATE_DRAINING":    5,
+		"INSTANCE_STATE_STOPPING":    6,
+		"INSTANCE_STATE_TERMINATED":  7,
+		"INSTANCE_STATE_ARCHIVED":    8,
+	}
+)
+
+func (x InstanceState) Enum() *InstanceState {
+	p := new(InstanceState)
+	*p = x
+	return p
+}
+
+func (x InstanceState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (InstanceState) Descriptor() protoreflect.EnumDescriptor {
+	return file_goblin_v1_scheduler_proto_enumTypes[0].Descriptor()
+}
+
+func (InstanceState) Type() protoreflect.EnumType {
+	return &file_goblin_v1_scheduler_proto_enumTypes[0]
+}
+
+func (x InstanceState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use InstanceState.Descriptor instead.
+func (InstanceState) EnumDescriptor() ([]byte, []int) {
+	return file_goblin_v1_scheduler_proto_rawDescGZIP(), []int{0}
+}
+
+// AgentSpec defines the desired state of a global agent. Identity is
+// the spec_uuid (UUIDv7, minted by the leader at registration); name
+// is the operator-facing handle and must be unique among live specs.
 type AgentSpec struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Type          string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"` // e.g. "python-trader"
-	Replicas      int32                  `protobuf:"varint,3,opt,name=replicas,proto3" json:"replicas,omitempty"`
-	Constraints   map[string]string      `protobuf:"bytes,4,rep,name=constraints,proto3" json:"constraints,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Node tags requirements
-	Resources     *ResourceReq           `protobuf:"bytes,5,opt,name=resources,proto3" json:"resources,omitempty"`
-	Strategy      string                 `protobuf:"bytes,6,opt,name=strategy,proto3" json:"strategy,omitempty"` // "spread", "binpack", "affinity"
+	SpecUuid      []byte                 `protobuf:"bytes,1,opt,name=spec_uuid,json=specUuid,proto3" json:"spec_uuid,omitempty"` // 16-byte UUIDv7
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`                         // human-readable operator handle
+	Type          string                 `protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"`                         // installed agent type, e.g. "sleeper"
+	Replicas      int32                  `protobuf:"varint,4,opt,name=replicas,proto3" json:"replicas,omitempty"`
+	Constraints   map[string]string      `protobuf:"bytes,5,rep,name=constraints,proto3" json:"constraints,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // node tag requirements
+	Resources     *ResourceReq           `protobuf:"bytes,6,opt,name=resources,proto3" json:"resources,omitempty"`
+	Strategy      string                 `protobuf:"bytes,7,opt,name=strategy,proto3" json:"strategy,omitempty"` // "spread", "binpack", "affinity"
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -64,9 +139,16 @@ func (*AgentSpec) Descriptor() ([]byte, []int) {
 	return file_goblin_v1_scheduler_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *AgentSpec) GetId() string {
+func (x *AgentSpec) GetSpecUuid() []byte {
 	if x != nil {
-		return x.Id
+		return x.SpecUuid
+	}
+	return nil
+}
+
+func (x *AgentSpec) GetName() string {
+	if x != nil {
+		return x.Name
 	}
 	return ""
 }
@@ -159,14 +241,18 @@ func (x *ResourceReq) GetMemory() int64 {
 	return 0
 }
 
-// AgentInstance represents a scheduled instance of an agent
+// AgentInstance is the Raft-resident instance record: immutable
+// identity plus scheduler-owned state. The mutable runtime locator
+// (node_pid, start_epoch, pid_ns_inode) deliberately lives in gossip,
+// not here (three-layer split, DDR-3/4/5).
 type AgentInstance struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	InstanceId    string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
-	SpecId        string                 `protobuf:"bytes,2,opt,name=spec_id,json=specId,proto3" json:"spec_id,omitempty"`
+	InstanceUuid  []byte                 `protobuf:"bytes,1,opt,name=instance_uuid,json=instanceUuid,proto3" json:"instance_uuid,omitempty"` // 16-byte UUIDv7, minted at propose time
+	SpecUuid      []byte                 `protobuf:"bytes,2,opt,name=spec_uuid,json=specUuid,proto3" json:"spec_uuid,omitempty"`
 	NodeId        string                 `protobuf:"bytes,3,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	State         string                 `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"` // "pending", "running", "failed"
+	State         InstanceState          `protobuf:"varint,4,opt,name=state,proto3,enum=goblin.v1.InstanceState" json:"state,omitempty"`
 	Health        *HealthStatus          `protobuf:"bytes,5,opt,name=health,proto3" json:"health,omitempty"`
+	Reason        string                 `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"` // why a terminal state was entered
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -201,18 +287,18 @@ func (*AgentInstance) Descriptor() ([]byte, []int) {
 	return file_goblin_v1_scheduler_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *AgentInstance) GetInstanceId() string {
+func (x *AgentInstance) GetInstanceUuid() []byte {
 	if x != nil {
-		return x.InstanceId
+		return x.InstanceUuid
 	}
-	return ""
+	return nil
 }
 
-func (x *AgentInstance) GetSpecId() string {
+func (x *AgentInstance) GetSpecUuid() []byte {
 	if x != nil {
-		return x.SpecId
+		return x.SpecUuid
 	}
-	return ""
+	return nil
 }
 
 func (x *AgentInstance) GetNodeId() string {
@@ -222,11 +308,11 @@ func (x *AgentInstance) GetNodeId() string {
 	return ""
 }
 
-func (x *AgentInstance) GetState() string {
+func (x *AgentInstance) GetState() InstanceState {
 	if x != nil {
 		return x.State
 	}
-	return ""
+	return InstanceState_INSTANCE_STATE_UNSPECIFIED
 }
 
 func (x *AgentInstance) GetHealth() *HealthStatus {
@@ -234,6 +320,13 @@ func (x *AgentInstance) GetHealth() *HealthStatus {
 		return x.Health
 	}
 	return nil
+}
+
+func (x *AgentInstance) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
 }
 
 // HealthStatus
@@ -475,7 +568,7 @@ func (x *ListAgentsResponse) GetAgents() []*AgentSpec {
 
 type GetAgentRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // spec UUID (canonical string) or name
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -565,27 +658,28 @@ var File_goblin_v1_scheduler_proto protoreflect.FileDescriptor
 
 const file_goblin_v1_scheduler_proto_rawDesc = "" +
 	"\n" +
-	"\x19goblin/v1/scheduler.proto\x12\tgoblin.v1\"\xa6\x02\n" +
-	"\tAgentSpec\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04type\x18\x02 \x01(\tR\x04type\x12\x1a\n" +
-	"\breplicas\x18\x03 \x01(\x05R\breplicas\x12G\n" +
-	"\vconstraints\x18\x04 \x03(\v2%.goblin.v1.AgentSpec.ConstraintsEntryR\vconstraints\x124\n" +
-	"\tresources\x18\x05 \x01(\v2\x16.goblin.v1.ResourceReqR\tresources\x12\x1a\n" +
-	"\bstrategy\x18\x06 \x01(\tR\bstrategy\x1a>\n" +
+	"\x19goblin/v1/scheduler.proto\x12\tgoblin.v1\"\xc7\x02\n" +
+	"\tAgentSpec\x12\x1b\n" +
+	"\tspec_uuid\x18\x01 \x01(\fR\bspecUuid\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
+	"\x04type\x18\x03 \x01(\tR\x04type\x12\x1a\n" +
+	"\breplicas\x18\x04 \x01(\x05R\breplicas\x12G\n" +
+	"\vconstraints\x18\x05 \x03(\v2%.goblin.v1.AgentSpec.ConstraintsEntryR\vconstraints\x124\n" +
+	"\tresources\x18\x06 \x01(\v2\x16.goblin.v1.ResourceReqR\tresources\x12\x1a\n" +
+	"\bstrategy\x18\a \x01(\tR\bstrategy\x1a>\n" +
 	"\x10ConstraintsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"7\n" +
 	"\vResourceReq\x12\x10\n" +
 	"\x03cpu\x18\x01 \x01(\x01R\x03cpu\x12\x16\n" +
-	"\x06memory\x18\x02 \x01(\x03R\x06memory\"\xa9\x01\n" +
-	"\rAgentInstance\x12\x1f\n" +
-	"\vinstance_id\x18\x01 \x01(\tR\n" +
-	"instanceId\x12\x17\n" +
-	"\aspec_id\x18\x02 \x01(\tR\x06specId\x12\x17\n" +
-	"\anode_id\x18\x03 \x01(\tR\x06nodeId\x12\x14\n" +
-	"\x05state\x18\x04 \x01(\tR\x05state\x12/\n" +
-	"\x06health\x18\x05 \x01(\v2\x17.goblin.v1.HealthStatusR\x06health\"\\\n" +
+	"\x06memory\x18\x02 \x01(\x03R\x06memory\"\xe3\x01\n" +
+	"\rAgentInstance\x12#\n" +
+	"\rinstance_uuid\x18\x01 \x01(\fR\finstanceUuid\x12\x1b\n" +
+	"\tspec_uuid\x18\x02 \x01(\fR\bspecUuid\x12\x17\n" +
+	"\anode_id\x18\x03 \x01(\tR\x06nodeId\x12.\n" +
+	"\x05state\x18\x04 \x01(\x0e2\x18.goblin.v1.InstanceStateR\x05state\x12/\n" +
+	"\x06health\x18\x05 \x01(\v2\x17.goblin.v1.HealthStatusR\x06health\x12\x16\n" +
+	"\x06reason\x18\x06 \x01(\tR\x06reason\"\\\n" +
 	"\fHealthStatus\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1a\n" +
@@ -601,7 +695,17 @@ const file_goblin_v1_scheduler_proto_rawDesc = "" +
 	"\x0fGetAgentRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"<\n" +
 	"\x10GetAgentResponse\x12(\n" +
-	"\x04spec\x18\x01 \x01(\v2\x14.goblin.v1.AgentSpecR\x04specB+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
+	"\x04spec\x18\x01 \x01(\v2\x14.goblin.v1.AgentSpecR\x04spec*\x99\x02\n" +
+	"\rInstanceState\x12\x1e\n" +
+	"\x1aINSTANCE_STATE_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17INSTANCE_STATE_ADMITTED\x10\x01\x12\x1c\n" +
+	"\x18INSTANCE_STATE_SCHEDULED\x10\x02\x12\x1b\n" +
+	"\x17INSTANCE_STATE_STARTING\x10\x03\x12\x1a\n" +
+	"\x16INSTANCE_STATE_RUNNING\x10\x04\x12\x1b\n" +
+	"\x17INSTANCE_STATE_DRAINING\x10\x05\x12\x1b\n" +
+	"\x17INSTANCE_STATE_STOPPING\x10\x06\x12\x1d\n" +
+	"\x19INSTANCE_STATE_TERMINATED\x10\a\x12\x1b\n" +
+	"\x17INSTANCE_STATE_ARCHIVED\x10\bB+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
 
 var (
 	file_goblin_v1_scheduler_proto_rawDescOnce sync.Once
@@ -615,32 +719,35 @@ func file_goblin_v1_scheduler_proto_rawDescGZIP() []byte {
 	return file_goblin_v1_scheduler_proto_rawDescData
 }
 
+var file_goblin_v1_scheduler_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_goblin_v1_scheduler_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_goblin_v1_scheduler_proto_goTypes = []any{
-	(*AgentSpec)(nil),             // 0: goblin.v1.AgentSpec
-	(*ResourceReq)(nil),           // 1: goblin.v1.ResourceReq
-	(*AgentInstance)(nil),         // 2: goblin.v1.AgentInstance
-	(*HealthStatus)(nil),          // 3: goblin.v1.HealthStatus
-	(*RegisterAgentRequest)(nil),  // 4: goblin.v1.RegisterAgentRequest
-	(*RegisterAgentResponse)(nil), // 5: goblin.v1.RegisterAgentResponse
-	(*ListAgentsRequest)(nil),     // 6: goblin.v1.ListAgentsRequest
-	(*ListAgentsResponse)(nil),    // 7: goblin.v1.ListAgentsResponse
-	(*GetAgentRequest)(nil),       // 8: goblin.v1.GetAgentRequest
-	(*GetAgentResponse)(nil),      // 9: goblin.v1.GetAgentResponse
-	nil,                           // 10: goblin.v1.AgentSpec.ConstraintsEntry
+	(InstanceState)(0),            // 0: goblin.v1.InstanceState
+	(*AgentSpec)(nil),             // 1: goblin.v1.AgentSpec
+	(*ResourceReq)(nil),           // 2: goblin.v1.ResourceReq
+	(*AgentInstance)(nil),         // 3: goblin.v1.AgentInstance
+	(*HealthStatus)(nil),          // 4: goblin.v1.HealthStatus
+	(*RegisterAgentRequest)(nil),  // 5: goblin.v1.RegisterAgentRequest
+	(*RegisterAgentResponse)(nil), // 6: goblin.v1.RegisterAgentResponse
+	(*ListAgentsRequest)(nil),     // 7: goblin.v1.ListAgentsRequest
+	(*ListAgentsResponse)(nil),    // 8: goblin.v1.ListAgentsResponse
+	(*GetAgentRequest)(nil),       // 9: goblin.v1.GetAgentRequest
+	(*GetAgentResponse)(nil),      // 10: goblin.v1.GetAgentResponse
+	nil,                           // 11: goblin.v1.AgentSpec.ConstraintsEntry
 }
 var file_goblin_v1_scheduler_proto_depIdxs = []int32{
-	10, // 0: goblin.v1.AgentSpec.constraints:type_name -> goblin.v1.AgentSpec.ConstraintsEntry
-	1,  // 1: goblin.v1.AgentSpec.resources:type_name -> goblin.v1.ResourceReq
-	3,  // 2: goblin.v1.AgentInstance.health:type_name -> goblin.v1.HealthStatus
-	0,  // 3: goblin.v1.RegisterAgentRequest.spec:type_name -> goblin.v1.AgentSpec
-	0,  // 4: goblin.v1.ListAgentsResponse.agents:type_name -> goblin.v1.AgentSpec
-	0,  // 5: goblin.v1.GetAgentResponse.spec:type_name -> goblin.v1.AgentSpec
-	6,  // [6:6] is the sub-list for method output_type
-	6,  // [6:6] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	11, // 0: goblin.v1.AgentSpec.constraints:type_name -> goblin.v1.AgentSpec.ConstraintsEntry
+	2,  // 1: goblin.v1.AgentSpec.resources:type_name -> goblin.v1.ResourceReq
+	0,  // 2: goblin.v1.AgentInstance.state:type_name -> goblin.v1.InstanceState
+	4,  // 3: goblin.v1.AgentInstance.health:type_name -> goblin.v1.HealthStatus
+	1,  // 4: goblin.v1.RegisterAgentRequest.spec:type_name -> goblin.v1.AgentSpec
+	1,  // 5: goblin.v1.ListAgentsResponse.agents:type_name -> goblin.v1.AgentSpec
+	1,  // 6: goblin.v1.GetAgentResponse.spec:type_name -> goblin.v1.AgentSpec
+	7,  // [7:7] is the sub-list for method output_type
+	7,  // [7:7] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_goblin_v1_scheduler_proto_init() }
@@ -653,13 +760,14 @@ func file_goblin_v1_scheduler_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_goblin_v1_scheduler_proto_rawDesc), len(file_goblin_v1_scheduler_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_goblin_v1_scheduler_proto_goTypes,
 		DependencyIndexes: file_goblin_v1_scheduler_proto_depIdxs,
+		EnumInfos:         file_goblin_v1_scheduler_proto_enumTypes,
 		MessageInfos:      file_goblin_v1_scheduler_proto_msgTypes,
 	}.Build()
 	File_goblin_v1_scheduler_proto = out.File

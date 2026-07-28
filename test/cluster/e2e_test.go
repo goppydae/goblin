@@ -26,7 +26,7 @@ func TestClusterEndToEnd(t *testing.T) {
 
 	// --- Scenario 1: placement. replicas=3 lands running on 3 distinct
 	// nodes within the placement target.
-	spec := &goblinv1.AgentSpec{Id: "sleeper-spec", Type: "sleeper", Replicas: 3, Strategy: "spread"}
+	spec := &goblinv1.AgentSpec{Name: "sleeper-spec", Type: "sleeper", Replicas: 3, Strategy: "spread"}
 	c.register(leader, spec)
 	insts, elapsed := c.waitInstances(leader, "sleeper-spec", 3, placementTarget)
 	nodesSeen := map[string]bool{}
@@ -37,6 +37,49 @@ func TestClusterEndToEnd(t *testing.T) {
 		t.Fatalf("placement: 3 instances should spread across 3 nodes, got %v", describeInstances(insts))
 	}
 	t.Logf("placement: 3/3 running on %d nodes in %s (target %s)", len(nodesSeen), elapsed, placementTarget)
+
+	// --- Scenario 2a: the signal path (phase 2c). SIGTERM one instance:
+	// the leader issues a capability token, verifies it, authorizes the
+	// request at the Raft FSM, and the hosting node delivers through the
+	// start-epoch + pidfd guard. The sleeper exits on SIGTERM, its node
+	// reports the failure, and the reconciler replaces it.
+	target := insts[0]
+	targetID := uuidStr(target.InstanceUuid)
+	c.signal(leader, targetID, 15)
+	deadline := time.Now().Add(failoverTarget)
+	for {
+		cur, err := c.instances(leader, "sleeper-spec")
+		if err == nil {
+			replaced := true
+			running := 0
+			for _, in := range cur {
+				if uuidStr(in.InstanceUuid) == targetID &&
+					in.State == goblinv1.InstanceState_INSTANCE_STATE_RUNNING {
+					replaced = false
+				}
+				if in.State == goblinv1.InstanceState_INSTANCE_STATE_RUNNING {
+					running++
+				}
+			}
+			if replaced && running == 3 {
+				t.Logf("signal: %s terminated and replaced, 3/3 running again", targetID)
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			cur, _ := c.instances(leader, "sleeper-spec")
+			t.Fatalf("signaled instance %s not replaced within %s: %v", targetID, failoverTarget, describeInstances(cur))
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	// A non-grantable signal must be refused at authorization, before
+	// any process is touched.
+	if err := c.trySignal(leader, uuidStr(insts[1].InstanceUuid), 11); err == nil {
+		t.Fatal("signal: SIGSEGV was authorized - the rights bitmap must refuse it")
+	} else {
+		t.Logf("signal: SIGSEGV correctly refused (%v)", err)
+	}
 
 	// --- Scenario 2: scale down and back up (full cluster).
 	c.scale(leader, "sleeper-spec", 1)
@@ -60,14 +103,14 @@ func TestClusterEndToEnd(t *testing.T) {
 
 	// The killed node hosted one of the three instances; heartbeat
 	// staleness plus reconcile must re-place it on a survivor.
-	deadline := time.Now().Add(failoverTarget)
+	deadline = time.Now().Add(failoverTarget)
 	for {
 		insts, err := c.instances(newLeader, "sleeper-spec")
 		if err == nil {
 			running := 0
 			onDead := 0
 			for _, in := range insts {
-				if in.State == "running" {
+				if in.State == goblinv1.InstanceState_INSTANCE_STATE_RUNNING {
 					running++
 					if in.NodeId == killed.id {
 						onDead++
@@ -88,7 +131,7 @@ func TestClusterEndToEnd(t *testing.T) {
 
 	// --- Scenario 4: the new leader schedules fresh work (reconciliation
 	// resumed, not just survived).
-	spec2 := &goblinv1.AgentSpec{Id: "post-failover-spec", Type: "sleeper", Replicas: 1, Strategy: "spread"}
+	spec2 := &goblinv1.AgentSpec{Name: "post-failover-spec", Type: "sleeper", Replicas: 1, Strategy: "spread"}
 	c.register(newLeader, spec2)
 	_, elapsed = c.waitInstances(newLeader, "post-failover-spec", 1, placementTarget)
 	t.Logf("post-failover placement in %s (target %s)", elapsed, placementTarget)
@@ -115,7 +158,7 @@ func (c *testCluster) register(node *clusterNode, spec *goblinv1.AgentSpec) {
 	}()
 	var resp string
 	if err := cl.Call("SchedulerRPC.RegisterGlobalAgent", spec, &resp); err != nil {
-		c.t.Fatalf("register %s: %v", spec.Id, err)
+		c.t.Fatalf("register %s: %v", spec.Name, err)
 	}
 }
 

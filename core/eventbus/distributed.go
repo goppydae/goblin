@@ -5,13 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/goppydae/goblin/core/cluster"
 	"github.com/goppydae/goblin/core/consensus"
+	"github.com/goppydae/goblin/internal/ident"
 	"github.com/goppydae/goblin/internal/logattr"
 	"github.com/hashicorp/serf/serf"
 )
@@ -233,12 +232,10 @@ func (bus *DistributedEventBus) HandleRemoteEvent(eventJSON []byte) error {
 	return bus.dispatch(event)
 }
 
-// eventIDCounter disambiguates IDs minted in the same microsecond: the
-// timestamp alone collides under rapid calls, and a collision as a
-// subscription key silently drops a subscriber's handler.
-var eventIDCounter atomic.Uint64
-
-// generateEventID creates a unique event ID
+// generateEventID mints a UUIDv7 event/subscription id (operator
+// decision 2026-07-28: all ids UUIDv7 where reasonable). Time-ordered
+// and collision-free - the previous timestamp scheme collided under
+// same-instant calls and silently dropped subscribers.
 func generateEventID() string {
-	return time.Now().Format("20060102150405.000000") + "-" + strconv.FormatUint(eventIDCounter.Add(1), 10)
+	return ident.String(ident.NewV7())
 }

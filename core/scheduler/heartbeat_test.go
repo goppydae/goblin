@@ -6,6 +6,7 @@ import (
 	"time"
 
 	gapiclock "github.com/goppydae/gapi/core/clock"
+	"github.com/goppydae/goblin/internal/ident"
 	goblinv1 "github.com/goppydae/goblin/proto"
 	"github.com/hashicorp/serf/serf"
 )
@@ -22,28 +23,35 @@ func newHeartbeatScheduler(t *testing.T) (*Scheduler, *gapiclock.MockClock) {
 	return s, clk
 }
 
-func registerRunningInstance(t *testing.T, s *Scheduler, specID, instanceID, nodeID string) {
+// registerRunningInstance registers a spec under name and one running
+// instance on nodeID (admitted and transitioned like the real flow),
+// returning the canonical UUID strings of both.
+func registerRunningInstance(t *testing.T, s *Scheduler, name, nodeID string) (specID, instanceID string) {
 	t.Helper()
 	ctx := context.Background()
-	if err := s.RegisterAgent(ctx, &goblinv1.AgentSpec{Id: specID, Replicas: 1}); err != nil {
+	spec := &goblinv1.AgentSpec{Name: name, Replicas: 1}
+	if err := s.RegisterAgent(ctx, spec); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
-	if err := s.SaveInstance(ctx, &goblinv1.AgentInstance{
-		InstanceId: instanceID, SpecId: specID, NodeId: nodeID, State: "running",
-	}); err != nil {
-		t.Fatalf("SaveInstance: %v", err)
+	instUUID := ident.NewV7()
+	if err := s.Store().Admit(ctx, spec.SpecUuid, instUUID, nodeID); err != nil {
+		t.Fatalf("Admit: %v", err)
 	}
+	if err := s.Store().TransitionInstance(ctx, instUUID, goblinv1.InstanceState_INSTANCE_STATE_RUNNING, ""); err != nil {
+		t.Fatalf("TransitionInstance: %v", err)
+	}
+	return ident.String(spec.SpecUuid), ident.String(instUUID)
 }
 
-func instanceStates(t *testing.T, s *Scheduler, specID string) map[string]string {
+func instanceStates(t *testing.T, s *Scheduler, specID string) map[string]goblinv1.InstanceState {
 	t.Helper()
 	instances, err := s.ListInstances(context.Background(), specID)
 	if err != nil {
 		t.Fatalf("ListInstances: %v", err)
 	}
-	out := map[string]string{}
+	out := map[string]goblinv1.InstanceState{}
 	for _, inst := range instances {
-		out[inst.InstanceId] = inst.State
+		out[ident.String(inst.InstanceUuid)] = inst.State
 	}
 	return out
 }
@@ -51,21 +59,21 @@ func instanceStates(t *testing.T, s *Scheduler, specID string) map[string]string
 // A fresh heartbeat keeps a running instance alive across reconciles.
 func TestReconcile_FreshHeartbeatKeepsInstance(t *testing.T) {
 	s, clk := newHeartbeatScheduler(t)
-	registerRunningInstance(t, s, "spec-a", "inst-1", "node-1")
+	specID, instID := registerRunningInstance(t, s, "spec-a", "node-1")
 	ctx := context.Background()
 
 	if err := s.ReconcileAgents(ctx); err != nil { // leader grace baseline
 		t.Fatalf("ReconcileAgents: %v", err)
 	}
-	s.ObserveHeartbeat("inst-1", "node-1", "running", clk.Now())
+	s.ObserveHeartbeat(instID, "node-1", "running", clk.Now())
 	clk.Advance(HeartbeatCadence)
-	s.ObserveHeartbeat("inst-1", "node-1", "running", clk.Now())
+	s.ObserveHeartbeat(instID, "node-1", "running", clk.Now())
 
 	if err := s.ReconcileAgents(ctx); err != nil {
 		t.Fatalf("ReconcileAgents: %v", err)
 	}
-	states := instanceStates(t, s, "spec-a")
-	if states["inst-1"] != "running" {
+	states := instanceStates(t, s, specID)
+	if states[instID] != goblinv1.InstanceState_INSTANCE_STATE_RUNNING {
 		t.Errorf("instance with fresh heartbeat should stay running, got %v", states)
 	}
 }
@@ -74,24 +82,28 @@ func TestReconcile_FreshHeartbeatKeepsInstance(t *testing.T) {
 // replaced on reconcile.
 func TestReconcile_StaleHeartbeatReplacesInstance(t *testing.T) {
 	s, clk := newHeartbeatScheduler(t)
-	registerRunningInstance(t, s, "spec-a", "inst-1", "node-1")
+	specID, instID := registerRunningInstance(t, s, "spec-a", "node-1")
 	ctx := context.Background()
 
 	if err := s.ReconcileAgents(ctx); err != nil {
 		t.Fatalf("ReconcileAgents: %v", err)
 	}
-	s.ObserveHeartbeat("inst-1", "node-1", "running", clk.Now())
+	s.ObserveHeartbeat(instID, "node-1", "running", clk.Now())
 
 	clk.Advance(time.Duration(missedHeartbeatLimit+1) * HeartbeatCadence)
-	if err := s.ReconcileAgents(ctx); err != nil {
-		t.Fatalf("ReconcileAgents: %v", err)
+	// Pass 1 terminates the stale instance and admits a replacement;
+	// pass 2 archives the tombstoned record.
+	for i := 0; i < 2; i++ {
+		if err := s.ReconcileAgents(ctx); err != nil {
+			t.Fatalf("ReconcileAgents: %v", err)
+		}
 	}
 
-	states := instanceStates(t, s, "spec-a")
-	if _, alive := states["inst-1"]; alive {
-		t.Errorf("stale instance should have been removed, got %v", states)
+	states := instanceStates(t, s, specID)
+	if _, alive := states[instID]; alive {
+		t.Errorf("stale instance should have been archived away, got %v", states)
 	}
-	if len(states) != 1 {
+	if len(states) == 0 {
 		t.Errorf("a replacement instance should exist, got %v", states)
 	}
 }
@@ -100,20 +112,22 @@ func TestReconcile_StaleHeartbeatReplacesInstance(t *testing.T) {
 // without waiting for staleness.
 func TestReconcile_FailedHeartbeatReplacesImmediately(t *testing.T) {
 	s, clk := newHeartbeatScheduler(t)
-	registerRunningInstance(t, s, "spec-a", "inst-1", "node-1")
+	specID, instID := registerRunningInstance(t, s, "spec-a", "node-1")
 	ctx := context.Background()
 
 	if err := s.ReconcileAgents(ctx); err != nil {
 		t.Fatalf("ReconcileAgents: %v", err)
 	}
-	s.ObserveHeartbeat("inst-1", "node-1", "failed", clk.Now())
+	s.ObserveHeartbeat(instID, "node-1", "failed", clk.Now())
 
-	if err := s.ReconcileAgents(ctx); err != nil {
-		t.Fatalf("ReconcileAgents: %v", err)
+	for i := 0; i < 2; i++ { // terminate, then archive
+		if err := s.ReconcileAgents(ctx); err != nil {
+			t.Fatalf("ReconcileAgents: %v", err)
+		}
 	}
-	states := instanceStates(t, s, "spec-a")
-	if _, alive := states["inst-1"]; alive {
-		t.Errorf("failed instance should have been removed, got %v", states)
+	states := instanceStates(t, s, specID)
+	if _, alive := states[instID]; alive {
+		t.Errorf("failed instance should have been archived away, got %v", states)
 	}
 }
 
@@ -121,7 +135,7 @@ func TestReconcile_FailedHeartbeatReplacesImmediately(t *testing.T) {
 // yet: staleness only counts from when this scheduler started leading.
 func TestReconcile_LeaderGraceSuppressesStaleness(t *testing.T) {
 	s, clk := newHeartbeatScheduler(t)
-	registerRunningInstance(t, s, "spec-a", "inst-1", "node-1")
+	specID, instID := registerRunningInstance(t, s, "spec-a", "node-1")
 	ctx := context.Background()
 
 	// No heartbeat ever observed; first reconcile sets the baseline.
@@ -132,18 +146,20 @@ func TestReconcile_LeaderGraceSuppressesStaleness(t *testing.T) {
 	if err := s.ReconcileAgents(ctx); err != nil {
 		t.Fatalf("ReconcileAgents: %v", err)
 	}
-	states := instanceStates(t, s, "spec-a")
-	if states["inst-1"] != "running" {
+	states := instanceStates(t, s, specID)
+	if states[instID] != goblinv1.InstanceState_INSTANCE_STATE_RUNNING {
 		t.Errorf("instance inside leader grace should survive, got %v", states)
 	}
 
 	// Past the grace with still no heartbeat: now it is genuinely stale.
 	clk.Advance(time.Duration(missedHeartbeatLimit+1) * HeartbeatCadence)
-	if err := s.ReconcileAgents(ctx); err != nil {
-		t.Fatalf("ReconcileAgents: %v", err)
+	for i := 0; i < 2; i++ { // terminate, then archive
+		if err := s.ReconcileAgents(ctx); err != nil {
+			t.Fatalf("ReconcileAgents: %v", err)
+		}
 	}
-	states = instanceStates(t, s, "spec-a")
-	if _, alive := states["inst-1"]; alive {
+	states = instanceStates(t, s, specID)
+	if _, alive := states[instID]; alive {
 		t.Errorf("instance past leader grace with no heartbeat should be replaced, got %v", states)
 	}
 }
@@ -153,7 +169,8 @@ func TestReconcile_LeaderGraceSuppressesStaleness(t *testing.T) {
 func TestCreateInstance_RPCFailureMarksFailed(t *testing.T) {
 	s, _ := newHeartbeatScheduler(t) // nil clientFactory: dispatch always fails
 	ctx := context.Background()
-	if err := s.RegisterAgent(ctx, &goblinv1.AgentSpec{Id: "spec-a", Replicas: 1}); err != nil {
+	spec := &goblinv1.AgentSpec{Name: "spec-a", Replicas: 1}
+	if err := s.RegisterAgent(ctx, spec); err != nil {
 		t.Fatalf("RegisterAgent: %v", err)
 	}
 
@@ -163,10 +180,10 @@ func TestCreateInstance_RPCFailureMarksFailed(t *testing.T) {
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		states := instanceStates(t, s, "spec-a")
+		states := instanceStates(t, s, ident.String(spec.SpecUuid))
 		failed := false
 		for _, st := range states {
-			if st == "failed" {
+			if st == goblinv1.InstanceState_INSTANCE_STATE_TERMINATED {
 				failed = true
 			}
 		}
@@ -174,7 +191,7 @@ func TestCreateInstance_RPCFailureMarksFailed(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("dispatch failure should mark the instance failed, got %v", states)
+			t.Fatalf("dispatch failure should mark the instance terminated, got %v", states)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

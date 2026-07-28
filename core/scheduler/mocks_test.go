@@ -2,24 +2,126 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 
+	gapicrypto "github.com/goppydae/gapi/core/crypto"
+	"github.com/goppydae/goblin/core/consensus"
+	"github.com/goppydae/goblin/internal/ident"
+	goblinv1 "github.com/goppydae/goblin/proto"
 	"github.com/hashicorp/serf/serf"
+	"google.golang.org/protobuf/proto"
 )
 
 // MockStore implements KVStore for testing. It is goroutine-safe so tests
 // may exercise the scheduler concurrently (e.g. RunReconciler in a
-// goroutine), mirroring the real store's concurrency contract.
+// goroutine), mirroring the real store's concurrency contract - and it
+// mirrors the FSM's admission/transition/tombstone rules via the same
+// exported consensus.LegalTransition the FSM uses.
 type MockStore struct {
-	mu   sync.Mutex
-	data map[string][]byte
+	mu         sync.Mutex
+	data       map[string][]byte
+	instances  map[string]*goblinv1.AgentInstance
+	tombstones map[string]struct{}
 }
 
 func NewMockStore() *MockStore {
 	return &MockStore{
-		data: make(map[string][]byte),
+		data:       make(map[string][]byte),
+		instances:  make(map[string]*goblinv1.AgentInstance),
+		tombstones: make(map[string]struct{}),
 	}
+}
+
+func (m *MockStore) Admit(ctx context.Context, specUUID, instanceUUID []byte, nodeID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	id := ident.String(instanceUUID)
+	if id == "" || ident.String(specUUID) == "" || nodeID == "" {
+		return fmt.Errorf("mock admit: malformed admission")
+	}
+	if _, dead := m.tombstones[id]; dead {
+		return fmt.Errorf("mock admit: %s tombstoned", id)
+	}
+	if _, exists := m.instances[id]; exists {
+		return fmt.Errorf("mock admit: %s already admitted", id)
+	}
+	m.instances[id] = &goblinv1.AgentInstance{
+		InstanceUuid: append([]byte(nil), instanceUUID...),
+		SpecUuid:     append([]byte(nil), specUUID...),
+		NodeId:       nodeID,
+		State:        goblinv1.InstanceState_INSTANCE_STATE_ADMITTED,
+	}
+	return nil
+}
+
+func (m *MockStore) TransitionInstance(ctx context.Context, instanceUUID []byte, to goblinv1.InstanceState, reason string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	id := ident.String(instanceUUID)
+	inst, ok := m.instances[id]
+	if !ok {
+		return fmt.Errorf("mock transition: unknown instance %s", id)
+	}
+	if !consensus.LegalTransition(inst.State, to) {
+		return fmt.Errorf("%w: %s -> %s", consensus.ErrIllegalTransition, inst.State, to)
+	}
+	inst.State = to
+	if reason != "" {
+		inst.Reason = reason
+	}
+	switch to {
+	case goblinv1.InstanceState_INSTANCE_STATE_TERMINATED:
+		m.tombstones[id] = struct{}{}
+	case goblinv1.InstanceState_INSTANCE_STATE_ARCHIVED:
+		m.tombstones[id] = struct{}{}
+		delete(m.instances, id)
+	}
+	return nil
+}
+
+// SignalInstance mirrors the FSM's authorization: signalable state and
+// sufficient rights, answering with the placement node.
+func (m *MockStore) SignalInstance(ctx context.Context, req *goblinv1.SignalRequest) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	id := ident.String(req.InstanceUuid)
+	inst, ok := m.instances[id]
+	if !ok {
+		return "", fmt.Errorf("mock signal: unknown instance %s", id)
+	}
+	if inst.State != goblinv1.InstanceState_INSTANCE_STATE_RUNNING {
+		return "", fmt.Errorf("mock signal: instance %s not signalable", id)
+	}
+	required, err := gapicrypto.RightForSignal(req.Signum)
+	if err != nil {
+		return "", err
+	}
+	if req.Rights&required != required {
+		return "", fmt.Errorf("mock signal: insufficient rights")
+	}
+	return inst.NodeId, nil
+}
+
+func (m *MockStore) GetInstance(ctx context.Context, instanceID string) (*goblinv1.AgentInstance, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	inst, ok := m.instances[instanceID]
+	if !ok {
+		return nil, false, nil
+	}
+	return proto.Clone(inst).(*goblinv1.AgentInstance), true, nil
+}
+
+func (m *MockStore) ListInstances(ctx context.Context) ([]*goblinv1.AgentInstance, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]*goblinv1.AgentInstance, 0, len(m.instances))
+	for _, inst := range m.instances {
+		out = append(out, proto.Clone(inst).(*goblinv1.AgentInstance))
+	}
+	return out, nil
 }
 
 func (m *MockStore) Set(ctx context.Context, ns, key string, val []byte) error {

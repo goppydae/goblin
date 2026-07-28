@@ -26,14 +26,21 @@ type FSM struct {
 	// a re-created key restarts at 1 (versions are per-incarnation, not
 	// ABA-proof across delete/recreate).
 	versions map[string]map[string]uint64
-	mu       sync.RWMutex
+	// instances is the typed instance table (canonical UUID string ->
+	// record); tombstones holds every UUID ever terminated, append-only
+	// forever (operator decision 2026-07-28). Both live in the snapshot.
+	instances  map[string]*goblinv1.AgentInstance
+	tombstones map[string]struct{}
+	mu         sync.RWMutex
 }
 
 // NewFSM creates a new FSM
 func NewFSM() *FSM {
 	return &FSM{
-		state:    make(map[string]map[string][]byte),
-		versions: make(map[string]map[string]uint64),
+		state:      make(map[string]map[string][]byte),
+		versions:   make(map[string]map[string]uint64),
+		instances:  make(map[string]*goblinv1.AgentInstance),
+		tombstones: make(map[string]struct{}),
 	}
 }
 
@@ -87,6 +94,15 @@ func (f *FSM) Apply(log *raft.Log) interface{} {
 		f.write(cmd.Namespace, cmd.Key, cmd.Value)
 		return nil
 
+	case goblinv1.CommandType_COMMAND_TYPE_ADMIT:
+		return f.applyAdmit(cmd.GetAdmit())
+
+	case goblinv1.CommandType_COMMAND_TYPE_TRANSITION:
+		return f.applyTransition(cmd.GetTransition())
+
+	case goblinv1.CommandType_COMMAND_TYPE_SIGNAL:
+		return f.applySignal(cmd.GetSignal())
+
 	default:
 		return fmt.Errorf("unknown command type %v (namespace %s, key %s)",
 			cmd.Type, cmd.Namespace, cmd.Key)
@@ -106,11 +122,15 @@ func (f *FSM) write(namespace, key string, value []byte) {
 }
 
 // snapshotPayload is the versioned snapshot encoding. SchemaVersion
-// distinguishes it from legacy snapshots, which were a bare JSON state map.
+// distinguishes it from legacy snapshots, which were a bare JSON state
+// map. Version 2 adds the instance table and tombstone set; instance
+// records are proto-marshaled (JSON base64 in the envelope).
 type snapshotPayload struct {
 	SchemaVersion int                          `json:"schema_version"`
 	State         map[string]map[string][]byte `json:"state"`
 	Versions      map[string]map[string]uint64 `json:"versions"`
+	Instances     map[string][]byte            `json:"instances,omitempty"`
+	Tombstones    []string                     `json:"tombstones,omitempty"`
 }
 
 // Snapshot returns a snapshot of the FSM state
@@ -134,11 +154,25 @@ func (f *FSM) Snapshot() (raft.FSMSnapshot, error) {
 			versions[ns][k] = v
 		}
 	}
+	instances := make(map[string][]byte, len(f.instances))
+	for id, inst := range f.instances {
+		raw, err := proto.Marshal(inst)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot: marshal instance %s: %w", id, err)
+		}
+		instances[id] = raw
+	}
+	tombstones := make([]string, 0, len(f.tombstones))
+	for id := range f.tombstones {
+		tombstones = append(tombstones, id)
+	}
 
 	return &fsmSnapshot{payload: snapshotPayload{
-		SchemaVersion: 1,
+		SchemaVersion: 2,
 		State:         state,
 		Versions:      versions,
+		Instances:     instances,
+		Tombstones:    tombstones,
 	}}, nil
 }
 
@@ -179,11 +213,27 @@ func (f *FSM) Restore(rc io.ReadCloser) (err error) {
 		payload.Versions = make(map[string]map[string]uint64)
 	}
 
+	// Instance table (schema v2; absent in v1 and legacy snapshots).
+	instances := make(map[string]*goblinv1.AgentInstance, len(payload.Instances))
+	for id, raw := range payload.Instances {
+		var inst goblinv1.AgentInstance
+		if err := proto.Unmarshal(raw, &inst); err != nil {
+			return fmt.Errorf("restore: unmarshal instance %s: %w", id, err)
+		}
+		instances[id] = &inst
+	}
+	tombstones := make(map[string]struct{}, len(payload.Tombstones))
+	for _, id := range payload.Tombstones {
+		tombstones[id] = struct{}{}
+	}
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	f.state = payload.State
 	f.versions = payload.Versions
+	f.instances = instances
+	f.tombstones = tombstones
 	return nil
 }
 

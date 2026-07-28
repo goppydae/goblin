@@ -14,6 +14,7 @@ import (
 
 	gapitransport "github.com/goppydae/gapi/core/transport"
 	"github.com/goppydae/goblin/internal/cli"
+	"github.com/goppydae/goblin/internal/ident"
 	"github.com/goppydae/goblin/internal/supervisor"
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
@@ -111,6 +112,7 @@ func (c *testCluster) startNode(id, join string) *clusterNode {
 		"--api-addr", node.apiAddr,
 		"--data", filepath.Join(c.t.TempDir(), id+"-raft"),
 		"--log-format", "json",
+		"--log-level", "debug",
 	}
 	if join != "" {
 		args = append(args, "--join", join)
@@ -285,7 +287,7 @@ func (c *testCluster) waitInstances(via *clusterNode, specID string, count int, 
 		if err == nil {
 			running := insts[:0:0]
 			for _, in := range insts {
-				if in.State == "running" {
+				if in.State == goblinv1.InstanceState_INSTANCE_STATE_RUNNING {
 					running = append(running, in)
 				}
 			}
@@ -305,7 +307,33 @@ func (c *testCluster) waitInstances(via *clusterNode, specID string, count int, 
 func describeInstances(insts []*goblinv1.AgentInstance) []string {
 	out := make([]string, 0, len(insts))
 	for _, in := range insts {
-		out = append(out, fmt.Sprintf("%s@%s=%s", in.InstanceId, in.NodeId, in.State))
+		out = append(out, fmt.Sprintf("%s@%s=%s", ident.String(in.InstanceUuid), in.NodeId, in.State))
 	}
 	return out
+}
+
+// uuidStr renders instance UUID bytes canonically for test assertions.
+func uuidStr(b []byte) string { return ident.String(b) }
+
+// signal delivers a signal to an instance through the leader, failing
+// the test on refusal.
+func (c *testCluster) signal(node *clusterNode, instanceID string, signum int32) {
+	c.t.Helper()
+	if err := c.trySignal(node, instanceID, signum); err != nil {
+		c.t.Fatalf("signal %s with %d: %v", instanceID, signum, err)
+	}
+}
+
+// trySignal delivers a signal and returns the RPC error, for scenarios
+// asserting refusal.
+func (c *testCluster) trySignal(node *clusterNode, instanceID string, signum int32) error {
+	cl := c.client(node)
+	defer func() {
+		if cerr := cl.Close(); cerr != nil {
+			c.t.Logf("close signal client: %v", cerr)
+		}
+	}()
+	req := supervisor.SignalAgentInstanceRequest{InstanceID: instanceID, Signum: signum}
+	var resp string
+	return cl.Call("SchedulerRPC.SignalAgentInstance", &req, &resp)
 }

@@ -111,7 +111,7 @@ func (u *UnifiedController) FetchStatus(ctx context.Context) (_ []tui.AgentStatu
 			}
 
 			statuses = append(statuses, tui.AgentStatus{
-				ID:     spec.Id,
+				ID:     spec.Name,
 				Type:   "global-spec",
 				State:  state,
 				CPU:    cpu,

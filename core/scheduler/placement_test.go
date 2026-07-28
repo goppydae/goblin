@@ -48,7 +48,7 @@ func TestPlacementEngine(t *testing.T) {
 
 	// Test 1: Constraint Matching
 	specConstraints := &goblinv1.AgentSpec{
-		Id: "constrained-agent",
+		Name: "constrained-agent",
 		Constraints: map[string]string{
 			"region": "us-east",
 		},
@@ -67,7 +67,7 @@ func TestPlacementEngine(t *testing.T) {
 
 	// Test 2: Resource Capacity
 	specBig := &goblinv1.AgentSpec{
-		Id: "big-agent",
+		Name: "big-agent",
 		Resources: &goblinv1.ResourceReq{
 			Cpu:    2.0,
 			Memory: 4096,
@@ -93,7 +93,7 @@ func TestPlacementEngine(t *testing.T) {
 
 	// Test 3: Binpack Strategy
 	specBinpack := &goblinv1.AgentSpec{
-		Id:       "binpack-agent",
+		Name:     "binpack-agent",
 		Strategy: "binpack",
 		Resources: &goblinv1.ResourceReq{
 			Cpu: 0.1,
@@ -115,7 +115,7 @@ func TestPlacementEngine(t *testing.T) {
 
 	// Test 4: Insufficient Resources
 	specHuge := &goblinv1.AgentSpec{
-		Id: "huge-agent",
+		Name: "huge-agent",
 		Resources: &goblinv1.ResourceReq{
 			Cpu: 100.0,
 		},

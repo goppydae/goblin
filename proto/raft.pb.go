@@ -32,6 +32,9 @@ const (
 	CommandType_COMMAND_TYPE_SET         CommandType = 1
 	CommandType_COMMAND_TYPE_DELETE      CommandType = 2
 	CommandType_COMMAND_TYPE_CAS         CommandType = 3 // Compare-And-Swap
+	CommandType_COMMAND_TYPE_ADMIT       CommandType = 4 // admit an instance (payload: admit)
+	CommandType_COMMAND_TYPE_TRANSITION  CommandType = 5 // lifecycle transition (payload: transition)
+	CommandType_COMMAND_TYPE_SIGNAL      CommandType = 6 // authorize + log a signal (payload: signal)
 )
 
 // Enum value maps for CommandType.
@@ -41,12 +44,18 @@ var (
 		1: "COMMAND_TYPE_SET",
 		2: "COMMAND_TYPE_DELETE",
 		3: "COMMAND_TYPE_CAS",
+		4: "COMMAND_TYPE_ADMIT",
+		5: "COMMAND_TYPE_TRANSITION",
+		6: "COMMAND_TYPE_SIGNAL",
 	}
 	CommandType_value = map[string]int32{
 		"COMMAND_TYPE_UNSPECIFIED": 0,
 		"COMMAND_TYPE_SET":         1,
 		"COMMAND_TYPE_DELETE":      2,
 		"COMMAND_TYPE_CAS":         3,
+		"COMMAND_TYPE_ADMIT":       4,
+		"COMMAND_TYPE_TRANSITION":  5,
+		"COMMAND_TYPE_SIGNAL":      6,
 	}
 )
 
@@ -77,14 +86,22 @@ func (CommandType) EnumDescriptor() ([]byte, []int) {
 	return file_goblin_v1_raft_proto_rawDescGZIP(), []int{0}
 }
 
-// LogEntry represents a command in the Raft log
+// LogEntry represents a command in the Raft log. KV commands use the
+// flat namespace/key/value fields; instance-lifecycle commands carry
+// their payload in the oneof.
 type LogEntry struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          CommandType            `protobuf:"varint,1,opt,name=type,proto3,enum=goblin.v1.CommandType" json:"type,omitempty"`
-	Namespace     string                 `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
-	Key           string                 `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"`
-	Value         []byte                 `protobuf:"bytes,4,opt,name=value,proto3" json:"value,omitempty"`
-	CasVersion    uint64                 `protobuf:"varint,5,opt,name=cas_version,json=casVersion,proto3" json:"cas_version,omitempty"` // For optimistic concurrency checks
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Type       CommandType            `protobuf:"varint,1,opt,name=type,proto3,enum=goblin.v1.CommandType" json:"type,omitempty"`
+	Namespace  string                 `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Key        string                 `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"`
+	Value      []byte                 `protobuf:"bytes,4,opt,name=value,proto3" json:"value,omitempty"`
+	CasVersion uint64                 `protobuf:"varint,5,opt,name=cas_version,json=casVersion,proto3" json:"cas_version,omitempty"` // For optimistic concurrency checks
+	// Types that are valid to be assigned to Payload:
+	//
+	//	*LogEntry_Admit
+	//	*LogEntry_Transition
+	//	*LogEntry_Signal
+	Payload       isLogEntry_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -154,23 +171,300 @@ func (x *LogEntry) GetCasVersion() uint64 {
 	return 0
 }
 
+func (x *LogEntry) GetPayload() isLogEntry_Payload {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+func (x *LogEntry) GetAdmit() *ApplyAdmit {
+	if x != nil {
+		if x, ok := x.Payload.(*LogEntry_Admit); ok {
+			return x.Admit
+		}
+	}
+	return nil
+}
+
+func (x *LogEntry) GetTransition() *InstanceTransition {
+	if x != nil {
+		if x, ok := x.Payload.(*LogEntry_Transition); ok {
+			return x.Transition
+		}
+	}
+	return nil
+}
+
+func (x *LogEntry) GetSignal() *SignalRequest {
+	if x != nil {
+		if x, ok := x.Payload.(*LogEntry_Signal); ok {
+			return x.Signal
+		}
+	}
+	return nil
+}
+
+type isLogEntry_Payload interface {
+	isLogEntry_Payload()
+}
+
+type LogEntry_Admit struct {
+	Admit *ApplyAdmit `protobuf:"bytes,6,opt,name=admit,proto3,oneof"`
+}
+
+type LogEntry_Transition struct {
+	Transition *InstanceTransition `protobuf:"bytes,7,opt,name=transition,proto3,oneof"`
+}
+
+type LogEntry_Signal struct {
+	Signal *SignalRequest `protobuf:"bytes,8,opt,name=signal,proto3,oneof"`
+}
+
+func (*LogEntry_Admit) isLogEntry_Payload() {}
+
+func (*LogEntry_Transition) isLogEntry_Payload() {}
+
+func (*LogEntry_Signal) isLogEntry_Payload() {}
+
+// ApplyAdmit admits one instance. The leader mints the UUIDv7 and
+// decides placement at PROPOSE time and carries both here: Apply
+// records, never generates - the FSM must stay deterministic across
+// replicas. The instance enters INSTANCE_STATE_ADMITTED; a tombstoned
+// or already-known UUID is rejected.
+type ApplyAdmit struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SpecUuid      []byte                 `protobuf:"bytes,1,opt,name=spec_uuid,json=specUuid,proto3" json:"spec_uuid,omitempty"`
+	InstanceUuid  []byte                 `protobuf:"bytes,2,opt,name=instance_uuid,json=instanceUuid,proto3" json:"instance_uuid,omitempty"` // minted at propose time by the leader
+	NodeId        string                 `protobuf:"bytes,3,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`                   // placement decided at propose time
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApplyAdmit) Reset() {
+	*x = ApplyAdmit{}
+	mi := &file_goblin_v1_raft_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApplyAdmit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApplyAdmit) ProtoMessage() {}
+
+func (x *ApplyAdmit) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_raft_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApplyAdmit.ProtoReflect.Descriptor instead.
+func (*ApplyAdmit) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_raft_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ApplyAdmit) GetSpecUuid() []byte {
+	if x != nil {
+		return x.SpecUuid
+	}
+	return nil
+}
+
+func (x *ApplyAdmit) GetInstanceUuid() []byte {
+	if x != nil {
+		return x.InstanceUuid
+	}
+	return nil
+}
+
+func (x *ApplyAdmit) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+// InstanceTransition moves an instance through the lifecycle FSM.
+// Illegal transitions are rejected as the Apply response.
+type InstanceTransition struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InstanceUuid  []byte                 `protobuf:"bytes,1,opt,name=instance_uuid,json=instanceUuid,proto3" json:"instance_uuid,omitempty"`
+	To            InstanceState          `protobuf:"varint,2,opt,name=to,proto3,enum=goblin.v1.InstanceState" json:"to,omitempty"`
+	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"` // required for terminal states
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InstanceTransition) Reset() {
+	*x = InstanceTransition{}
+	mi := &file_goblin_v1_raft_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InstanceTransition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InstanceTransition) ProtoMessage() {}
+
+func (x *InstanceTransition) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_raft_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InstanceTransition.ProtoReflect.Descriptor instead.
+func (*InstanceTransition) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_raft_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *InstanceTransition) GetInstanceUuid() []byte {
+	if x != nil {
+		return x.InstanceUuid
+	}
+	return nil
+}
+
+func (x *InstanceTransition) GetTo() InstanceState {
+	if x != nil {
+		return x.To
+	}
+	return InstanceState_INSTANCE_STATE_UNSPECIFIED
+}
+
+func (x *InstanceTransition) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+// SignalRequest commits a signal through the log so it is authorized
+// at the FSM (rights bitmap) and audited. Delivery happens on the
+// target node through the start_epoch + pidfd guard.
+type SignalRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InstanceUuid  []byte                 `protobuf:"bytes,1,opt,name=instance_uuid,json=instanceUuid,proto3" json:"instance_uuid,omitempty"`
+	Signum        int32                  `protobuf:"varint,2,opt,name=signum,proto3" json:"signum,omitempty"`
+	TokenId       []byte                 `protobuf:"bytes,3,opt,name=token_id,json=tokenId,proto3" json:"token_id,omitempty"` // authorizing capability token id
+	Rights        uint64                 `protobuf:"varint,4,opt,name=rights,proto3" json:"rights,omitempty"`                 // rights asserted; checked against the bitmap
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SignalRequest) Reset() {
+	*x = SignalRequest{}
+	mi := &file_goblin_v1_raft_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SignalRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SignalRequest) ProtoMessage() {}
+
+func (x *SignalRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_raft_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SignalRequest.ProtoReflect.Descriptor instead.
+func (*SignalRequest) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_raft_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *SignalRequest) GetInstanceUuid() []byte {
+	if x != nil {
+		return x.InstanceUuid
+	}
+	return nil
+}
+
+func (x *SignalRequest) GetSignum() int32 {
+	if x != nil {
+		return x.Signum
+	}
+	return 0
+}
+
+func (x *SignalRequest) GetTokenId() []byte {
+	if x != nil {
+		return x.TokenId
+	}
+	return nil
+}
+
+func (x *SignalRequest) GetRights() uint64 {
+	if x != nil {
+		return x.Rights
+	}
+	return 0
+}
+
 var File_goblin_v1_raft_proto protoreflect.FileDescriptor
 
 const file_goblin_v1_raft_proto_rawDesc = "" +
 	"\n" +
-	"\x14goblin/v1/raft.proto\x12\tgoblin.v1\"\x9d\x01\n" +
+	"\x14goblin/v1/raft.proto\x12\tgoblin.v1\x1a\x19goblin/v1/scheduler.proto\"\xcc\x02\n" +
 	"\bLogEntry\x12*\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x16.goblin.v1.CommandTypeR\x04type\x12\x1c\n" +
 	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12\x10\n" +
 	"\x03key\x18\x03 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x04 \x01(\fR\x05value\x12\x1f\n" +
 	"\vcas_version\x18\x05 \x01(\x04R\n" +
-	"casVersion*p\n" +
+	"casVersion\x12-\n" +
+	"\x05admit\x18\x06 \x01(\v2\x15.goblin.v1.ApplyAdmitH\x00R\x05admit\x12?\n" +
+	"\n" +
+	"transition\x18\a \x01(\v2\x1d.goblin.v1.InstanceTransitionH\x00R\n" +
+	"transition\x122\n" +
+	"\x06signal\x18\b \x01(\v2\x18.goblin.v1.SignalRequestH\x00R\x06signalB\t\n" +
+	"\apayload\"g\n" +
+	"\n" +
+	"ApplyAdmit\x12\x1b\n" +
+	"\tspec_uuid\x18\x01 \x01(\fR\bspecUuid\x12#\n" +
+	"\rinstance_uuid\x18\x02 \x01(\fR\finstanceUuid\x12\x17\n" +
+	"\anode_id\x18\x03 \x01(\tR\x06nodeId\"{\n" +
+	"\x12InstanceTransition\x12#\n" +
+	"\rinstance_uuid\x18\x01 \x01(\fR\finstanceUuid\x12(\n" +
+	"\x02to\x18\x02 \x01(\x0e2\x18.goblin.v1.InstanceStateR\x02to\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"\x7f\n" +
+	"\rSignalRequest\x12#\n" +
+	"\rinstance_uuid\x18\x01 \x01(\fR\finstanceUuid\x12\x16\n" +
+	"\x06signum\x18\x02 \x01(\x05R\x06signum\x12\x19\n" +
+	"\btoken_id\x18\x03 \x01(\fR\atokenId\x12\x16\n" +
+	"\x06rights\x18\x04 \x01(\x04R\x06rights*\xbe\x01\n" +
 	"\vCommandType\x12\x1c\n" +
 	"\x18COMMAND_TYPE_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10COMMAND_TYPE_SET\x10\x01\x12\x17\n" +
 	"\x13COMMAND_TYPE_DELETE\x10\x02\x12\x14\n" +
-	"\x10COMMAND_TYPE_CAS\x10\x03B+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
+	"\x10COMMAND_TYPE_CAS\x10\x03\x12\x16\n" +
+	"\x12COMMAND_TYPE_ADMIT\x10\x04\x12\x1b\n" +
+	"\x17COMMAND_TYPE_TRANSITION\x10\x05\x12\x17\n" +
+	"\x13COMMAND_TYPE_SIGNAL\x10\x06B+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
 
 var (
 	file_goblin_v1_raft_proto_rawDescOnce sync.Once
@@ -185,18 +479,26 @@ func file_goblin_v1_raft_proto_rawDescGZIP() []byte {
 }
 
 var file_goblin_v1_raft_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_goblin_v1_raft_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_goblin_v1_raft_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_goblin_v1_raft_proto_goTypes = []any{
-	(CommandType)(0), // 0: goblin.v1.CommandType
-	(*LogEntry)(nil), // 1: goblin.v1.LogEntry
+	(CommandType)(0),           // 0: goblin.v1.CommandType
+	(*LogEntry)(nil),           // 1: goblin.v1.LogEntry
+	(*ApplyAdmit)(nil),         // 2: goblin.v1.ApplyAdmit
+	(*InstanceTransition)(nil), // 3: goblin.v1.InstanceTransition
+	(*SignalRequest)(nil),      // 4: goblin.v1.SignalRequest
+	(InstanceState)(0),         // 5: goblin.v1.InstanceState
 }
 var file_goblin_v1_raft_proto_depIdxs = []int32{
 	0, // 0: goblin.v1.LogEntry.type:type_name -> goblin.v1.CommandType
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	2, // 1: goblin.v1.LogEntry.admit:type_name -> goblin.v1.ApplyAdmit
+	3, // 2: goblin.v1.LogEntry.transition:type_name -> goblin.v1.InstanceTransition
+	4, // 3: goblin.v1.LogEntry.signal:type_name -> goblin.v1.SignalRequest
+	5, // 4: goblin.v1.InstanceTransition.to:type_name -> goblin.v1.InstanceState
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_goblin_v1_raft_proto_init() }
@@ -204,13 +506,19 @@ func file_goblin_v1_raft_proto_init() {
 	if File_goblin_v1_raft_proto != nil {
 		return
 	}
+	file_goblin_v1_scheduler_proto_init()
+	file_goblin_v1_raft_proto_msgTypes[0].OneofWrappers = []any{
+		(*LogEntry_Admit)(nil),
+		(*LogEntry_Transition)(nil),
+		(*LogEntry_Signal)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_goblin_v1_raft_proto_rawDesc), len(file_goblin_v1_raft_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   1,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
