@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
+	"strconv"
 	"time"
 
 	"github.com/goppydae/goblin/internal/ident"
@@ -340,12 +342,9 @@ func (s *Scheduler) getNodeAddress(ctx context.Context, nodeID string) (string, 
 	members := s.cluster.Members()
 	for _, m := range members {
 		if m.Name == nodeID {
-			// Nodes broadcast their RPC endpoint in the api_addr tag;
-			// the serf address/port is gossip, not RPC.
-			if api := m.Tags["api_addr"]; api != "" {
-				return api, nil
-			}
-			return "", fmt.Errorf("node %s has no api_addr tag", nodeID)
+			// Single-listener model: the member's advertised address IS
+			// its RPC endpoint (every plane shares it, routed by ALPN).
+			return net.JoinHostPort(m.Addr.String(), strconv.Itoa(int(m.Port))), nil
 		}
 	}
 	return "", fmt.Errorf("node %s not found", nodeID)

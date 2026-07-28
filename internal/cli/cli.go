@@ -36,13 +36,11 @@ func closeClient(client *QUICRPCClient, err *error) {
 // ... helper code ...
 
 var (
-	nodeID   string
-	serfAddr string
-	// serfPort int - Removed
-	raftAddr string
-	raftDir  string
-	joinAddr string
-	apiAddr  string
+	nodeID     string
+	listenAddr string
+	raftDir    string
+	joinAddr   string
+	apiAddr    string
 
 	tlsCA       string
 	tlsInsecure bool
@@ -53,12 +51,10 @@ var startCmd = &cobra.Command{
 	Short: "Start Goblin supervisor",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg := supervisor.Config{
-			NodeID:   nodeID,
-			SerfAddr: serfAddr,
-			RaftAddr: raftAddr,
-			RaftDir:  raftDir,
-			JoinAddr: joinAddr,
-			APIAddr:  apiAddr,
+			NodeID:     nodeID,
+			ListenAddr: listenAddr,
+			RaftDir:    raftDir,
+			JoinAddr:   joinAddr,
 		}
 
 		sup := supervisor.New(cfg)
@@ -68,9 +64,8 @@ var startCmd = &cobra.Command{
 
 func init() {
 	startCmd.Flags().StringVar(&nodeID, "id", "", "Unique Node ID (default: hostname)")
-	startCmd.Flags().StringVar(&serfAddr, "serf-addr", "127.0.0.1:29010", "Serf bind address (host:port)")
+	startCmd.Flags().StringVar(&listenAddr, "listen-addr", "127.0.0.1:29000", "Single control-plane bind address (QUIC, ALPN-routed)")
 	// startCmd.Flags().IntVar(&serfPort, "serf-port", 29010, "Serf bind port") - Deprecated/Removed
-	startCmd.Flags().StringVar(&raftAddr, "raft-addr", "127.0.0.1:29020", "Raft bind address (host:port)")
 	startCmd.Flags().StringVar(&raftDir, "data", "./data/raft", "Data directory for Raft log")
 	startCmd.Flags().StringVar(&joinAddr, "join", "", "Join existing cluster peer (host:port)")
 
@@ -85,7 +80,7 @@ func init() {
 	clusterCmd.AddCommand(migrateCmd)
 
 	// Global flags
-	RootCmd.PersistentFlags().StringVar(&apiAddr, "api-addr", "127.0.0.1:29000", "API address")
+	RootCmd.PersistentFlags().StringVar(&apiAddr, "api-addr", "127.0.0.1:29000", "Target node's single listen address")
 	RootCmd.PersistentFlags().StringVar(&tlsCA, "tls-ca", "", "Path to CA certificate for API TLS verification")
 	RootCmd.PersistentFlags().BoolVar(&tlsInsecure, "tls-insecure", false, "Skip API TLS verification (INSECURE)")
 

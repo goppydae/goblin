@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	goblintransport "github.com/goppydae/goblin/core/transport"
 	"github.com/goppydae/goblin/internal/supervisor"
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
@@ -37,6 +38,27 @@ func TestClusterEndToEnd(t *testing.T) {
 		t.Fatalf("placement: 3 instances should spread across 3 nodes, got %v", describeInstances(insts))
 	}
 	t.Logf("placement: 3/3 running on %d nodes in %s (target %s)", len(nodesSeen), elapsed, placementTarget)
+
+	// --- Scenario 1a: the single-port claim, proven mechanically
+	// (GOBLIN-DIV-023). Every registry ALPN answers on the leader's ONE
+	// advertised address - gossip, raft, RPC, and kernel are all planes
+	// of the same listener.
+	for _, alpn := range []string{
+		goblintransport.ALPNGoblinRPC,
+		goblintransport.ALPNSerfQUIC,
+		goblintransport.ALPNRaftQUIC,
+		goblintransport.ALPNGapiQUIC,
+	} {
+		conn, err := dialALPNAddr(leader.listenAddr, alpn)
+		if err != nil {
+			t.Fatalf("single-port proof: ALPN %s refused on %s: %v", alpn, leader.listenAddr, err)
+		}
+		if got := conn.ConnectionState().TLS.NegotiatedProtocol; got != alpn {
+			t.Fatalf("single-port proof: negotiated %q, want %q", got, alpn)
+		}
+		_ = conn.CloseWithError(0, "probe done")
+	}
+	t.Logf("single-port proof: all four ALPNs served on %s", leader.listenAddr)
 
 	// --- Scenario 2a: the signal path (phase 2c). SIGTERM one instance:
 	// the leader issues a capability token, verifies it, authorizes the

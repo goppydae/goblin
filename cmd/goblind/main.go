@@ -19,15 +19,12 @@ import (
 )
 
 var (
-	nodeID   string
-	serfAddr string
-	// serfPort          int - Removed, now part of serfAddr
-	serfAdvertiseAddr  string
-	serfAdvertisePort  int
-	raftAddr           string
+	nodeID             string
+	listenAddr         string
+	advertiseAddr      string
+	advertisePort      int
 	raftDir            string
 	joinAddr           string
-	apiAddr            string
 	encryptionKey      string
 	tlsCertFile        string
 	tlsKeyFile         string
@@ -59,13 +56,11 @@ var rootCmd = &cobra.Command{
 
 		cfg := supervisor.Config{
 			NodeID:             nodeID,
-			SerfAddr:           serfAddr,
-			AdvertiseAddr:      serfAdvertiseAddr,
-			AdvertisePort:      serfAdvertisePort,
-			RaftAddr:           raftAddr,
+			ListenAddr:         listenAddr,
+			AdvertiseAddr:      advertiseAddr,
+			AdvertisePort:      advertisePort,
 			RaftDir:            raftDir,
 			JoinAddr:           joinAddr,
-			APIAddr:            apiAddr,
 			Tags:               tags,
 			EncryptionKey:      encryptionKey,
 			CertFile:           tlsCertFile,
@@ -134,14 +129,10 @@ func getTotalMemory() uint64 {
 
 func init() {
 	rootCmd.Flags().StringVar(&nodeID, "id", "", "Unique Node ID (default: hostname)")
-	rootCmd.Flags().StringVar(&serfAddr, "serf-addr", "127.0.0.1:29010", "Serf bind address (host:port)")
-	// --serf-port flag removed, now part of --serf-addr
-	rootCmd.Flags().StringVar(&serfAdvertiseAddr, "serf-advertise-addr", "", "Serf advertise address (if different from bind)")
-	rootCmd.Flags().IntVar(&serfAdvertisePort, "serf-advertise-port", 0, "Serf advertise port (if different from bind)")
-	rootCmd.Flags().StringVar(&raftAddr, "raft-addr", "127.0.0.1:29020", "Raft bind address (host:port)")
+	rootCmd.Flags().StringVar(&listenAddr, "listen-addr", "127.0.0.1:29000", "Single control-plane bind address (QUIC; carries GAPI, RPC, Serf, and Raft via ALPN)")
+	rootCmd.Flags().StringVar(&advertiseAddr, "advertise-addr", "", "Advertise address (if different from bind)")
 	rootCmd.Flags().StringVar(&raftDir, "data", "./data/raft", "Data directory for Raft log")
 	rootCmd.Flags().StringVar(&joinAddr, "join", "", "Join existing cluster peer (host:port)")
-	rootCmd.Flags().StringVar(&apiAddr, "api-addr", "127.0.0.1:29000", "API address")
 	rootCmd.Flags().StringVar(&metricsAddr, "metrics-addr", "", "Prometheus metrics listen address (empty: disabled)")
 
 	// Security Flags

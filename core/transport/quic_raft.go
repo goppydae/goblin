@@ -8,7 +8,6 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
-	"fmt"
 	"math/big"
 	"net"
 	"time"
@@ -17,61 +16,67 @@ import (
 	"github.com/quic-go/quic-go"
 )
 
-// QUICStreamLayer implements raft.StreamLayer over QUIC.
+// QUICStreamLayer implements raft.StreamLayer over QUIC. It does not
+// own a listener: inbound connections arrive from the shared
+// control-plane listener's ALPN router (GOBLIN-DIV-023); only the dial
+// side opens connections, offering exactly the raft-quic ALPN.
 type QUICStreamLayer struct {
-	listener *quic.Listener
-	addr     net.Addr
-	tlsConf  *tls.Config
+	conns   <-chan *quic.Conn
+	addr    net.Addr
+	tlsConf *tls.Config
+	closed  chan struct{}
 }
 
-// NewQUICStreamLayer creates a new QUIC stream layer.
-func NewQUICStreamLayer(bindAddr string, tlsConf *tls.Config) (*QUICStreamLayer, error) {
-	quicConf := &quic.Config{
-		KeepAlivePeriod: 10 * time.Second,
-		MaxIdleTimeout:  30 * time.Second,
-	}
-
-	ln, err := quic.ListenAddr(bindAddr, tlsConf, quicConf)
-	if err != nil {
-		return nil, fmt.Errorf("failed to listen on QUIC addr %s: %w", bindAddr, err)
-	}
-
+// NewRoutedQUICStreamLayer builds the raft stream layer over routed
+// connections. addr is the node's single advertised control-plane
+// address - it becomes this server's raft address, so it must be
+// dialable by peers.
+func NewRoutedQUICStreamLayer(conns <-chan *quic.Conn, addr net.Addr, tlsConf *tls.Config) *QUICStreamLayer {
 	return &QUICStreamLayer{
-		listener: ln,
-		addr:     ln.Addr(),
-		tlsConf:  tlsConf,
-	}, nil
+		conns:   conns,
+		addr:    addr,
+		tlsConf: tlsConf,
+		closed:  make(chan struct{}),
+	}
 }
 
-// Accept accepts the next connection.
+// Accept waits for the next routed raft-quic connection and surfaces
+// its first stream as the raft net.Conn.
 func (l *QUICStreamLayer) Accept() (net.Conn, error) {
-	ctx := context.Background()
-	conn, err := l.listener.Accept(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	stream, err := conn.AcceptStream(ctx)
-	if err != nil {
-		if cerr := conn.CloseWithError(1, "failed to accept stream"); cerr != nil {
-			return nil, errors.Join(err, cerr)
+	select {
+	case <-l.closed:
+		return nil, net.ErrClosed
+	case conn, ok := <-l.conns:
+		if !ok {
+			return nil, net.ErrClosed
 		}
-		return nil, err
+		stream, err := conn.AcceptStream(context.Background())
+		if err != nil {
+			if cerr := conn.CloseWithError(1, "failed to accept stream"); cerr != nil {
+				return nil, errors.Join(err, cerr)
+			}
+			return nil, err
+		}
+		return &QUICConn{
+			Stream:  stream,
+			Conn:    conn,
+			reqAddr: conn.RemoteAddr(),
+		}, nil
 	}
-
-	return &QUICConn{
-		Stream:  stream,
-		Conn:    conn,
-		reqAddr: conn.RemoteAddr(),
-	}, nil
 }
 
-// Close closes the listener.
+// Close stops accepting routed connections. The shared listener stays
+// open - it belongs to the supervisor, not this adapter.
 func (l *QUICStreamLayer) Close() error {
-	return l.listener.Close()
+	select {
+	case <-l.closed:
+	default:
+		close(l.closed)
+	}
+	return nil
 }
 
-// Addr returns the listener's address.
+// Addr returns the advertised control-plane address.
 func (l *QUICStreamLayer) Addr() net.Addr {
 	return l.addr
 }
@@ -90,10 +95,9 @@ func (l *QUICStreamLayer) Dial(addr raft.ServerAddress, timeout time.Duration) (
 	if clientTLS == nil {
 		clientTLS = &tls.Config{InsecureSkipVerify: true}
 	}
-	// Important: for QUIC, NextProtos must match
-	if len(clientTLS.NextProtos) == 0 {
-		clientTLS.NextProtos = []string{ALPNRaftQUIC}
-	}
+	// The dial must offer exactly raft-quic: a multi-ALPN client offer
+	// would let the shared listener negotiate some other plane.
+	clientTLS.NextProtos = []string{ALPNRaftQUIC}
 
 	conn, err := quic.DialAddr(ctx, string(addr), clientTLS, quicConf)
 	if err != nil {

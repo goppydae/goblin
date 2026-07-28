@@ -3,6 +3,8 @@
 package main_test
 
 import (
+	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"os"
@@ -17,6 +19,7 @@ import (
 	"github.com/goppydae/goblin/internal/ident"
 	"github.com/goppydae/goblin/internal/supervisor"
 	goblinv1 "github.com/goppydae/goblin/proto"
+	"github.com/quic-go/quic-go"
 )
 
 // builtBinaries holds the once-per-run build outputs shared by every test.
@@ -59,11 +62,12 @@ func TestMain(m *testing.M) {
 
 // clusterNode is one goblind process under harness control.
 type clusterNode struct {
-	id       string
-	serfAddr string
-	apiAddr  string
-	cmd      *exec.Cmd
-	logPath  string
+	id string
+	// listenAddr is the node's single control-plane address: gossip,
+	// raft, RPC, and kernel traffic all ride it, routed by ALPN.
+	listenAddr string
+	cmd        *exec.Cmd
+	logPath    string
 }
 
 type testCluster struct {
@@ -97,19 +101,16 @@ func freeAddrs(t *testing.T, n int) []string {
 // startNode launches a goblind process. join is empty for the first node.
 func (c *testCluster) startNode(id, join string) *clusterNode {
 	c.t.Helper()
-	addrs := freeAddrs(c.t, 3)
+	addrs := freeAddrs(c.t, 1)
 	node := &clusterNode{
-		id:       id,
-		serfAddr: addrs[0],
-		apiAddr:  addrs[2],
-		logPath:  nodeLogPath(id),
+		id:         id,
+		listenAddr: addrs[0],
+		logPath:    nodeLogPath(id),
 	}
 
 	args := []string{
 		"--id", id,
-		"--serf-addr", node.serfAddr,
-		"--raft-addr", addrs[1],
-		"--api-addr", node.apiAddr,
+		"--listen-addr", node.listenAddr,
 		"--data", filepath.Join(c.t.TempDir(), id+"-raft"),
 		"--log-format", "json",
 		"--log-level", "debug",
@@ -188,7 +189,7 @@ func startCluster(t *testing.T, n int) *testCluster {
 	c := &testCluster{t: t, nodes: map[string]*clusterNode{}}
 	first := c.startNode("node-1", "")
 	for i := 2; i <= n; i++ {
-		c.startNode(fmt.Sprintf("node-%d", i), first.serfAddr)
+		c.startNode(fmt.Sprintf("node-%d", i), first.listenAddr)
 	}
 	return c
 }
@@ -198,12 +199,12 @@ func (c *testCluster) client(node *clusterNode) *cli.QUICRPCClient {
 	c.t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
 	for {
-		cl, err := cli.NewQUICRPCClient(node.apiAddr, gapitransport.TLSConfig{InsecureSkipVerify: true})
+		cl, err := cli.NewQUICRPCClient(node.listenAddr, gapitransport.TLSConfig{InsecureSkipVerify: true})
 		if err == nil {
 			return cl
 		}
 		if time.Now().After(deadline) {
-			c.t.Fatalf("connect to %s (%s): %v", node.id, node.apiAddr, err)
+			c.t.Fatalf("connect to %s (%s): %v", node.id, node.listenAddr, err)
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
@@ -211,7 +212,7 @@ func (c *testCluster) client(node *clusterNode) *cli.QUICRPCClient {
 
 // members calls SchedulerRPC.Members via the given node.
 func (c *testCluster) members(node *clusterNode) ([]supervisor.MemberInfo, error) {
-	cl, err := cli.NewQUICRPCClient(node.apiAddr, gapitransport.TLSConfig{InsecureSkipVerify: true})
+	cl, err := cli.NewQUICRPCClient(node.listenAddr, gapitransport.TLSConfig{InsecureSkipVerify: true})
 	if err != nil {
 		return nil, err
 	}
@@ -258,7 +259,7 @@ func (c *testCluster) waitLeader(via *clusterNode, n int, timeout time.Duration)
 
 // instances lists instance records for a spec via the given node.
 func (c *testCluster) instances(node *clusterNode, specID string) ([]*goblinv1.AgentInstance, error) {
-	cl, err := cli.NewQUICRPCClient(node.apiAddr, gapitransport.TLSConfig{InsecureSkipVerify: true})
+	cl, err := cli.NewQUICRPCClient(node.listenAddr, gapitransport.TLSConfig{InsecureSkipVerify: true})
 	if err != nil {
 		return nil, err
 	}
@@ -336,4 +337,15 @@ func (c *testCluster) trySignal(node *clusterNode, instanceID string, signum int
 	req := supervisor.SignalAgentInstanceRequest{InstanceID: instanceID, Signum: signum}
 	var resp string
 	return cl.Call("SchedulerRPC.SignalAgentInstance", &req, &resp)
+}
+
+// dialALPNAddr probes one ALPN plane of a node's single control-plane
+// address (the GOBLIN-DIV-023 mechanical proof).
+func dialALPNAddr(addr, alpn string) (*quic.Conn, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	return quic.DialAddr(ctx, addr, &tls.Config{
+		InsecureSkipVerify: true, // harness nodes run ephemeral dev certs
+		NextProtos:         []string{alpn},
+	}, &quic.Config{EnableDatagrams: true})
 }

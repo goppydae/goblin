@@ -235,17 +235,14 @@ func (s *SchedulerRPC) Members(req *struct{}, resp *[]MemberInfo) error {
 						tags[iter.Key().String()] = iter.Value().String()
 					}
 
-					// Check Leadership
-					isLeader := false
-					if raftAddr, ok := tags["raft_addr"]; ok {
-						if raftAddr == leaderAddr {
-							isLeader = true
-						}
-					}
+					// Check Leadership: single-listener model - the raft
+					// leader address IS the member's advertised address.
+					memberAddr := fmt.Sprintf("%s:%d", ip.String(), port)
+					isLeader := memberAddr == leaderAddr
 
 					info := MemberInfo{
 						Name:   name,
-						Addr:   fmt.Sprintf("%s:%d", ip.String(), port),
+						Addr:   memberAddr,
 						Status: status,
 						Tags:   tags,
 						Leader: isLeader,

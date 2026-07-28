@@ -1,17 +1,13 @@
 package consensus
 
 import (
-	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
 
-	"github.com/goppydae/goblin/core/transport"
 	goblinv1 "github.com/goppydae/goblin/proto"
 	"github.com/hashicorp/raft"
 )
@@ -25,12 +21,14 @@ type Consensus struct {
 	dataDir   string
 }
 
-// NewConsensus creates a new Raft-based consensus manager
-// NewConsensus builds the Raft engine. bootstrap must be true on exactly
-// one seed node (the one with no join target): every node bootstrapping
-// its own single-node cluster yields N independent rafts that gossip but
-// never share state - the failure mode the 2b e2e exposed.
-func NewConsensus(nodeID, dataDir, bindAddr string, tlsCfg *tls.Config, bootstrap bool) (*Consensus, error) {
+// NewConsensus builds the Raft engine over the provided stream layer
+// (the raft-quic plane of the shared control-plane listener; the
+// layer's Addr() is this server's advertised raft address). bootstrap
+// must be true on exactly one seed node (the one with no join target):
+// every node bootstrapping its own single-node cluster yields N
+// independent rafts that gossip but never share state - the failure
+// mode the 2b e2e exposed.
+func NewConsensus(nodeID, dataDir string, stream raft.StreamLayer, bootstrap bool) (*Consensus, error) {
 	// Create data directory
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create data dir: %w", err)
@@ -65,30 +63,9 @@ func NewConsensus(nodeID, dataDir, bindAddr string, tlsCfg *tls.Config, bootstra
 		return nil, fmt.Errorf("failed to create snapshot store: %w", err)
 	}
 
-	// Create transport
-	var raftTransport raft.Transport
-
-	if tlsCfg == nil {
-		tlsCfg = &tls.Config{InsecureSkipVerify: true}
-	}
-	if len(tlsCfg.Certificates) == 0 && tlsCfg.GetCertificate == nil {
-		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "generating self-signed certificate for raft quic transport")
-		cert, err := transport.GenerateInsecureSelfSignedCert()
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate self-signed cert: %w", err)
-		}
-		tlsCfg.Certificates = []tls.Certificate{cert}
-	}
-
-	// Enforce ALPN for Raft
-	tlsCfg.NextProtos = []string{transport.ALPNRaftQUIC}
-
-	stream, err := transport.NewQUICStreamLayer(bindAddr, tlsCfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create QUIC stream layer: %w", err)
-	}
-
-	raftTransport = raft.NewNetworkTransport(stream, 3, 10*time.Second, os.Stderr)
+	// Create transport over the routed stream layer; TLS and listener
+	// ownership live with the supervisor's shared listener.
+	raftTransport := raft.NewNetworkTransport(stream, 3, 10*time.Second, os.Stderr)
 
 	// Create Raft
 	r, err := raft.NewRaft(config, fsm, logStore, stableStore, snapshotStore, raftTransport)

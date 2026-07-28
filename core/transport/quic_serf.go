@@ -16,11 +16,14 @@ import (
 )
 
 // QUICSerfTransport implements memberlist.Transport using QUIC.
-// It uses QUIC Datagrams for packet-based gossip and QUIC Streams for reliable sync.
+// It uses QUIC Datagrams for packet-based gossip and QUIC Streams for
+// reliable sync. It does not own a listener: inbound connections
+// arrive from the shared control-plane listener's ALPN router
+// (GOBLIN-DIV-023); only the dial side opens connections, offering
+// exactly the serf-quic ALPN.
 type QUICSerfTransport struct {
-	bindAddr string
-	tlsConf  *tls.Config
-	listener *quic.Listener
+	tlsConf   *tls.Config
+	advertise *net.UDPAddr
 
 	packetCh chan *memberlist.Packet
 	streamCh chan net.Conn
@@ -33,80 +36,57 @@ type QUICSerfTransport struct {
 	cancel context.CancelFunc
 }
 
-// NewQUICSerfTransport creates a new QUIC transport for Serf.
-func NewQUICSerfTransport(bindAddr string, tlsConf *tls.Config) (*QUICSerfTransport, error) {
-	quicConf := &quic.Config{
-		KeepAlivePeriod: 10 * time.Second,
-		MaxIdleTimeout:  60 * time.Second,
-		EnableDatagrams: true, // Enable RFC 9221 Datagrams
-	}
-
-	// Prepare TLS config with ALPN
-	lnTLS := tlsConf.Clone()
-	if lnTLS == nil {
-		lnTLS = &tls.Config{InsecureSkipVerify: true}
-	}
-	if len(lnTLS.NextProtos) == 0 {
-		lnTLS.NextProtos = []string{ALPNSerfQUIC}
-	} else {
-		// Append if not present? Or just enforce?
-		// Better to ensure it's there.
-		found := false
-		for _, p := range lnTLS.NextProtos {
-			if p == ALPNSerfQUIC {
-				found = true
-				break
-			}
-		}
-		if !found {
-			lnTLS.NextProtos = append(lnTLS.NextProtos, ALPNSerfQUIC)
-		}
-	}
-
-	ln, err := quic.ListenAddr(bindAddr, lnTLS, quicConf)
-	if err != nil {
-		return nil, fmt.Errorf("failed to listen on QUIC addr %s: %w", bindAddr, err)
+// NewRoutedQUICSerfTransport builds the serf transport over routed
+// connections. advertise is the node's single advertised control-plane
+// address - it becomes the serf member address, so it must be dialable
+// by peers.
+func NewRoutedQUICSerfTransport(routed <-chan *quic.Conn, advertise net.Addr, tlsConf *tls.Config) (*QUICSerfTransport, error) {
+	adv, ok := advertise.(*net.UDPAddr)
+	if !ok {
+		return nil, fmt.Errorf("advertise address %v is not a UDP address", advertise)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-
 	t := &QUICSerfTransport{
-		bindAddr: bindAddr,
-		tlsConf:  lnTLS, // Use the one with NextProtos
-		listener: ln,
-		packetCh: make(chan *memberlist.Packet, 64),
-		streamCh: make(chan net.Conn, 64),
-		conns:    make(map[string]*quic.Conn),
-		ctx:      ctx,
-		cancel:   cancel,
+		tlsConf:   tlsConf.Clone(),
+		advertise: adv,
+		packetCh:  make(chan *memberlist.Packet, 64),
+		streamCh:  make(chan net.Conn, 64),
+		conns:     make(map[string]*quic.Conn),
+		ctx:       ctx,
+		cancel:    cancel,
 	}
 
-	// Start accepting incoming connections
-	go t.acceptLoop()
+	// Consume connections handed over by the ALPN router.
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case conn, chOK := <-routed:
+				if !chOK {
+					return
+				}
+				go t.handleConn(conn)
+			}
+		}
+	}()
 
 	return t, nil
 }
 
-// FinalAdvertiseAddr returns the address to advertise.
+// FinalAdvertiseAddr returns the address to advertise: the node's
+// single control-plane address unless memberlist overrides it.
 func (t *QUICSerfTransport) FinalAdvertiseAddr(ip string, port int) (net.IP, int, error) {
-	// similar logic to memberlist.NetTransport, just return what's passed or resolved from listener
-	var addr net.IP
 	if ip == "" || ip == "0.0.0.0" {
-		// Try to get from listener
-		lAddr, ok := t.listener.Addr().(*net.UDPAddr)
-		if ok {
-			addr = lAddr.IP
-			if port == 0 {
-				port = lAddr.Port
-			}
-		} else {
-			return nil, 0, fmt.Errorf("could not determine advertise addr")
-		}
-	} else {
-		addr = net.ParseIP(ip)
-		if addr == nil {
-			return nil, 0, fmt.Errorf("invalid ip: %s", ip)
-		}
+		return t.advertise.IP, t.advertise.Port, nil
+	}
+	addr := net.ParseIP(ip)
+	if addr == nil {
+		return nil, 0, fmt.Errorf("invalid ip: %s", ip)
+	}
+	if port == 0 {
+		port = t.advertise.Port
 	}
 	return addr, port, nil
 }
@@ -160,11 +140,12 @@ func (t *QUICSerfTransport) StreamCh() <-chan net.Conn {
 	return t.streamCh
 }
 
-// Shutdown closes the transport.
+// Shutdown closes the transport's dialed connections. The shared
+// listener stays open - it belongs to the supervisor, not this adapter.
 func (t *QUICSerfTransport) Shutdown() error {
 	t.cancel()
-	err := t.listener.Close()
 
+	var err error
 	t.connsMu.Lock()
 	defer t.connsMu.Unlock()
 	for _, conn := range t.conns {
@@ -203,9 +184,9 @@ func (t *QUICSerfTransport) getOrDial(addr string) (*quic.Conn, error) {
 	if clientTLS == nil {
 		clientTLS = &tls.Config{InsecureSkipVerify: true}
 	}
-	if len(clientTLS.NextProtos) == 0 {
-		clientTLS.NextProtos = []string{ALPNSerfQUIC}
-	}
+	// The dial must offer exactly serf-quic: a multi-ALPN client offer
+	// would let the shared listener negotiate some other plane.
+	clientTLS.NextProtos = []string{ALPNSerfQUIC}
 
 	quicConf := &quic.Config{
 		KeepAlivePeriod: 10 * time.Second,
@@ -241,21 +222,6 @@ func (t *QUICSerfTransport) getOrDial(addr string) (*quic.Conn, error) {
 	go t.handleConn(newConn)
 
 	return newConn, nil
-}
-
-// acceptLoop accepts incoming connections from the listener.
-func (t *QUICSerfTransport) acceptLoop() {
-	for {
-		conn, err := t.listener.Accept(t.ctx)
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				return
-			}
-			// Log error?
-			continue
-		}
-		go t.handleConn(conn)
-	}
 }
 
 // handleConn demultiplexes streams and datagrams from a connection.

@@ -20,9 +20,7 @@ func TestRun_NetworkGateTimesOutLoudly(t *testing.T) {
 
 	sup := New(Config{
 		NodeID:             "gate-test",
-		SerfAddr:           "127.0.0.1:39710",
-		RaftAddr:           "127.0.0.1:39720",
-		APIAddr:            "127.0.0.1:39700",
+		ListenAddr:         "127.0.0.1:39700",
 		RaftDir:            t.TempDir(),
 		NetworkGateTimeout: 2 * time.Second,
 	})

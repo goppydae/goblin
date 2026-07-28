@@ -52,14 +52,15 @@ import (
 
 // Config holds configuration for the Supervisor
 type Config struct {
-	NodeID        string
-	SerfAddr      string
+	NodeID string
+	// ListenAddr is the single control-plane bind address: every
+	// protocol (gapi-quic, goblin-rpc, serf-quic, raft-quic) shares it,
+	// routed by ALPN (GOBLIN-DIV-023). Metrics is the only other port.
+	ListenAddr    string
 	AdvertiseAddr string
 	AdvertisePort int
-	RaftAddr      string
 	RaftDir       string
 	JoinAddr      string
-	APIAddr       string
 	Tags          map[string]string
 	EncryptionKey string // Base64 encoded 32-byte key
 	CertFile      string
@@ -190,25 +191,16 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 		slog.Default().LogAttrs(ctx, slog.LevelWarn, "encryption disabled, using ephemeral self-signed cert")
 	}
 
-	// Create Serf membership
-	// Resolve Raft Address to ensure consistency with Consensus.Leader()
-	raftAddr := s.cfg.RaftAddr
-	if host, port, err := net.SplitHostPort(raftAddr); err == nil {
-		if ips, err := net.LookupIP(host); err == nil && len(ips) > 0 {
-			// Prefer IPv4
-			resolved := false
-			for _, ip := range ips {
-				if ip4 := ip.To4(); ip4 != nil {
-					raftAddr = fmt.Sprintf("%s:%s", ip4.String(), port)
-					resolved = true
-					break
-				}
-			}
-			if !resolved {
-				raftAddr = fmt.Sprintf("%s:%s", ips[0].String(), port)
-			}
-			slog.Default().LogAttrs(ctx, slog.LevelInfo, "resolved raft address", logattr.From(s.cfg.RaftAddr), logattr.To(raftAddr))
-		}
+	// Resolve the single control-plane address. The advertised form is
+	// what peers dial for every protocol - member address, raft server
+	// address, and RPC endpoint are all the same "ip:port".
+	listenHost, listenPortStr, err := net.SplitHostPort(s.cfg.ListenAddr)
+	if err != nil {
+		return fmt.Errorf("invalid listen address %q: %w", s.cfg.ListenAddr, err)
+	}
+	listenPort, err := strconv.Atoi(listenPortStr)
+	if err != nil {
+		return fmt.Errorf("invalid listen port: %w", err)
 	}
 
 	// Capability issuer: per-boot Ed25519 keypair; the public key rides
@@ -220,9 +212,9 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 	s.issuer = issuer
 	s.revocations = capability.NewRevocations()
 
+	// No per-protocol address tags: the member's advertised address IS
+	// the whole control plane (single listener, ALPN-routed).
 	tags := map[string]string{
-		"raft_addr":   raftAddr,
-		"api_addr":    s.cfg.APIAddr, // Broadcast API address
 		"schema_hash": "v1-proto-hash",
 		"version":     "0.3.3",
 		"cap_key":     issuer.KeyID() + ":" + base64.StdEncoding.EncodeToString(issuer.PublicKey()),
@@ -247,25 +239,65 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 			slog.Default().LogAttrs(ctx, slog.LevelInfo, "resolved advertise address", logattr.From(s.cfg.AdvertiseAddr), logattr.To(advAddr))
 		}
 	}
-	// Create QUIC Serf Transport
-	// Important: We use 0.0.0.0 or bind address.
-	serfHost, serfPortStr, err := net.SplitHostPort(s.cfg.SerfAddr)
-	if err != nil {
-		return fmt.Errorf("invalid serf address %q: %w", s.cfg.SerfAddr, err)
+	advPort := s.cfg.AdvertisePort
+	if advPort == 0 {
+		advPort = listenPort
 	}
-	serfPort, err := strconv.Atoi(serfPortStr)
+	advHost := advAddr
+	if advHost == "" {
+		advHost = listenHost
+	}
+	advertiseUDP, err := net.ResolveUDPAddr("udp", net.JoinHostPort(advHost, strconv.Itoa(advPort)))
 	if err != nil {
-		return fmt.Errorf("invalid serf port: %w", err)
+		return fmt.Errorf("resolve advertise address: %w", err)
 	}
 
-	serfTransport, err := transport.NewQUICSerfTransport(s.cfg.SerfAddr, tlsCfg)
+	// The single control-plane listener (GOBLIN-DIV-023). When mTLS is
+	// configured, the CLI planes (gapi-quic, goblin-rpc) keep their
+	// pre-collapse posture - server TLS without client certificates -
+	// while the peer planes (serf-quic, raft-quic) stay mutually
+	// authenticated; ALPN in the ClientHello selects the policy.
+	lnTLS := tlsCfg.Clone()
+	if lnTLS.ClientAuth == tls.RequireAndVerifyClientCert {
+		cliTLS := lnTLS.Clone()
+		cliTLS.ClientAuth = tls.NoClientCert
+		cliTLS.ClientCAs = nil
+		cliTLS.NextProtos = transport.RegistryALPNs()
+		peerTLS := lnTLS.Clone()
+		peerTLS.NextProtos = transport.RegistryALPNs()
+		lnTLS.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+			for _, p := range hello.SupportedProtos {
+				if p == transport.ALPNGoblinRPC || p == transport.ALPNGapiQUIC {
+					return cliTLS, nil
+				}
+			}
+			return peerTLS, nil
+		}
+	}
+	sharedLn, err := transport.NewSharedListener(s.cfg.ListenAddr, lnTLS)
+	if err != nil {
+		return fmt.Errorf("bind control-plane listener: %w", err)
+	}
+	defer func() {
+		if cerr := sharedLn.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("close control-plane listener: %w", cerr)
+		}
+	}()
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "control-plane listener bound",
+		logattr.Addr(sharedLn.Addr().String()), logattr.To(advertiseUDP.String()))
+
+	// Serf rides the shared listener: routed serf-quic connections in,
+	// per-peer dials out.
+	serfConns, err := sharedLn.Register(transport.ALPNSerfQUIC)
+	if err != nil {
+		return fmt.Errorf("register serf plane: %w", err)
+	}
+	serfTransport, err := transport.NewRoutedQUICSerfTransport(serfConns, advertiseUDP, tlsCfg)
 	if err != nil {
 		return fmt.Errorf("failed to create QUIC serf transport: %w", err)
 	}
 
-	// ... (Wait, need to pass transport to NewMembership)
-
-	membership, err := cluster.NewMembership(nodeID, serfHost, serfPort, advAddr, s.cfg.AdvertisePort, tags, secretKey, serfTransport)
+	membership, err := cluster.NewMembership(nodeID, listenHost, listenPort, advertiseUDP.IP.String(), advertiseUDP.Port, tags, secretKey, serfTransport)
 	if err != nil {
 		err = fmt.Errorf("failed to create membership: %w", err)
 		if serr := serfTransport.Shutdown(); serr != nil { // Cleanup on failure
@@ -279,7 +311,7 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 		}
 	}()
 
-	slog.Default().LogAttrs(ctx, slog.LevelInfo, "serf membership initialized", logattr.Addr(s.cfg.SerfAddr))
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "serf membership initialized", logattr.Addr(advertiseUDP.String()))
 
 	// Join if requested
 	if s.cfg.JoinAddr != "" {
@@ -290,8 +322,13 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 		}
 	}
 
-	// Create Raft consensus
-	consensus, err := consensus.NewConsensus(nodeID, s.cfg.RaftDir, s.cfg.RaftAddr, tlsCfg, s.cfg.JoinAddr == "")
+	// Create Raft consensus over the shared listener's raft-quic plane.
+	raftConns, err := sharedLn.Register(transport.ALPNRaftQUIC)
+	if err != nil {
+		return fmt.Errorf("register raft plane: %w", err)
+	}
+	raftStream := transport.NewRoutedQUICStreamLayer(raftConns, advertiseUDP, tlsCfg)
+	consensus, err := consensus.NewConsensus(nodeID, s.cfg.RaftDir, raftStream, s.cfg.JoinAddr == "")
 	if err != nil {
 		return fmt.Errorf("failed to create consensus: %w", err)
 	}
@@ -301,7 +338,7 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 		}
 	}()
 
-	slog.Default().LogAttrs(ctx, slog.LevelInfo, "raft consensus initialized", logattr.Addr(s.cfg.RaftAddr))
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "raft consensus initialized", logattr.Addr(advertiseUDP.String()))
 
 	// Create distributed event bus
 	bus := eventbus.NewDistributedEventBus(nodeID, membership, consensus)
@@ -323,8 +360,12 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 					// rest expire quietly with ErrNotAdmitting. Gating on
 					// instantaneous leadership here is the bug that left
 					// three independent single-node rafts (R6 + 2b e2e).
-					if raftAddr, ok := member.Tags["raft_addr"]; ok && member.Name != nodeID {
-						slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "adding raft voter", logattr.Member(member.Name), logattr.Addr(raftAddr))
+					if member.Name != nodeID {
+						// Single-listener model: the member's advertised
+						// serf address IS its raft address (and its RPC
+						// address) - no per-protocol tags exist.
+						peerAddr := net.JoinHostPort(member.Addr.String(), strconv.Itoa(int(member.Port)))
+						slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "adding raft voter", logattr.Member(member.Name), logattr.Addr(peerAddr))
 						go func(name, addr string) {
 							err := addVoterWithRetry(context.Background(), consensus, name, addr)
 							switch {
@@ -334,7 +375,7 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 							default:
 								slog.Default().LogAttrs(context.Background(), slog.LevelError, "failed to add voter", logattr.Member(name), logattr.Err(err))
 							}
-						}(member.Name, raftAddr)
+						}(member.Name, peerAddr)
 					}
 				case serf.EventMemberLeave:
 					topic = "cluster.node.left"
@@ -371,21 +412,8 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 
 	// Create Scheduler
 	sched := scheduler.NewScheduler(kvStore, membership, bus, consensus.IsLeader, func(addr string) (scheduler.RPCClient, error) {
-		// Use the same QUIC client logic as CLI (but internal)
-		// We need to access tlsCfg here.
-		// Note: addr should be "host:port" of the QUIC listener (APIAddr)
-		// But s.getNodeAddress returns "host:port" from Serf.
-		// Serf port != API port usually?
-		// Goblin architecture: APIAddr is for RPC. Serf is for Gossip.
-		// We need to know the API Addr of the target node.
-		// Currently Serf tags don't explicitly broadcast API Addr?
-		// Wait, Config.APIAddr is local.
-		// We should add "api_addr" to Serf tags!
-		//
-		// For MVP, let's assume API Port is standard or same as Serf+offset?
-		// Or assume the address in Serf Member.Addr is usable if we use default API port?
-		//
-		// Let's use the address passed in.
+		// addr is the target member's single advertised address; the
+		// dial's goblin-rpc ALPN selects the plane.
 		return NewQUICRPCClient(addr, tlsCfg)
 	})
 	slog.Default().LogAttrs(ctx, slog.LevelInfo, "scheduler initialized")
@@ -629,71 +657,43 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 	// RegisterGlobalAgent/ScaleAgent for sub-interval placement latency.
 	go sched.RunReconciler(ctx, 2*time.Second)
 
-	// Prepare TLS for QUIC API
-	// tlsCfg is now guaranteed to be non-nil (loaded from file or generated ephemeral)
-	// We ensure API protocols are present.
-
-	// Ensure ALPN is set on the loaded config
-	// We create a clone to avoid concurrent modification issues if shared
-	cfgCopy := tlsCfg.Clone()
-
-	// Append API protocols if not present
-	// We just reset NextProtos to be safe, ensuring all are there including API ones.
-	// Actually, we should merge.
-	// But let's just ensure gapi-quic and goblin-rpc are there.
-	// Since we set transport.ALPNSerfQUIC earlier for Serf, we should keep it or just ensure API ones are added?
-	// QUIC listener for API uses transport.ALPNGapiQUIC and transport.ALPNGoblinRPC.
-	// The shared tlsCfg might be used by Serf? Serf uses its own clone in NewQUICSerfTransport.
-	// So we can just set NextProtos for this specific listener.
-	cfgCopy.NextProtos = []string{transport.ALPNGapiQUIC, transport.ALPNGoblinRPC}
-
-	// API listener should NOT require client certificates (unlike likely Raft/Serf mTLS in secure mode)
-	// Unless we want mutual auth for API? Usually not for CLI.
-	cfgCopy.ClientAuth = tls.NoClientCert
-	cfgCopy.ClientCAs = nil
-	tlsCfg = cfgCopy
-
-	// Start QUIC Server (Single Listener)
+	// RPC and embedded-kernel planes ride the shared listener: the ALPN
+	// router hands each plane its own connection stream.
+	rpcConns, err := sharedLn.Register(transport.ALPNGoblinRPC)
+	if err != nil {
+		return fmt.Errorf("register rpc plane: %w", err)
+	}
+	gapiConns, err := sharedLn.Register(transport.ALPNGapiQUIC)
+	if err != nil {
+		return fmt.Errorf("register gapi plane: %w", err)
+	}
 	go func() {
-		// Use QUIC configuration
-		quicConfig := &quic.Config{
-			MaxIdleTimeout:  60 * time.Second,
-			KeepAlivePeriod: 10 * time.Second,
-		}
-
-		listener, err := quic.ListenAddr(s.cfg.APIAddr, tlsCfg, quicConfig)
-		if err != nil {
-			slog.Default().LogAttrs(ctx, slog.LevelError, "quic listen failed", logattr.Err(err))
-			os.Exit(1)
-		}
-		slog.Default().LogAttrs(ctx, slog.LevelInfo, "gapi and rpc listener started", logattr.Addr(s.cfg.APIAddr))
-
 		for {
-			conn, err := listener.Accept(ctx)
-			if err != nil {
-				select {
-				case <-ctx.Done():
+			select {
+			case <-ctx.Done():
+				return
+			case conn, ok := <-rpcConns:
+				if !ok {
 					return
-				default:
-					slog.Default().LogAttrs(ctx, slog.LevelWarn, "quic accept error", logattr.Err(err))
-					continue
 				}
-			}
-
-			// ALPN Routing
-			switch conn.ConnectionState().TLS.NegotiatedProtocol {
-			case transport.ALPNGoblinRPC:
 				go quicServer.HandleConnection(conn)
-			case transport.ALPNGapiQUIC:
-				go handleQUICConn(conn, bus, membership)
-			default:
-				slog.Default().LogAttrs(ctx, slog.LevelWarn, "unknown alpn protocol", logattr.Protocol(conn.ConnectionState().TLS.NegotiatedProtocol))
-				if err := conn.CloseWithError(0, "unknown protocol"); err != nil {
-					slog.Default().LogAttrs(ctx, slog.LevelWarn, "close unknown-protocol connection failed", logattr.Err(err))
-				}
 			}
 		}
 	}()
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case conn, ok := <-gapiConns:
+				if !ok {
+					return
+				}
+				go handleQUICConn(conn, bus, membership)
+			}
+		}
+	}()
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "rpc and gapi planes attached to control-plane listener")
 	// Start Metrics Server
 	if s.cfg.MetricsAddr != "" {
 		go func() {
