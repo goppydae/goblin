@@ -458,6 +458,15 @@ func (a *PythonAgent) Start(ctx context.Context) error {
 		if a.stopping || a.cmd != watchCmd {
 			return // Stop owns this exit, or a new run replaced the slot
 		}
+		// Named explicitly rather than left to the status payload: when
+		// this fires the only downstream evidence is a later verb
+		// failing with "agent not running", which says nothing about
+		// the death that caused it (GAPI-DIV-025).
+		slog.Default().LogAttrs(ctx, slog.LevelWarn, "agent process exited unexpectedly",
+			logattr.Module("agentmgr"), logattr.AgentID(a.id),
+			slog.Int("pid", watchCmd.Process.Pid),
+			slog.Duration("uptime", time.Since(a.startTime)),
+			logattr.Err(a.waitErr))
 		a.publishStatusWithRunID("FAILED", fmt.Sprintf("process exited unexpectedly: %v", a.waitErr), watchRunID)
 		a.cleanupAfterExit()
 	}()
