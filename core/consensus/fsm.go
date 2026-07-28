@@ -31,6 +31,11 @@ type FSM struct {
 	// forever (operator decision 2026-07-28). Both live in the snapshot.
 	instances  map[string]*goblinv1.AgentInstance
 	tombstones map[string]struct{}
+	// migrations holds in-flight migrations keyed by instance UUID.
+	// It is FSM state, not a cache: it is what refuses a second
+	// concurrent migration, so it must survive snapshot/restore or a
+	// restarted leader would forget an arbitration it already made.
+	migrations map[string]*goblinv1.MigrationRecord
 	mu         sync.RWMutex
 }
 
@@ -41,6 +46,7 @@ func NewFSM() *FSM {
 		versions:   make(map[string]map[string]uint64),
 		instances:  make(map[string]*goblinv1.AgentInstance),
 		tombstones: make(map[string]struct{}),
+		migrations: make(map[string]*goblinv1.MigrationRecord),
 	}
 }
 
@@ -103,6 +109,12 @@ func (f *FSM) Apply(log *raft.Log) interface{} {
 	case goblinv1.CommandType_COMMAND_TYPE_SIGNAL:
 		return f.applySignal(cmd.GetSignal())
 
+	case goblinv1.CommandType_COMMAND_TYPE_MIGRATE_BEGIN:
+		return f.applyMigrateBegin(cmd.GetMigrateBegin())
+
+	case goblinv1.CommandType_COMMAND_TYPE_MIGRATE_COMMIT:
+		return f.applyMigrateCommit(cmd.GetMigrateCommit())
+
 	default:
 		return fmt.Errorf("unknown command type %v (namespace %s, key %s)",
 			cmd.Type, cmd.Namespace, cmd.Key)
@@ -131,6 +143,7 @@ type snapshotPayload struct {
 	Versions      map[string]map[string]uint64 `json:"versions"`
 	Instances     map[string][]byte            `json:"instances,omitempty"`
 	Tombstones    []string                     `json:"tombstones,omitempty"`
+	Migrations    map[string][]byte            `json:"migrations,omitempty"`
 }
 
 // Snapshot returns a snapshot of the FSM state
@@ -166,6 +179,14 @@ func (f *FSM) Snapshot() (raft.FSMSnapshot, error) {
 	for id := range f.tombstones {
 		tombstones = append(tombstones, id)
 	}
+	migrations := make(map[string][]byte, len(f.migrations))
+	for id, rec := range f.migrations {
+		raw, err := proto.Marshal(rec)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot: marshal migration %s: %w", id, err)
+		}
+		migrations[id] = raw
+	}
 
 	return &fsmSnapshot{payload: snapshotPayload{
 		SchemaVersion: 2,
@@ -173,6 +194,7 @@ func (f *FSM) Snapshot() (raft.FSMSnapshot, error) {
 		Versions:      versions,
 		Instances:     instances,
 		Tombstones:    tombstones,
+		Migrations:    migrations,
 	}}, nil
 }
 
@@ -227,6 +249,19 @@ func (f *FSM) Restore(rc io.ReadCloser) (err error) {
 		tombstones[id] = struct{}{}
 	}
 
+	// In-flight migrations (absent in snapshots written before
+	// GOBLIN-DIV-018). Restoring them is what keeps the concurrency
+	// arbitration honest across a restart or a replica that caught up
+	// from a snapshot rather than replaying the log.
+	migrations := make(map[string]*goblinv1.MigrationRecord, len(payload.Migrations))
+	for id, raw := range payload.Migrations {
+		var rec goblinv1.MigrationRecord
+		if err := proto.Unmarshal(raw, &rec); err != nil {
+			return fmt.Errorf("restore: unmarshal migration %s: %w", id, err)
+		}
+		migrations[id] = &rec
+	}
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -234,6 +269,7 @@ func (f *FSM) Restore(rc io.ReadCloser) (err error) {
 	f.versions = payload.Versions
 	f.instances = instances
 	f.tombstones = tombstones
+	f.migrations = migrations
 	return nil
 }
 

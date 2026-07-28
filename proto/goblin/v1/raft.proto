@@ -18,6 +18,11 @@ enum CommandType {
   COMMAND_TYPE_ADMIT = 4;      // admit an instance (payload: admit)
   COMMAND_TYPE_TRANSITION = 5; // lifecycle transition (payload: transition)
   COMMAND_TYPE_SIGNAL = 6;     // authorize + log a signal (payload: signal)
+  // Migration is recorded in the log for audit and to arbitrate
+  // concurrent attempts, but it is NOT a lifecycle transition: the
+  // instance stays RUNNING throughout and only its locator moves.
+  COMMAND_TYPE_MIGRATE_BEGIN = 7;  // (payload: migrate_begin)
+  COMMAND_TYPE_MIGRATE_COMMIT = 8; // (payload: migrate_commit)
 }
 
 // LogEntry represents a command in the Raft log. KV commands use the
@@ -34,7 +39,66 @@ message LogEntry {
     ApplyAdmit admit = 6;
     InstanceTransition transition = 7;
     SignalRequest signal = 8;
+    MigrateBegin migrate_begin = 9;
+    MigrateCommit migrate_commit = 10;
   }
+}
+
+// MigrateOutcome closes a migration. UNSPECIFIED is rejected rather
+// than treated as either result: a commit whose outcome did not decode
+// must not silently move an instance or silently strand it.
+enum MigrateOutcome {
+  MIGRATE_OUTCOME_UNSPECIFIED = 0;
+  MIGRATE_OUTCOME_COMPLETED = 1; // instance now runs on the target
+  MIGRATE_OUTCOME_ABORTED = 2;   // rolled back; instance stays put
+}
+
+// MigrateBegin records the intent to move one instance to another node
+// (research section 4.4, DDR-3/DDR-4).
+//
+// It does NOT change the instance's lifecycle state. Identity lives in
+// Raft and location lives in gossip, so a migration is a locator event;
+// the log entry exists for the audit trail (parity with SIGNAL under
+// DDR-10) and so the FSM can refuse a second concurrent attempt on the
+// same instance.
+message MigrateBegin {
+  bytes instance_uuid = 1;
+  // Where the instance is going. The source is not named: it is
+  // whatever node_id the instance record already holds, and taking it
+  // from the request would let a stale proposer rewrite history.
+  string target_node_id = 2;
+  // Which checkpoint this migration will transfer. Increments per
+  // dump, so a retried migration never reuses an earlier image.
+  uint64 checkpoint_epoch = 3;
+  // Rights bitmap from the caller's capability token, checked at the
+  // FSM before the migration is admitted (defense in depth, mirroring
+  // SignalRequest).
+  uint64 rights = 4;
+}
+
+// MigrateCommit closes the migration opened by MigrateBegin.
+//
+// On COMPLETED the instance record's node_id moves to the target. On
+// ABORTED it is left untouched: the source restores from the same
+// image, which is why a dump stops the process rather than leaving it
+// running.
+message MigrateCommit {
+  bytes instance_uuid = 1;
+  // Must match the in-flight migration's epoch. A commit carrying a
+  // stale epoch is a late message from a superseded attempt and is
+  // rejected rather than applied to the current one.
+  uint64 checkpoint_epoch = 2;
+  MigrateOutcome outcome = 3;
+}
+
+// MigrationRecord is one in-flight migration, carried in the FSM
+// snapshot so that concurrency arbitration survives a restart or a
+// replica catching up from a snapshot rather than the log.
+message MigrationRecord {
+  bytes instance_uuid = 1;
+  string source_node_id = 2;
+  string target_node_id = 3;
+  uint64 checkpoint_epoch = 4;
 }
 
 // ApplyAdmit admits one instance. The leader mints the UUIDv7 and

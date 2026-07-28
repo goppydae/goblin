@@ -35,6 +35,11 @@ const (
 	CommandType_COMMAND_TYPE_ADMIT       CommandType = 4 // admit an instance (payload: admit)
 	CommandType_COMMAND_TYPE_TRANSITION  CommandType = 5 // lifecycle transition (payload: transition)
 	CommandType_COMMAND_TYPE_SIGNAL      CommandType = 6 // authorize + log a signal (payload: signal)
+	// Migration is recorded in the log for audit and to arbitrate
+	// concurrent attempts, but it is NOT a lifecycle transition: the
+	// instance stays RUNNING throughout and only its locator moves.
+	CommandType_COMMAND_TYPE_MIGRATE_BEGIN  CommandType = 7 // (payload: migrate_begin)
+	CommandType_COMMAND_TYPE_MIGRATE_COMMIT CommandType = 8 // (payload: migrate_commit)
 )
 
 // Enum value maps for CommandType.
@@ -47,15 +52,19 @@ var (
 		4: "COMMAND_TYPE_ADMIT",
 		5: "COMMAND_TYPE_TRANSITION",
 		6: "COMMAND_TYPE_SIGNAL",
+		7: "COMMAND_TYPE_MIGRATE_BEGIN",
+		8: "COMMAND_TYPE_MIGRATE_COMMIT",
 	}
 	CommandType_value = map[string]int32{
-		"COMMAND_TYPE_UNSPECIFIED": 0,
-		"COMMAND_TYPE_SET":         1,
-		"COMMAND_TYPE_DELETE":      2,
-		"COMMAND_TYPE_CAS":         3,
-		"COMMAND_TYPE_ADMIT":       4,
-		"COMMAND_TYPE_TRANSITION":  5,
-		"COMMAND_TYPE_SIGNAL":      6,
+		"COMMAND_TYPE_UNSPECIFIED":    0,
+		"COMMAND_TYPE_SET":            1,
+		"COMMAND_TYPE_DELETE":         2,
+		"COMMAND_TYPE_CAS":            3,
+		"COMMAND_TYPE_ADMIT":          4,
+		"COMMAND_TYPE_TRANSITION":     5,
+		"COMMAND_TYPE_SIGNAL":         6,
+		"COMMAND_TYPE_MIGRATE_BEGIN":  7,
+		"COMMAND_TYPE_MIGRATE_COMMIT": 8,
 	}
 )
 
@@ -86,6 +95,58 @@ func (CommandType) EnumDescriptor() ([]byte, []int) {
 	return file_goblin_v1_raft_proto_rawDescGZIP(), []int{0}
 }
 
+// MigrateOutcome closes a migration. UNSPECIFIED is rejected rather
+// than treated as either result: a commit whose outcome did not decode
+// must not silently move an instance or silently strand it.
+type MigrateOutcome int32
+
+const (
+	MigrateOutcome_MIGRATE_OUTCOME_UNSPECIFIED MigrateOutcome = 0
+	MigrateOutcome_MIGRATE_OUTCOME_COMPLETED   MigrateOutcome = 1 // instance now runs on the target
+	MigrateOutcome_MIGRATE_OUTCOME_ABORTED     MigrateOutcome = 2 // rolled back; instance stays put
+)
+
+// Enum value maps for MigrateOutcome.
+var (
+	MigrateOutcome_name = map[int32]string{
+		0: "MIGRATE_OUTCOME_UNSPECIFIED",
+		1: "MIGRATE_OUTCOME_COMPLETED",
+		2: "MIGRATE_OUTCOME_ABORTED",
+	}
+	MigrateOutcome_value = map[string]int32{
+		"MIGRATE_OUTCOME_UNSPECIFIED": 0,
+		"MIGRATE_OUTCOME_COMPLETED":   1,
+		"MIGRATE_OUTCOME_ABORTED":     2,
+	}
+)
+
+func (x MigrateOutcome) Enum() *MigrateOutcome {
+	p := new(MigrateOutcome)
+	*p = x
+	return p
+}
+
+func (x MigrateOutcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (MigrateOutcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_goblin_v1_raft_proto_enumTypes[1].Descriptor()
+}
+
+func (MigrateOutcome) Type() protoreflect.EnumType {
+	return &file_goblin_v1_raft_proto_enumTypes[1]
+}
+
+func (x MigrateOutcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use MigrateOutcome.Descriptor instead.
+func (MigrateOutcome) EnumDescriptor() ([]byte, []int) {
+	return file_goblin_v1_raft_proto_rawDescGZIP(), []int{1}
+}
+
 // LogEntry represents a command in the Raft log. KV commands use the
 // flat namespace/key/value fields; instance-lifecycle commands carry
 // their payload in the oneof.
@@ -101,6 +162,8 @@ type LogEntry struct {
 	//	*LogEntry_Admit
 	//	*LogEntry_Transition
 	//	*LogEntry_Signal
+	//	*LogEntry_MigrateBegin
+	//	*LogEntry_MigrateCommit
 	Payload       isLogEntry_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -205,6 +268,24 @@ func (x *LogEntry) GetSignal() *SignalRequest {
 	return nil
 }
 
+func (x *LogEntry) GetMigrateBegin() *MigrateBegin {
+	if x != nil {
+		if x, ok := x.Payload.(*LogEntry_MigrateBegin); ok {
+			return x.MigrateBegin
+		}
+	}
+	return nil
+}
+
+func (x *LogEntry) GetMigrateCommit() *MigrateCommit {
+	if x != nil {
+		if x, ok := x.Payload.(*LogEntry_MigrateCommit); ok {
+			return x.MigrateCommit
+		}
+	}
+	return nil
+}
+
 type isLogEntry_Payload interface {
 	isLogEntry_Payload()
 }
@@ -221,11 +302,247 @@ type LogEntry_Signal struct {
 	Signal *SignalRequest `protobuf:"bytes,8,opt,name=signal,proto3,oneof"`
 }
 
+type LogEntry_MigrateBegin struct {
+	MigrateBegin *MigrateBegin `protobuf:"bytes,9,opt,name=migrate_begin,json=migrateBegin,proto3,oneof"`
+}
+
+type LogEntry_MigrateCommit struct {
+	MigrateCommit *MigrateCommit `protobuf:"bytes,10,opt,name=migrate_commit,json=migrateCommit,proto3,oneof"`
+}
+
 func (*LogEntry_Admit) isLogEntry_Payload() {}
 
 func (*LogEntry_Transition) isLogEntry_Payload() {}
 
 func (*LogEntry_Signal) isLogEntry_Payload() {}
+
+func (*LogEntry_MigrateBegin) isLogEntry_Payload() {}
+
+func (*LogEntry_MigrateCommit) isLogEntry_Payload() {}
+
+// MigrateBegin records the intent to move one instance to another node
+// (research section 4.4, DDR-3/DDR-4).
+//
+// It does NOT change the instance's lifecycle state. Identity lives in
+// Raft and location lives in gossip, so a migration is a locator event;
+// the log entry exists for the audit trail (parity with SIGNAL under
+// DDR-10) and so the FSM can refuse a second concurrent attempt on the
+// same instance.
+type MigrateBegin struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	InstanceUuid []byte                 `protobuf:"bytes,1,opt,name=instance_uuid,json=instanceUuid,proto3" json:"instance_uuid,omitempty"`
+	// Where the instance is going. The source is not named: it is
+	// whatever node_id the instance record already holds, and taking it
+	// from the request would let a stale proposer rewrite history.
+	TargetNodeId string `protobuf:"bytes,2,opt,name=target_node_id,json=targetNodeId,proto3" json:"target_node_id,omitempty"`
+	// Which checkpoint this migration will transfer. Increments per
+	// dump, so a retried migration never reuses an earlier image.
+	CheckpointEpoch uint64 `protobuf:"varint,3,opt,name=checkpoint_epoch,json=checkpointEpoch,proto3" json:"checkpoint_epoch,omitempty"`
+	// Rights bitmap from the caller's capability token, checked at the
+	// FSM before the migration is admitted (defense in depth, mirroring
+	// SignalRequest).
+	Rights        uint64 `protobuf:"varint,4,opt,name=rights,proto3" json:"rights,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MigrateBegin) Reset() {
+	*x = MigrateBegin{}
+	mi := &file_goblin_v1_raft_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrateBegin) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrateBegin) ProtoMessage() {}
+
+func (x *MigrateBegin) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_raft_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrateBegin.ProtoReflect.Descriptor instead.
+func (*MigrateBegin) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_raft_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *MigrateBegin) GetInstanceUuid() []byte {
+	if x != nil {
+		return x.InstanceUuid
+	}
+	return nil
+}
+
+func (x *MigrateBegin) GetTargetNodeId() string {
+	if x != nil {
+		return x.TargetNodeId
+	}
+	return ""
+}
+
+func (x *MigrateBegin) GetCheckpointEpoch() uint64 {
+	if x != nil {
+		return x.CheckpointEpoch
+	}
+	return 0
+}
+
+func (x *MigrateBegin) GetRights() uint64 {
+	if x != nil {
+		return x.Rights
+	}
+	return 0
+}
+
+// MigrateCommit closes the migration opened by MigrateBegin.
+//
+// On COMPLETED the instance record's node_id moves to the target. On
+// ABORTED it is left untouched: the source restores from the same
+// image, which is why a dump stops the process rather than leaving it
+// running.
+type MigrateCommit struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	InstanceUuid []byte                 `protobuf:"bytes,1,opt,name=instance_uuid,json=instanceUuid,proto3" json:"instance_uuid,omitempty"`
+	// Must match the in-flight migration's epoch. A commit carrying a
+	// stale epoch is a late message from a superseded attempt and is
+	// rejected rather than applied to the current one.
+	CheckpointEpoch uint64         `protobuf:"varint,2,opt,name=checkpoint_epoch,json=checkpointEpoch,proto3" json:"checkpoint_epoch,omitempty"`
+	Outcome         MigrateOutcome `protobuf:"varint,3,opt,name=outcome,proto3,enum=goblin.v1.MigrateOutcome" json:"outcome,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *MigrateCommit) Reset() {
+	*x = MigrateCommit{}
+	mi := &file_goblin_v1_raft_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrateCommit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrateCommit) ProtoMessage() {}
+
+func (x *MigrateCommit) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_raft_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrateCommit.ProtoReflect.Descriptor instead.
+func (*MigrateCommit) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_raft_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *MigrateCommit) GetInstanceUuid() []byte {
+	if x != nil {
+		return x.InstanceUuid
+	}
+	return nil
+}
+
+func (x *MigrateCommit) GetCheckpointEpoch() uint64 {
+	if x != nil {
+		return x.CheckpointEpoch
+	}
+	return 0
+}
+
+func (x *MigrateCommit) GetOutcome() MigrateOutcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return MigrateOutcome_MIGRATE_OUTCOME_UNSPECIFIED
+}
+
+// MigrationRecord is one in-flight migration, carried in the FSM
+// snapshot so that concurrency arbitration survives a restart or a
+// replica catching up from a snapshot rather than the log.
+type MigrationRecord struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	InstanceUuid    []byte                 `protobuf:"bytes,1,opt,name=instance_uuid,json=instanceUuid,proto3" json:"instance_uuid,omitempty"`
+	SourceNodeId    string                 `protobuf:"bytes,2,opt,name=source_node_id,json=sourceNodeId,proto3" json:"source_node_id,omitempty"`
+	TargetNodeId    string                 `protobuf:"bytes,3,opt,name=target_node_id,json=targetNodeId,proto3" json:"target_node_id,omitempty"`
+	CheckpointEpoch uint64                 `protobuf:"varint,4,opt,name=checkpoint_epoch,json=checkpointEpoch,proto3" json:"checkpoint_epoch,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *MigrationRecord) Reset() {
+	*x = MigrationRecord{}
+	mi := &file_goblin_v1_raft_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrationRecord) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrationRecord) ProtoMessage() {}
+
+func (x *MigrationRecord) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_raft_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrationRecord.ProtoReflect.Descriptor instead.
+func (*MigrationRecord) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_raft_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *MigrationRecord) GetInstanceUuid() []byte {
+	if x != nil {
+		return x.InstanceUuid
+	}
+	return nil
+}
+
+func (x *MigrationRecord) GetSourceNodeId() string {
+	if x != nil {
+		return x.SourceNodeId
+	}
+	return ""
+}
+
+func (x *MigrationRecord) GetTargetNodeId() string {
+	if x != nil {
+		return x.TargetNodeId
+	}
+	return ""
+}
+
+func (x *MigrationRecord) GetCheckpointEpoch() uint64 {
+	if x != nil {
+		return x.CheckpointEpoch
+	}
+	return 0
+}
 
 // ApplyAdmit admits one instance. The leader mints the UUIDv7 and
 // decides placement at PROPOSE time and carries both here: Apply
@@ -243,7 +560,7 @@ type ApplyAdmit struct {
 
 func (x *ApplyAdmit) Reset() {
 	*x = ApplyAdmit{}
-	mi := &file_goblin_v1_raft_proto_msgTypes[1]
+	mi := &file_goblin_v1_raft_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -255,7 +572,7 @@ func (x *ApplyAdmit) String() string {
 func (*ApplyAdmit) ProtoMessage() {}
 
 func (x *ApplyAdmit) ProtoReflect() protoreflect.Message {
-	mi := &file_goblin_v1_raft_proto_msgTypes[1]
+	mi := &file_goblin_v1_raft_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -268,7 +585,7 @@ func (x *ApplyAdmit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyAdmit.ProtoReflect.Descriptor instead.
 func (*ApplyAdmit) Descriptor() ([]byte, []int) {
-	return file_goblin_v1_raft_proto_rawDescGZIP(), []int{1}
+	return file_goblin_v1_raft_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ApplyAdmit) GetSpecUuid() []byte {
@@ -305,7 +622,7 @@ type InstanceTransition struct {
 
 func (x *InstanceTransition) Reset() {
 	*x = InstanceTransition{}
-	mi := &file_goblin_v1_raft_proto_msgTypes[2]
+	mi := &file_goblin_v1_raft_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -317,7 +634,7 @@ func (x *InstanceTransition) String() string {
 func (*InstanceTransition) ProtoMessage() {}
 
 func (x *InstanceTransition) ProtoReflect() protoreflect.Message {
-	mi := &file_goblin_v1_raft_proto_msgTypes[2]
+	mi := &file_goblin_v1_raft_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -330,7 +647,7 @@ func (x *InstanceTransition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstanceTransition.ProtoReflect.Descriptor instead.
 func (*InstanceTransition) Descriptor() ([]byte, []int) {
-	return file_goblin_v1_raft_proto_rawDescGZIP(), []int{2}
+	return file_goblin_v1_raft_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *InstanceTransition) GetInstanceUuid() []byte {
@@ -369,7 +686,7 @@ type SignalRequest struct {
 
 func (x *SignalRequest) Reset() {
 	*x = SignalRequest{}
-	mi := &file_goblin_v1_raft_proto_msgTypes[3]
+	mi := &file_goblin_v1_raft_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -381,7 +698,7 @@ func (x *SignalRequest) String() string {
 func (*SignalRequest) ProtoMessage() {}
 
 func (x *SignalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_goblin_v1_raft_proto_msgTypes[3]
+	mi := &file_goblin_v1_raft_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -394,7 +711,7 @@ func (x *SignalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignalRequest.ProtoReflect.Descriptor instead.
 func (*SignalRequest) Descriptor() ([]byte, []int) {
-	return file_goblin_v1_raft_proto_rawDescGZIP(), []int{3}
+	return file_goblin_v1_raft_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *SignalRequest) GetInstanceUuid() []byte {
@@ -429,7 +746,7 @@ var File_goblin_v1_raft_proto protoreflect.FileDescriptor
 
 const file_goblin_v1_raft_proto_rawDesc = "" +
 	"\n" +
-	"\x14goblin/v1/raft.proto\x12\tgoblin.v1\x1a\x19goblin/v1/scheduler.proto\"\xcc\x02\n" +
+	"\x14goblin/v1/raft.proto\x12\tgoblin.v1\x1a\x19goblin/v1/scheduler.proto\"\xcf\x03\n" +
 	"\bLogEntry\x12*\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x16.goblin.v1.CommandTypeR\x04type\x12\x1c\n" +
 	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12\x10\n" +
@@ -441,8 +758,25 @@ const file_goblin_v1_raft_proto_rawDesc = "" +
 	"\n" +
 	"transition\x18\a \x01(\v2\x1d.goblin.v1.InstanceTransitionH\x00R\n" +
 	"transition\x122\n" +
-	"\x06signal\x18\b \x01(\v2\x18.goblin.v1.SignalRequestH\x00R\x06signalB\t\n" +
-	"\apayload\"g\n" +
+	"\x06signal\x18\b \x01(\v2\x18.goblin.v1.SignalRequestH\x00R\x06signal\x12>\n" +
+	"\rmigrate_begin\x18\t \x01(\v2\x17.goblin.v1.MigrateBeginH\x00R\fmigrateBegin\x12A\n" +
+	"\x0emigrate_commit\x18\n" +
+	" \x01(\v2\x18.goblin.v1.MigrateCommitH\x00R\rmigrateCommitB\t\n" +
+	"\apayload\"\x9c\x01\n" +
+	"\fMigrateBegin\x12#\n" +
+	"\rinstance_uuid\x18\x01 \x01(\fR\finstanceUuid\x12$\n" +
+	"\x0etarget_node_id\x18\x02 \x01(\tR\ftargetNodeId\x12)\n" +
+	"\x10checkpoint_epoch\x18\x03 \x01(\x04R\x0fcheckpointEpoch\x12\x16\n" +
+	"\x06rights\x18\x04 \x01(\x04R\x06rights\"\x94\x01\n" +
+	"\rMigrateCommit\x12#\n" +
+	"\rinstance_uuid\x18\x01 \x01(\fR\finstanceUuid\x12)\n" +
+	"\x10checkpoint_epoch\x18\x02 \x01(\x04R\x0fcheckpointEpoch\x123\n" +
+	"\aoutcome\x18\x03 \x01(\x0e2\x19.goblin.v1.MigrateOutcomeR\aoutcome\"\xad\x01\n" +
+	"\x0fMigrationRecord\x12#\n" +
+	"\rinstance_uuid\x18\x01 \x01(\fR\finstanceUuid\x12$\n" +
+	"\x0esource_node_id\x18\x02 \x01(\tR\fsourceNodeId\x12$\n" +
+	"\x0etarget_node_id\x18\x03 \x01(\tR\ftargetNodeId\x12)\n" +
+	"\x10checkpoint_epoch\x18\x04 \x01(\x04R\x0fcheckpointEpoch\"g\n" +
 	"\n" +
 	"ApplyAdmit\x12\x1b\n" +
 	"\tspec_uuid\x18\x01 \x01(\fR\bspecUuid\x12#\n" +
@@ -456,7 +790,7 @@ const file_goblin_v1_raft_proto_rawDesc = "" +
 	"\rinstance_uuid\x18\x01 \x01(\fR\finstanceUuid\x12\x16\n" +
 	"\x06signum\x18\x02 \x01(\x05R\x06signum\x12\x19\n" +
 	"\btoken_id\x18\x03 \x01(\fR\atokenId\x12\x16\n" +
-	"\x06rights\x18\x04 \x01(\x04R\x06rights*\xbe\x01\n" +
+	"\x06rights\x18\x04 \x01(\x04R\x06rights*\xff\x01\n" +
 	"\vCommandType\x12\x1c\n" +
 	"\x18COMMAND_TYPE_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10COMMAND_TYPE_SET\x10\x01\x12\x17\n" +
@@ -464,7 +798,13 @@ const file_goblin_v1_raft_proto_rawDesc = "" +
 	"\x10COMMAND_TYPE_CAS\x10\x03\x12\x16\n" +
 	"\x12COMMAND_TYPE_ADMIT\x10\x04\x12\x1b\n" +
 	"\x17COMMAND_TYPE_TRANSITION\x10\x05\x12\x17\n" +
-	"\x13COMMAND_TYPE_SIGNAL\x10\x06B+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
+	"\x13COMMAND_TYPE_SIGNAL\x10\x06\x12\x1e\n" +
+	"\x1aCOMMAND_TYPE_MIGRATE_BEGIN\x10\a\x12\x1f\n" +
+	"\x1bCOMMAND_TYPE_MIGRATE_COMMIT\x10\b*m\n" +
+	"\x0eMigrateOutcome\x12\x1f\n" +
+	"\x1bMIGRATE_OUTCOME_UNSPECIFIED\x10\x00\x12\x1d\n" +
+	"\x19MIGRATE_OUTCOME_COMPLETED\x10\x01\x12\x1b\n" +
+	"\x17MIGRATE_OUTCOME_ABORTED\x10\x02B+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
 
 var (
 	file_goblin_v1_raft_proto_rawDescOnce sync.Once
@@ -478,27 +818,34 @@ func file_goblin_v1_raft_proto_rawDescGZIP() []byte {
 	return file_goblin_v1_raft_proto_rawDescData
 }
 
-var file_goblin_v1_raft_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_goblin_v1_raft_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_goblin_v1_raft_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_goblin_v1_raft_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_goblin_v1_raft_proto_goTypes = []any{
 	(CommandType)(0),           // 0: goblin.v1.CommandType
-	(*LogEntry)(nil),           // 1: goblin.v1.LogEntry
-	(*ApplyAdmit)(nil),         // 2: goblin.v1.ApplyAdmit
-	(*InstanceTransition)(nil), // 3: goblin.v1.InstanceTransition
-	(*SignalRequest)(nil),      // 4: goblin.v1.SignalRequest
-	(InstanceState)(0),         // 5: goblin.v1.InstanceState
+	(MigrateOutcome)(0),        // 1: goblin.v1.MigrateOutcome
+	(*LogEntry)(nil),           // 2: goblin.v1.LogEntry
+	(*MigrateBegin)(nil),       // 3: goblin.v1.MigrateBegin
+	(*MigrateCommit)(nil),      // 4: goblin.v1.MigrateCommit
+	(*MigrationRecord)(nil),    // 5: goblin.v1.MigrationRecord
+	(*ApplyAdmit)(nil),         // 6: goblin.v1.ApplyAdmit
+	(*InstanceTransition)(nil), // 7: goblin.v1.InstanceTransition
+	(*SignalRequest)(nil),      // 8: goblin.v1.SignalRequest
+	(InstanceState)(0),         // 9: goblin.v1.InstanceState
 }
 var file_goblin_v1_raft_proto_depIdxs = []int32{
 	0, // 0: goblin.v1.LogEntry.type:type_name -> goblin.v1.CommandType
-	2, // 1: goblin.v1.LogEntry.admit:type_name -> goblin.v1.ApplyAdmit
-	3, // 2: goblin.v1.LogEntry.transition:type_name -> goblin.v1.InstanceTransition
-	4, // 3: goblin.v1.LogEntry.signal:type_name -> goblin.v1.SignalRequest
-	5, // 4: goblin.v1.InstanceTransition.to:type_name -> goblin.v1.InstanceState
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	6, // 1: goblin.v1.LogEntry.admit:type_name -> goblin.v1.ApplyAdmit
+	7, // 2: goblin.v1.LogEntry.transition:type_name -> goblin.v1.InstanceTransition
+	8, // 3: goblin.v1.LogEntry.signal:type_name -> goblin.v1.SignalRequest
+	3, // 4: goblin.v1.LogEntry.migrate_begin:type_name -> goblin.v1.MigrateBegin
+	4, // 5: goblin.v1.LogEntry.migrate_commit:type_name -> goblin.v1.MigrateCommit
+	1, // 6: goblin.v1.MigrateCommit.outcome:type_name -> goblin.v1.MigrateOutcome
+	9, // 7: goblin.v1.InstanceTransition.to:type_name -> goblin.v1.InstanceState
+	8, // [8:8] is the sub-list for method output_type
+	8, // [8:8] is the sub-list for method input_type
+	8, // [8:8] is the sub-list for extension type_name
+	8, // [8:8] is the sub-list for extension extendee
+	0, // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_goblin_v1_raft_proto_init() }
@@ -511,14 +858,16 @@ func file_goblin_v1_raft_proto_init() {
 		(*LogEntry_Admit)(nil),
 		(*LogEntry_Transition)(nil),
 		(*LogEntry_Signal)(nil),
+		(*LogEntry_MigrateBegin)(nil),
+		(*LogEntry_MigrateCommit)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_goblin_v1_raft_proto_rawDesc), len(file_goblin_v1_raft_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   4,
+			NumEnums:      2,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
