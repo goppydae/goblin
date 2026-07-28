@@ -25,6 +25,7 @@ var (
 	advertisePort      int
 	raftDir            string
 	joinAddr           string
+	bootstrapExpect    int
 	pid1Mode           bool
 	noEarlyMounts      bool
 	watchdogDevice     string
@@ -66,6 +67,7 @@ var rootCmd = &cobra.Command{
 			AdvertisePort:      advertisePort,
 			RaftDir:            raftDir,
 			JoinAddr:           joinAddr,
+			BootstrapExpect:    bootstrapExpect,
 			Pid1Mode:           pid1Mode,
 			NoEarlyMounts:      noEarlyMounts,
 			WatchdogDevice:     watchdogDevice,
@@ -148,6 +150,7 @@ func init() {
 	rootCmd.Flags().DurationVar(&shutdownGrace, "shutdown-grace", 10*time.Second, "Per-phase shutdown grace (drain + agent stop) before forcing")
 	rootCmd.Flags().StringVar(&raftDir, "data", "./data/raft", "Data directory for Raft log")
 	rootCmd.Flags().StringVar(&joinAddr, "join", "", "Join existing cluster peer (host:port)")
+	rootCmd.Flags().IntVar(&bootstrapExpect, "bootstrap-expect", 0, "Seed the cluster once this many nodes carrying the same value are visible; one of them is elected to bootstrap (0: seed model, the node with no --join bootstraps alone)")
 	rootCmd.Flags().StringVar(&metricsAddr, "metrics-addr", "", "Prometheus metrics listen address (empty: disabled)")
 
 	// Security Flags

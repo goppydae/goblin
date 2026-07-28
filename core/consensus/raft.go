@@ -82,23 +82,35 @@ func NewConsensus(nodeID, dataDir string, stream raft.StreamLayer, bootstrap boo
 	}
 
 	// Bootstrap only the seed node; joiners wait to be admitted as
-	// voters by the leader. ErrCantBootstrap means state already exists
-	// (a restart) - not an error.
+	// voters by the leader.
 	if bootstrap {
-		configuration := raft.Configuration{
-			Servers: []raft.Server{
-				{
-					ID:      config.LocalID,
-					Address: raftTransport.LocalAddr(),
-				},
-			},
-		}
-		if err := r.BootstrapCluster(configuration).Error(); err != nil && !errors.Is(err, raft.ErrCantBootstrap) {
-			return nil, fmt.Errorf("bootstrap raft cluster: %w", err)
+		if err := c.Bootstrap([]raft.Server{{
+			ID:      config.LocalID,
+			Address: raftTransport.LocalAddr(),
+		}}); err != nil {
+			return nil, err
 		}
 	}
 
 	return c, nil
+}
+
+// Bootstrap installs an initial Raft configuration. It is separate
+// from construction because bootstrap-expect cannot decide the server
+// set until gossip has converged: the engine comes up as a
+// configuration-less follower and is seeded once the peers are known.
+//
+// ErrCantBootstrap means state already exists (a restart, or another
+// seed won the race) - not an error.
+func (c *Consensus) Bootstrap(servers []raft.Server) error {
+	if len(servers) == 0 {
+		return errors.New("bootstrap raft cluster: empty server set")
+	}
+	err := c.raft.BootstrapCluster(raft.Configuration{Servers: servers}).Error()
+	if err != nil && !errors.Is(err, raft.ErrCantBootstrap) {
+		return fmt.Errorf("bootstrap raft cluster: %w", err)
+	}
+	return nil
 }
 
 // IsLeader returns true if this node is the leader

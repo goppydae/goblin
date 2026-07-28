@@ -61,12 +61,19 @@ type Config struct {
 	AdvertisePort int
 	RaftDir       string
 	JoinAddr      string
-	Tags          map[string]string
-	EncryptionKey string // Base64 encoded 32-byte key
-	CertFile      string
-	KeyFile       string
-	CAFile        string
-	MetricsAddr   string
+	// BootstrapExpect is the number of seed nodes that must be visible
+	// through gossip before the cluster seeds itself. Every seed is
+	// configured with the same number and they elect one bootstrapper
+	// among themselves, so no node has to be designated by hand. 0 (or
+	// 1) keeps the seed model: whichever node has no JoinAddr
+	// bootstraps alone.
+	BootstrapExpect int
+	Tags            map[string]string
+	EncryptionKey   string // Base64 encoded 32-byte key
+	CertFile        string
+	KeyFile         string
+	CAFile          string
+	MetricsAddr     string
 	// ProductionMode restricts embedded-GAPI agent discovery to binaries
 	// with verified signatures (review R20).
 	ProductionMode bool
@@ -242,6 +249,11 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 		"version":     "0.3.3",
 		"cap_key":     issuer.KeyID() + ":" + base64.StdEncoding.EncodeToString(issuer.PublicKey()),
 	}
+	if s.cfg.BootstrapExpect > 1 {
+		// Advertised so peers can agree on the seed set - and refuse to
+		// seed at all if they disagree about its size.
+		tags[TagBootstrapExpect] = strconv.Itoa(s.cfg.BootstrapExpect)
+	}
 	for k, v := range s.cfg.Tags {
 		tags[k] = v
 	}
@@ -351,9 +363,30 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 		return fmt.Errorf("register raft plane: %w", err)
 	}
 	raftStream := transport.NewRoutedQUICStreamLayer(raftConns, advertiseUDP, tlsCfg)
-	consensus, err := consensus.NewConsensus(nodeID, s.cfg.RaftDir, raftStream, s.cfg.JoinAddr == "")
+	// With bootstrap-expect the initial configuration is not knowable
+	// at construction time - the engine comes up unseeded and is
+	// bootstrapped once gossip shows the whole seed set.
+	seedAlone := s.cfg.JoinAddr == "" && s.cfg.BootstrapExpect < 2
+	consensus, err := consensus.NewConsensus(nodeID, s.cfg.RaftDir, raftStream, seedAlone)
 	if err != nil {
 		return fmt.Errorf("failed to create consensus: %w", err)
+	}
+	if s.cfg.BootstrapExpect > 1 {
+		// In the background: the node serves gossip and RPC while it
+		// waits: it is running, the cluster simply is not seeded yet.
+		// Blocking here would make an incomplete seed set look like a
+		// dead daemon.
+		go func() {
+			if berr := runBootstrapExpect(ctx, s.cfg.BootstrapExpect, s.cfg.JoinAddr, membership, consensus); berr != nil {
+				if errors.Is(berr, context.Canceled) {
+					return // shutting down
+				}
+				// A disagreement about the seed set would split the
+				// cluster; refuse to run rather than seed half of it.
+				slog.Default().LogAttrs(ctx, slog.LevelError, "bootstrap-expect failed", logattr.Err(berr))
+				runCancel()
+			}
+		}()
 	}
 	defer func() {
 		if serr := consensus.Shutdown(); serr != nil && err == nil {

@@ -101,6 +101,13 @@ func freeAddrs(t *testing.T, n int) []string {
 // startNode launches a goblind process. join is empty for the first node.
 func (c *testCluster) startNode(id, join string) *clusterNode {
 	c.t.Helper()
+	return c.startNodeWithArgs(id, join)
+}
+
+// startNodeWithArgs is startNode plus extra goblind flags, for
+// scenarios that vary the daemon's configuration (bootstrap-expect).
+func (c *testCluster) startNodeWithArgs(id, join string, extra ...string) *clusterNode {
+	c.t.Helper()
 	addrs := freeAddrs(c.t, 1)
 	node := &clusterNode{
 		id:         id,
@@ -118,6 +125,7 @@ func (c *testCluster) startNode(id, join string) *clusterNode {
 	if join != "" {
 		args = append(args, "--join", join)
 	}
+	args = append(args, extra...)
 
 	logFile, err := os.Create(node.logPath)
 	if err != nil {
