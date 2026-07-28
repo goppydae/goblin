@@ -2,8 +2,11 @@ package supervisor
 
 import (
 	"os"
+	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/goppydae/goblin/core/migration"
 )
@@ -92,5 +95,57 @@ func TestImageStoreSeparatesEpochs(t *testing.T) {
 	}
 	if !strings.HasPrefix(second, store.Root()) {
 		t.Errorf("image dir %s escaped the store root %s", second, store.Root())
+	}
+}
+
+// waitForPidRelease is the fix for the constraint the first CRIU VM run
+// exposed: a killed child of a live parent is a zombie, a zombie still
+// holds its PID, and clone3(set_tid) cannot reclaim an occupied PID.
+
+func TestWaitForPidReleaseReturnsWhenPidIsGone(t *testing.T) {
+	// A pid that has certainly never existed in this namespace.
+	if err := waitForPidRelease(1<<30, time.Second); err != nil {
+		t.Fatalf("waiting on an absent pid should return immediately: %v", err)
+	}
+}
+
+// A live process must NOT be reported as released, or a restore would
+// be attempted against a PID that is still taken.
+func TestWaitForPidReleaseTimesOutWhilePidIsHeld(t *testing.T) {
+	start := time.Now()
+	err := waitForPidRelease(os.Getpid(), 150*time.Millisecond)
+	if err == nil {
+		t.Fatal("our own live pid was reported as released")
+	}
+	if elapsed := time.Since(start); elapsed < 150*time.Millisecond {
+		t.Errorf("returned after %s, before the timeout elapsed", elapsed)
+	}
+	if !strings.Contains(err.Error(), "reclaim") {
+		t.Errorf("error does not explain the consequence: %v", err)
+	}
+}
+
+// A zombie still occupies its PID, so presence - not liveness - is the
+// condition to wait on. This is the exact case that failed in the VM.
+func TestWaitForPidReleaseWaitsOutAZombie(t *testing.T) {
+	cmd := exec.Command("true")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("spawning: %v", err)
+	}
+	pid := cmd.Process.Pid
+
+	// Let it exit without reaping: it is now a zombie holding its PID.
+	time.Sleep(100 * time.Millisecond)
+	if _, err := os.Stat("/proc/" + strconv.Itoa(pid)); err != nil {
+		t.Skip("no /proc for the zombie; not Linux")
+	}
+	if err := waitForPidRelease(pid, 200*time.Millisecond); err == nil {
+		t.Error("an unreaped zombie was reported as released; a restore would fail on it")
+	}
+
+	// Reaping releases the PID, and the wait then completes.
+	_ = cmd.Wait()
+	if err := waitForPidRelease(pid, 5*time.Second); err != nil {
+		t.Errorf("pid still held after reaping: %v", err)
 	}
 }

@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"strconv"
+	"time"
 
 	"github.com/goppydae/gapi/core/lifecycle"
 	"github.com/goppydae/gapi/core/procsig"
@@ -57,12 +60,40 @@ func (n *NodeRPC) CheckpointAgentInstance(req *CheckpointAgentRequest, resp *str
 		return fmt.Errorf("instance %s runs an agent type that cannot be checkpointed", req.InstanceID)
 	}
 
+	// Capture the pid before the dump: afterwards the runner has no
+	// process to report, and we need it to know when the PID is free.
+	var dumpedPid int
+	if p, ok := a.(interface{ Pid() (int, bool) }); ok {
+		if pid, running := p.Pid(); running {
+			dumpedPid = pid
+		}
+	}
+
 	dir, err := n.images.Create(req.InstanceUUID, req.Epoch)
 	if err != nil {
 		return fmt.Errorf("checkpoint instance %s: %w", req.InstanceID, err)
 	}
 	if err := ckpt.Checkpoint(context.Background(), dir); err != nil {
 		return fmt.Errorf("checkpoint instance %s: %w", req.InstanceID, err)
+	}
+
+	// Do not return until the PID is actually free (GOBLIN-DIV-031).
+	//
+	// criu dump kills the process, but a killed child of a live parent
+	// is a ZOMBIE and a zombie still holds its PID. A restore that
+	// reclaims that PID via clone3(set_tid) then fails with "Can't fork
+	// for <pid>: File exists". Waiting here rather than in the
+	// coordinator keeps the knowledge where the pid is: the node.
+	//
+	// This matters most on the ROLLBACK path, where the source restores
+	// into the very namespace it just vacated. A cross-node restore
+	// lands in a fresh PID namespace and would not collide - but
+	// returning early would still let the coordinator race a reap that
+	// has not happened.
+	if dumpedPid > 0 {
+		if err := waitForPidRelease(dumpedPid, pidReleaseTimeout); err != nil {
+			return fmt.Errorf("checkpoint instance %s: %w", req.InstanceID, err)
+		}
 	}
 
 	// The process is stopped; its locator is no longer valid here. Zero
@@ -179,6 +210,32 @@ func (n *NodeRPC) PullCheckpoint(req *PullCheckpointRequest, resp *string) error
 		slog.String("dir", dir), slog.Uint64("epoch", req.Epoch))
 	*resp = dir
 	return nil
+}
+
+// pidReleaseTimeout bounds the wait for a dumped process to be reaped.
+// Generous, because the reaper is the subreaper loop rather than this
+// goroutine, but bounded: a migration that hangs here holds a stopped
+// process, which is worse than a migration that fails and rolls back.
+const pidReleaseTimeout = 30 * time.Second
+
+// waitForPidRelease blocks until pid leaves the process table.
+//
+// Presence is the test, not liveness: a zombie is not alive but still
+// occupies its PID, which is exactly the condition that breaks restore.
+// Off Linux /proc does not exist, so this returns immediately - correct
+// enough, since checkpoint/restore is Linux-only by design.
+func waitForPidRelease(pid int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		if _, err := os.Stat("/proc/" + strconv.Itoa(pid)); err != nil {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("pid %d still held %s after the dump; a restore could not reclaim it",
+				pid, timeout)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 // Images is this node's checkpoint image store.
