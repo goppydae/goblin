@@ -186,7 +186,7 @@ func (c *Controller) ApplyWithContext(ctx context.Context, a Action) error {
 				}
 			}
 		}
-		c.publishControl(protopkg.LifecycleControl_START)
+		c.publishControl(protopkg.LifecycleControl_ACTION_START)
 		if err := c.sm.TransitionTo(StateStarting); err != nil {
 			return err
 		}
@@ -231,7 +231,7 @@ func (c *Controller) ApplyWithContext(ctx context.Context, a Action) error {
 		}
 
 		if c.sm.GetState() != StateStopping {
-			c.publishControl(protopkg.LifecycleControl_STOP)
+			c.publishControl(protopkg.LifecycleControl_ACTION_STOP)
 			if err := c.sm.TransitionTo(StateStopping); err != nil {
 				return err
 			}
@@ -256,7 +256,7 @@ func (c *Controller) ApplyWithContext(ctx context.Context, a Action) error {
 		if c.sm.GetState() != StateRunning {
 			return c.ApplyWithContext(ctx, ActionStart)
 		}
-		c.publishControl(protopkg.LifecycleControl_RELOAD)
+		c.publishControl(protopkg.LifecycleControl_ACTION_RELOAD)
 		if err := c.sm.TransitionTo(StateReloading); err != nil {
 			return err
 		}
@@ -274,7 +274,7 @@ func (c *Controller) ApplyWithContext(ctx context.Context, a Action) error {
 		return c.sm.TransitionTo(StateRunning)
 
 	case ActionRestart:
-		c.publishControl(protopkg.LifecycleControl_RESTART)
+		c.publishControl(protopkg.LifecycleControl_ACTION_RESTART)
 		if err := c.ApplyWithContext(ctx, ActionStop); err != nil {
 			return fmt.Errorf("restart/stop: %w", err)
 		}

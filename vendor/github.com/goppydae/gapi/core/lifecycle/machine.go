@@ -118,6 +118,6 @@ func (lsm *LifecycleStateMachine) CurrentProtoState() protopkg.AgentState {
 	case "reloading":
 		return protopkg.AgentState_AGENT_STATE_RELOADING
 	default:
-		return protopkg.AgentState_AGENT_STATE_UNKNOWN
+		return protopkg.AgentState_AGENT_STATE_UNSPECIFIED
 	}
 }

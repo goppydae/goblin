@@ -181,17 +181,17 @@ func (c *Client) LifecycleWithOpts(ctx context.Context, agentIDs []string, actio
 
 // Start triggers the START action for the given agents.
 func (c *Client) Start(ctx context.Context, agentIDs []string) []Result {
-	return c.Lifecycle(ctx, agentIDs, protopkg.LifecycleControl_START)
+	return c.Lifecycle(ctx, agentIDs, protopkg.LifecycleControl_ACTION_START)
 }
 
 // StartWithOpts triggers the START action with options.
 func (c *Client) StartWithOpts(ctx context.Context, agentIDs []string, opts LifecycleOptions) []Result {
-	return c.LifecycleWithOpts(ctx, agentIDs, protopkg.LifecycleControl_START, opts)
+	return c.LifecycleWithOpts(ctx, agentIDs, protopkg.LifecycleControl_ACTION_START, opts)
 }
 
 // Stop triggers the STOP action for the given agents.
 func (c *Client) Stop(ctx context.Context, agentIDs []string) []Result {
-	return c.Lifecycle(ctx, agentIDs, protopkg.LifecycleControl_STOP)
+	return c.Lifecycle(ctx, agentIDs, protopkg.LifecycleControl_ACTION_STOP)
 }
 
 // GetLogs subscribes to the logs for a specific agent and returns a channel of log lines.

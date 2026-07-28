@@ -51,7 +51,7 @@ var lifecycleStartCmd = &cobra.Command{
 	Short: "Send start command to one or more agents",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		sendLifecycleCommand(args, protopkg.LifecycleControl_START)
+		sendLifecycleCommand(args, protopkg.LifecycleControl_ACTION_START)
 	},
 }
 
@@ -60,7 +60,7 @@ var lifecycleStopCmd = &cobra.Command{
 	Short: "Send stop command to one or more agents",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		sendLifecycleCommand(args, protopkg.LifecycleControl_STOP)
+		sendLifecycleCommand(args, protopkg.LifecycleControl_ACTION_STOP)
 	},
 }
 
@@ -69,7 +69,7 @@ var lifecycleRestartCmd = &cobra.Command{
 	Short: "Send restart command to one or more agents",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		sendLifecycleCommand(args, protopkg.LifecycleControl_RESTART)
+		sendLifecycleCommand(args, protopkg.LifecycleControl_ACTION_RESTART)
 	},
 }
 
@@ -78,7 +78,7 @@ var lifecycleReloadCmd = &cobra.Command{
 	Short: "Send reload command to one or more agents",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		sendLifecycleCommand(args, protopkg.LifecycleControl_RELOAD)
+		sendLifecycleCommand(args, protopkg.LifecycleControl_ACTION_RELOAD)
 	},
 }
 
