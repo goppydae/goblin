@@ -18,6 +18,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -42,6 +43,7 @@ import (
 	"github.com/goppydae/goblin/core/consensus"
 	"github.com/goppydae/goblin/core/eventbus"
 	"github.com/goppydae/goblin/core/metrics"
+	"github.com/goppydae/goblin/core/migration"
 	"github.com/goppydae/goblin/core/scheduler"
 	"github.com/goppydae/goblin/core/store"
 	"github.com/goppydae/goblin/core/transport"
@@ -588,7 +590,17 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 
 	// Register Node handlers
 	instTracker := newInstanceTracker()
-	nodeRPC := &NodeRPC{agentMgr: agentMgr, tracker: instTracker}
+	// Checkpoint images live beside the Raft data rather than under a
+	// separate root: both are node-local durable state with the same
+	// lifetime, and an operator who relocates one means to relocate the
+	// other. Sibling, not nested - wiping raft state must not discard
+	// images that a migration in flight still needs.
+	imageRoot := filepath.Join(filepath.Dir(s.cfg.RaftDir), "checkpoints")
+	nodeRPC := &NodeRPC{
+		agentMgr: agentMgr,
+		tracker:  instTracker,
+		images:   migration.NewStore(imageRoot),
+	}
 	RegisterNodeHandlers(quicServer, nodeRPC)
 
 	slog.Default().LogAttrs(ctx, slog.LevelInfo, "scheduler and node rpc handlers registered")

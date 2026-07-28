@@ -8,6 +8,7 @@ import (
 
 	gapiagentmgr "github.com/goppydae/gapi/core/agentmgr"
 	"github.com/goppydae/gapi/core/procsig"
+	"github.com/goppydae/goblin/core/migration"
 	"github.com/goppydae/goblin/internal/logattr"
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
@@ -25,6 +26,10 @@ type starter interface {
 type NodeRPC struct {
 	agentMgr *gapiagentmgr.AgentManager
 	tracker  *instanceTracker
+	// images is this node's checkpoint image store. Nil when migration
+	// is not configured, in which case the migration RPCs refuse rather
+	// than inventing a directory.
+	images *migration.Store
 }
 
 // StartAgentRequest defines payload for starting an agent instance
