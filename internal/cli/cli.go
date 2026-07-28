@@ -78,6 +78,7 @@ func init() {
 	clusterCmd.AddCommand(runCmd)
 	clusterCmd.AddCommand(drainCmd)
 	clusterCmd.AddCommand(migrateCmd)
+	clusterCmd.AddCommand(migrateInstanceCmd)
 
 	// Global flags
 	RootCmd.PersistentFlags().StringVar(&apiAddr, "api-addr", "127.0.0.1:29000", "Target node's single listen address")
@@ -169,6 +170,48 @@ var drainCmd = &cobra.Command{
 		for _, jobID := range migratedJobs {
 			fmt.Printf("  - %s\n", jobID)
 		}
+		return nil
+	},
+}
+
+// migrateInstanceCmd live-migrates a RUNNING process, memory intact.
+// Deliberately a separate verb from "migrate": that one reassigns a
+// job, which stops the work in one place and starts it in another. This
+// one moves the process itself, and the instance UUID never changes.
+var migrateInstanceCmd = &cobra.Command{
+	Use:   "migrate-instance <instance-uuid> <to-node>",
+	Short: "Live-migrate a running instance to another node (CRIU)",
+	Long: `Live-migrate a running instance to another node.
+
+The instance is checkpointed on its current node, its memory image is
+transferred, and it is restored on the destination under the same
+instance UUID. The process keeps its state; only its location changes.
+
+If any step fails the instance is restored on its source and the
+migration is reported as rolled back. If the rollback also fails the
+instance is running nowhere, and the error says so explicitly.`,
+	Args: cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) (err error) {
+		req := map[string]string{
+			"InstanceID": args[0],
+			"ToNode":     args[1],
+		}
+
+		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
+		if err != nil {
+			return fmt.Errorf("failed to connect to QUIC RPC at %s: %w", apiAddr, err)
+		}
+		defer closeClient(client, &err)
+
+		var resp string
+		if err := client.Call("SchedulerRPC.MigrateInstance", req, &resp); err != nil {
+			// The coordinator's outcomes are materially different for an
+			// operator, so they are surfaced rather than flattened into
+			// one "migration failed".
+			return fmt.Errorf("live migration failed: %w", err)
+		}
+
+		fmt.Println(resp)
 		return nil
 	},
 }

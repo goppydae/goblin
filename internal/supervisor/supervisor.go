@@ -37,6 +37,7 @@ import (
 	gapilifecycle "github.com/goppydae/gapi/core/lifecycle"
 	gapilogging "github.com/goppydae/gapi/core/logging"
 	"github.com/goppydae/gapi/core/procsig"
+	gapitransport "github.com/goppydae/gapi/core/transport"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
 	"github.com/goppydae/goblin/core/capability"
 	"github.com/goppydae/goblin/core/cluster"
@@ -531,6 +532,17 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 	s.agentMgr = agentMgr
 
 	// Register Scheduler RPC for CLI operations
+	// Migration collaborators. The dialer is the same one the scheduler
+	// uses - one place decides how a node is reached - and the resolver
+	// is membership's view, so the coordinator cannot disagree with the
+	// reconciler about where a node lives.
+	migrateNodes := migration.NewRPCNodes(
+		func(addr string) (migration.Caller, error) {
+			return NewQUICRPCClient(addr, tlsCfg)
+		},
+		sched.NodeAddress,
+	)
+
 	schedulerRPC := &SchedulerRPC{
 		scheduler:   sched,
 		membership:  membership,
@@ -539,6 +551,10 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 		issuer:      s.issuer,
 		revocations: s.revocations,
 		members:     membership,
+
+		migrateNodes:  migrateNodes,
+		migrateRaft:   migration.NewRaftProposer(consensus, 0),
+		migrateLogger: slog.Default(),
 	}
 	slog.Default().LogAttrs(ctx, slog.LevelInfo, "scheduler rpc created")
 
@@ -596,10 +612,28 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 	// other. Sibling, not nested - wiping raft state must not discard
 	// images that a migration in flight still needs.
 	imageRoot := filepath.Join(filepath.Dir(s.cfg.RaftDir), "checkpoints")
+	// Client TLS for dialing a peer's goblin-ckpt listener. Built from
+	// the same material as every other client dial; DialAndFetch stamps
+	// the ALPN onto a clone, so this stays a plain client policy.
+	//
+	// A failure here does not stop the node: it leaves ckptTLS nil, and
+	// the pull RPC refuses. Migration is unavailable, which is loud and
+	// bounded; refusing to boot over it would take out a node that can
+	// still supervise everything else.
+	ckptTLS, tlsErr := gapitransport.CreateClientTLSConfig(gapitransport.TLSConfig{
+		CAFile: s.cfg.CAFile,
+	})
+	if tlsErr != nil {
+		slog.Default().LogAttrs(ctx, slog.LevelError,
+			"checkpoint transport TLS unavailable; migration pulls will refuse",
+			logattr.Err(tlsErr))
+		ckptTLS = nil
+	}
 	nodeRPC := &NodeRPC{
 		agentMgr: agentMgr,
 		tracker:  instTracker,
 		images:   migration.NewStore(imageRoot),
+		ckptTLS:  ckptTLS,
 	}
 	RegisterNodeHandlers(quicServer, nodeRPC)
 

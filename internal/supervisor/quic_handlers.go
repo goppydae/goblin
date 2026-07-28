@@ -45,6 +45,21 @@ func RegisterSchedulerHandlers(server *QUICRPCServer, rpc *SchedulerRPC) {
 	})
 
 	// MigrateJob handler
+	// Live instance migration (GOBLIN-DIV-031). Distinct from
+	// MigrateJob below, which reassigns work rather than moving a
+	// running process.
+	server.RegisterHandler("SchedulerRPC.MigrateInstance", func(payload []byte) ([]byte, error) {
+		var req MigrateInstanceRequest
+		if err := json.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("invalid request: %w", err)
+		}
+		var resp string
+		if err := rpc.MigrateInstance(&req, &resp); err != nil {
+			return nil, err
+		}
+		return json.Marshal(resp)
+	})
+
 	server.RegisterHandler("SchedulerRPC.MigrateJob", func(payload []byte) ([]byte, error) {
 		var req MigrateRequest
 		if err := json.Unmarshal(payload, &req); err != nil {

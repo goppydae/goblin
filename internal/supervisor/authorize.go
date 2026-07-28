@@ -8,6 +8,7 @@ import (
 
 	gapicrypto "github.com/goppydae/gapi/core/crypto"
 	gapiv1 "github.com/goppydae/gapi/pkg/proto"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/goppydae/goblin/core/capability"
 	"github.com/goppydae/goblin/internal/ident"
@@ -32,26 +33,43 @@ import (
 // ...), so a token minted for one resource cannot authorize a verb
 // against another.
 func (s *SchedulerRPC) authorize(verb capability.Verb, subject []byte) (*gapiv1.CapabilityTokenPayload, error) {
+	payload, _, err := s.authorizeToken(verb, subject)
+	return payload, err
+}
+
+// authorizeToken is authorize plus the serialized token itself, for the
+// one caller that must forward proof of authorization to another node.
+//
+// Migration needs it: the destination pulls an instance's memory image
+// from the source, and the source authorizes that fetch against this
+// token. Re-issuing a second token for the transfer would put two
+// audit ids on one operation and let them diverge in rights or expiry.
+func (s *SchedulerRPC) authorizeToken(verb capability.Verb, subject []byte) (*gapiv1.CapabilityTokenPayload, []byte, error) {
 	if s.issuer == nil || s.revocations == nil {
-		return nil, fmt.Errorf("capability issuer not initialized on this node")
+		return nil, nil, fmt.Errorf("capability issuer not initialized on this node")
 	}
 
 	right, err := capability.RightForVerb(verb)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	tok, tokenID, err := s.issuer.Issue(subject, right, 0)
 	if err != nil {
-		return nil, fmt.Errorf("issue capability token for %s: %w", verb, err)
+		return nil, nil, fmt.Errorf("issue capability token for %s: %w", verb, err)
 	}
 	if s.revocations.IsRevoked(tokenID) {
-		return nil, fmt.Errorf("capability token %s is revoked", ident.String(tokenID))
+		return nil, nil, fmt.Errorf("capability token %s is revoked", ident.String(tokenID))
 	}
 
 	payload, err := gapicrypto.VerifyCapabilityToken(tok, s.capabilityKeyResolver(), time.Now(), right)
 	if err != nil {
-		return nil, fmt.Errorf("verify capability token for %s: %w", verb, err)
+		return nil, nil, fmt.Errorf("verify capability token for %s: %w", verb, err)
+	}
+
+	raw, err := proto.Marshal(tok)
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal capability token for %s: %w", verb, err)
 	}
 
 	// The audit line is the point of self-issuance: every mutation
@@ -60,7 +78,7 @@ func (s *SchedulerRPC) authorize(verb capability.Verb, subject []byte) (*gapiv1.
 		slog.String("verb", string(verb)),
 		slog.String("subject", ident.String(subject)),
 		slog.String("token_id", ident.String(payload.TokenId)))
-	return payload, nil
+	return payload, raw, nil
 }
 
 // Subject derivations. Every mutating verb names its resource; keeping

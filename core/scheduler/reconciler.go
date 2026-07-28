@@ -375,3 +375,13 @@ func (s *Scheduler) RunReconciler(ctx context.Context, interval time.Duration) {
 		}
 	}
 }
+
+// NodeAddress resolves a node id to its control-plane address.
+//
+// Exported for the migration coordinator, which must reach two specific
+// nodes by id rather than following a placement decision. Thin wrapper
+// over the same membership lookup the reconciler uses, so the two
+// cannot disagree about where a node is.
+func (s *Scheduler) NodeAddress(ctx context.Context, nodeID string) (string, error) {
+	return s.getNodeAddress(ctx, nodeID)
+}

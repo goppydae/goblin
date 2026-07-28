@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/rpc"
 	"reflect"
@@ -14,6 +15,7 @@ import (
 	gapiagentmgr "github.com/goppydae/gapi/core/agentmgr"
 	"github.com/goppydae/goblin/core/capability"
 	"github.com/goppydae/goblin/core/consensus"
+	"github.com/goppydae/goblin/core/migration"
 	"github.com/goppydae/goblin/core/scheduler"
 	"github.com/goppydae/goblin/internal/ident"
 	goblinv1 "github.com/goppydae/goblin/proto"
@@ -38,6 +40,12 @@ type SchedulerRPC struct {
 	issuer      *capability.Issuer
 	revocations *capability.Revocations
 	members     memberTagLister
+
+	// Migration collaborators (nil outside a full supervisor, in which
+	// case MigrateInstance refuses rather than half-running).
+	migrateNodes  *migration.RPCNodes
+	migrateRaft   *migration.RaftProposer
+	migrateLogger *slog.Logger
 
 	eventsMu  sync.RWMutex
 	events    []LogEvent
