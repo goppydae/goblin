@@ -75,7 +75,7 @@ func NewConsensus(nodeID, dataDir, bindAddr string, tlsCfg *tls.Config) (*Consen
 	}
 
 	// Enforce ALPN for Raft
-	tlsCfg.NextProtos = []string{"raft-quic"}
+	tlsCfg.NextProtos = []string{transport.ALPNRaftQUIC}
 
 	stream, err := transport.NewQUICStreamLayer(bindAddr, tlsCfg)
 	if err != nil {

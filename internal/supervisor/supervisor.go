@@ -29,6 +29,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	gapiagentmgr "github.com/goppydae/gapi/core/agentmgr"
+	gapiclock "github.com/goppydae/gapi/core/clock"
 	gapiconfig "github.com/goppydae/gapi/core/config"
 	gapicrypto "github.com/goppydae/gapi/core/crypto"
 	gapieventbus "github.com/goppydae/gapi/core/eventbus"
@@ -71,6 +72,12 @@ type Config struct {
 	// Logging mirrors gapi's logging configuration (level, format, file
 	// rotation, Loki); handlers are built by the kernel's core/logging.
 	Logging gapiconfig.LoggingConfig
+	// NetworkGateTimeout bounds the network-readiness phase gate: when
+	// nonzero, Run blocks until the kernel's agent.network.running topic
+	// fires on the local bus, failing loudly on expiry (GOBLIN-DIV-011,
+	// R13). Zero disables the gate - the topic has no producer unless a
+	// network agent is deployed.
+	NetworkGateTimeout time.Duration
 }
 
 // Supervisor manages the Goblin daemon components
@@ -163,14 +170,14 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 		// Default to insecure: Generate ephemeral cert for QUIC
 		// QUIC requires a certificate even if we don't verify it (TLS 1.3)
 		var err error
-		cert, err := generateDocsCert()
+		cert, err := generateDocsCert(nodeID)
 		if err != nil {
 			return fmt.Errorf("failed to generate ephemeral TLS cert: %w", err)
 		}
 		tlsCfg = &tls.Config{
 			Certificates:       []tls.Certificate{cert},
 			InsecureSkipVerify: true,
-			NextProtos:         []string{"gapi-quic", "goblin-rpc", "serf-quic"},
+			NextProtos:         []string{transport.ALPNGapiQUIC, transport.ALPNGoblinRPC, transport.ALPNSerfQUIC},
 		}
 		slog.Default().LogAttrs(ctx, slog.LevelWarn, "encryption disabled, using ephemeral self-signed cert")
 	}
@@ -398,6 +405,19 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 		slog.Default().LogAttrs(ctx, slog.LevelInfo, "local agent manager initialized", logattr.Count(len(discovered)))
 	}
 
+	// Network-readiness phase gate (GOBLIN-DIV-011, R13): gate on the
+	// kernel's exported topic constant, never a literal, with a hard
+	// bound - PID 1 hanging forever is not an acceptable outcome.
+	if s.cfg.NetworkGateTimeout > 0 {
+		slog.Default().LogAttrs(ctx, slog.LevelInfo, "waiting for network agent",
+			logattr.Topic(gapieventbus.TopicAgentNetworkRunning),
+			slog.Duration("timeout", s.cfg.NetworkGateTimeout))
+		if gerr := localBus.WaitForTopic(ctx, "system", "", gapieventbus.TopicAgentNetworkRunning, s.cfg.NetworkGateTimeout, gapiclock.RealClock{}); gerr != nil {
+			return fmt.Errorf("network-readiness gate: %w (no %s event within %s)",
+				gerr, gapieventbus.TopicAgentNetworkRunning, s.cfg.NetworkGateTimeout)
+		}
+	}
+
 	s.agentMgr = agentMgr
 
 	// Register Scheduler RPC for CLI operations
@@ -473,11 +493,11 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 	// We just reset NextProtos to be safe, ensuring all are there including API ones.
 	// Actually, we should merge.
 	// But let's just ensure gapi-quic and goblin-rpc are there.
-	// Since we set "serf-quic" earlier for Serf, we should keep it or just ensure API ones are added?
-	// QUIC listener for API uses "gapi-quic" and "goblin-rpc".
+	// Since we set transport.ALPNSerfQUIC earlier for Serf, we should keep it or just ensure API ones are added?
+	// QUIC listener for API uses transport.ALPNGapiQUIC and transport.ALPNGoblinRPC.
 	// The shared tlsCfg might be used by Serf? Serf uses its own clone in NewQUICSerfTransport.
 	// So we can just set NextProtos for this specific listener.
-	cfgCopy.NextProtos = []string{"gapi-quic", "goblin-rpc"}
+	cfgCopy.NextProtos = []string{transport.ALPNGapiQUIC, transport.ALPNGoblinRPC}
 
 	// API listener should NOT require client certificates (unlike likely Raft/Serf mTLS in secure mode)
 	// Unless we want mutual auth for API? Usually not for CLI.
@@ -514,9 +534,9 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 
 			// ALPN Routing
 			switch conn.ConnectionState().TLS.NegotiatedProtocol {
-			case "goblin-rpc":
+			case transport.ALPNGoblinRPC:
 				go quicServer.HandleConnection(conn)
-			case "gapi-quic":
+			case transport.ALPNGapiQUIC:
 				go handleQUICConn(conn, bus, membership)
 			default:
 				slog.Default().LogAttrs(ctx, slog.LevelWarn, "unknown alpn protocol", logattr.Protocol(conn.ConnectionState().TLS.NegotiatedProtocol))
@@ -766,7 +786,32 @@ func handleQUICStream(stream *quic.Stream, bus eventbus.EventBus, m *cluster.Mem
 }
 
 // generateDocsCert generates a self-signed cert for QUIC
-func generateDocsCert() (tls.Certificate, error) {
+// certDNSNames returns the SANs for the dev cert: localhost plus the
+// configured node id and the resolved hostname (deduplicated).
+func certDNSNames(nodeID string) []string {
+	names := []string{"localhost"}
+	seen := map[string]bool{"localhost": true}
+	for _, n := range []string{nodeID, resolvedHostname()} {
+		if n != "" && !seen[n] {
+			names = append(names, n)
+			seen[n] = true
+		}
+	}
+	return names
+}
+
+func resolvedHostname() string {
+	host, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	return host
+}
+
+// generateDocsCert builds the dev-mode self-signed cert from the real
+// node identity (nodeID + resolved hostname), not a hardcoded node list
+// (R21). Dev-only: production fails closed before reaching this path.
+func generateDocsCert(nodeID string) (tls.Certificate, error) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return tls.Certificate{}, err
@@ -789,7 +834,7 @@ func generateDocsCert() (tls.Certificate, error) {
 		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("0.0.0.0")},
-		DNSNames:     []string{"localhost", "node-1", "node-2", "node-3", "node-4", "node-5", "controller"},
+		DNSNames:     certDNSNames(nodeID),
 	}
 
 	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)

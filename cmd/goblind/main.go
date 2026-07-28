@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	gapiconfig "github.com/goppydae/gapi/core/config"
 	"github.com/goppydae/goblin/internal/logattr"
@@ -21,23 +22,24 @@ var (
 	nodeID   string
 	serfAddr string
 	// serfPort          int - Removed, now part of serfAddr
-	serfAdvertiseAddr string
-	serfAdvertisePort int
-	raftAddr          string
-	raftDir           string
-	joinAddr          string
-	apiAddr           string
-	encryptionKey     string
-	tlsCertFile       string
-	tlsKeyFile        string
-	tlsCAFile         string
-	metricsAddr       string
-	productionMode    bool
-	agentVerifyKey    string
-	logLevel          string
-	logFormat         string
-	logFile           string
-	logLokiURL        string
+	serfAdvertiseAddr  string
+	serfAdvertisePort  int
+	raftAddr           string
+	raftDir            string
+	joinAddr           string
+	apiAddr            string
+	encryptionKey      string
+	tlsCertFile        string
+	tlsKeyFile         string
+	tlsCAFile          string
+	metricsAddr        string
+	productionMode     bool
+	agentVerifyKey     string
+	logLevel           string
+	logFormat          string
+	logFile            string
+	logLokiURL         string
+	networkGateTimeout time.Duration
 )
 
 var rootCmd = &cobra.Command{
@@ -56,23 +58,24 @@ var rootCmd = &cobra.Command{
 		}
 
 		cfg := supervisor.Config{
-			NodeID:         nodeID,
-			SerfAddr:       serfAddr,
-			AdvertiseAddr:  serfAdvertiseAddr,
-			AdvertisePort:  serfAdvertisePort,
-			RaftAddr:       raftAddr,
-			RaftDir:        raftDir,
-			JoinAddr:       joinAddr,
-			APIAddr:        apiAddr,
-			Tags:           tags,
-			EncryptionKey:  encryptionKey,
-			CertFile:       tlsCertFile,
-			KeyFile:        tlsKeyFile,
-			CAFile:         tlsCAFile,
-			MetricsAddr:    metricsAddr,
-			ProductionMode: productionMode,
-			AgentVerifyKey: agentVerifyKey,
-			Logging:        buildLoggingConfig(),
+			NodeID:             nodeID,
+			SerfAddr:           serfAddr,
+			AdvertiseAddr:      serfAdvertiseAddr,
+			AdvertisePort:      serfAdvertisePort,
+			RaftAddr:           raftAddr,
+			RaftDir:            raftDir,
+			JoinAddr:           joinAddr,
+			APIAddr:            apiAddr,
+			Tags:               tags,
+			EncryptionKey:      encryptionKey,
+			CertFile:           tlsCertFile,
+			KeyFile:            tlsKeyFile,
+			CAFile:             tlsCAFile,
+			MetricsAddr:        metricsAddr,
+			ProductionMode:     productionMode,
+			AgentVerifyKey:     agentVerifyKey,
+			Logging:            buildLoggingConfig(),
+			NetworkGateTimeout: networkGateTimeout,
 		}
 		return supervisor.New(cfg).Run(cmd.Context())
 	},
@@ -139,6 +142,7 @@ func init() {
 	rootCmd.Flags().StringVar(&raftDir, "data", "./data/raft", "Data directory for Raft log")
 	rootCmd.Flags().StringVar(&joinAddr, "join", "", "Join existing cluster peer (host:port)")
 	rootCmd.Flags().StringVar(&apiAddr, "api-addr", "127.0.0.1:29000", "API address")
+	rootCmd.Flags().StringVar(&metricsAddr, "metrics-addr", "", "Prometheus metrics listen address (empty: disabled)")
 
 	// Security Flags
 	rootCmd.Flags().BoolVar(&productionMode, "production", false, "Restrict agent discovery to binaries with verified signatures")
@@ -146,6 +150,7 @@ func init() {
 	rootCmd.Flags().StringVar(&logFormat, "log-format", "", "Log format: json or console (default: json in production, console otherwise)")
 	rootCmd.Flags().StringVar(&logFile, "log-file", "", "Also write logs to this file (rotated)")
 	rootCmd.Flags().StringVar(&logLokiURL, "log-loki-url", "", "Forward logs to this Loki endpoint")
+	rootCmd.Flags().DurationVar(&networkGateTimeout, "network-gate-timeout", 0, "Block startup until the network agent reports running, failing after this bound (0: gate disabled)")
 	rootCmd.Flags().StringVar(&agentVerifyKey, "agent-verify-key", "", "Path to the Ed25519 public key for agent signature verification (falls back to $RUNTIME_VERIFY_KEY)")
 	rootCmd.Flags().StringVar(&encryptionKey, "encrypt", "", "Base64 encoded 32-byte secret key for Serf encryption")
 	rootCmd.Flags().StringVar(&tlsCertFile, "tls-cert", "", "Path to TLS certificate")

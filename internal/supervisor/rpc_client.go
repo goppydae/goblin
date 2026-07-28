@@ -12,6 +12,7 @@ import (
 
 	"math"
 
+	"github.com/goppydae/goblin/core/transport"
 	goblinv1 "github.com/goppydae/goblin/proto"
 	"github.com/quic-go/quic-go"
 	"google.golang.org/protobuf/proto"
@@ -29,7 +30,7 @@ func NewQUICRPCClient(addr string, tlsConfig *tls.Config) (*QUICRPCClient, error
 	tlsConf := tlsConfig.Clone()
 
 	// Override NextProtos for Goblin RPC
-	tlsConf.NextProtos = []string{"goblin-rpc"}
+	tlsConf.NextProtos = []string{transport.ALPNGoblinRPC}
 
 	quicConfig := &quic.Config{
 		MaxIdleTimeout:  60 * time.Second,

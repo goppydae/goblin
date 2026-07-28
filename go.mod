@@ -5,7 +5,6 @@ go 1.26.0
 toolchain go1.26.5
 
 require (
-	github.com/boltdb/bolt v1.3.1
 	github.com/google/uuid v1.6.0
 	github.com/goppydae/gapi v0.0.0-00010101000000-000000000000
 	github.com/goppydae/magelib v0.0.0-00010101000000-000000000000
@@ -19,6 +18,7 @@ require (
 	github.com/quic-go/quic-go v0.57.1
 	github.com/spf13/cobra v1.10.2
 	github.com/zeebo/blake3 v0.2.4
+	go.etcd.io/bbolt v1.5.0
 	go.yaml.in/yaml/v3 v3.0.4
 	google.golang.org/protobuf v1.36.11
 )
@@ -80,11 +80,9 @@ require (
 	golang.org/x/mod v0.34.0 // indirect
 	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
 	golang.org/x/tools v0.43.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
-	google.golang.org/grpc v1.82.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 )
 

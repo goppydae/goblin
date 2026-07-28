@@ -40,3 +40,26 @@ jobs:
       - name: Execute System Tests
         working-directory: goblin
         run: nix develop -c go test -v ./...
+
+  no-replace-module-resolution:
+    # Proves the ledger exit for the first tagged release: the module
+    # graph resolves from published tags alone - no replace directives,
+    # no sibling checkouts, no vendor tree, no go.work.
+    name: No-Replace Module Resolution
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (lone clone)
+        uses: actions/checkout@v4
+
+      - name: Synchronize Environment (Nix)
+        uses: cachix/install-nix-action@v24
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Resolve and build from the module proxy
+        env:
+          GOWORK: "off"
+          GOFLAGS: "-mod=mod"
+        run: |
+          rm -rf vendor
+          nix develop -c go build ./...

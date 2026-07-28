@@ -15,6 +15,7 @@ import (
 type Membership struct {
 	serf      *serf.Serf
 	eventCh   chan serf.Event
+	handlerCh chan serf.Event
 	nodeID    string
 	bindAddr  string
 	bindPort  int
@@ -47,15 +48,17 @@ func NewMembership(nodeID, bindAddr string, bindPort int, advertiseAddr string, 
 	}
 
 	m := &Membership{
-		serf:     s,
-		eventCh:  eventCh,
-		nodeID:   nodeID,
-		bindAddr: bindAddr,
-		bindPort: bindPort,
+		serf:      s,
+		eventCh:   eventCh,
+		handlerCh: make(chan serf.Event, 256),
+		nodeID:    nodeID,
+		bindAddr:  bindAddr,
+		bindPort:  bindPort,
 	}
 
 	// Start event handler
 	go m.handleEvents()
+	go m.dispatchHandler()
 
 	return m, nil
 }
@@ -117,12 +120,26 @@ func (m *Membership) handleEvents() {
 			m.handleUserEvent(e)
 		}
 
-		// Invoke callback
+		// Hand the event to the dispatcher goroutine: a slow handler
+		// must not stall this loop, which is the only consumer of
+		// Serf's bounded event channel (R25).
+		m.handlerCh <- event
+	}
+	close(m.handlerCh)
+}
+
+// dispatchHandler invokes the registered handler from its own goroutine
+// so slow handlers back up the local buffer, not Serf's dispatch. A
+// single worker (not a pool) preserves event ordering - a join/leave
+// pair for one node must never be observed reordered.
+func (m *Membership) dispatchHandler() {
+	for event := range m.handlerCh {
 		m.handlerMu.RLock()
-		if m.handler != nil {
-			m.handler(event)
-		}
+		handler := m.handler
 		m.handlerMu.RUnlock()
+		if handler != nil {
+			handler(event)
+		}
 	}
 }
 

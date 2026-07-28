@@ -47,19 +47,19 @@ func NewQUICSerfTransport(bindAddr string, tlsConf *tls.Config) (*QUICSerfTransp
 		lnTLS = &tls.Config{InsecureSkipVerify: true}
 	}
 	if len(lnTLS.NextProtos) == 0 {
-		lnTLS.NextProtos = []string{"serf-quic"}
+		lnTLS.NextProtos = []string{ALPNSerfQUIC}
 	} else {
 		// Append if not present? Or just enforce?
 		// Better to ensure it's there.
 		found := false
 		for _, p := range lnTLS.NextProtos {
-			if p == "serf-quic" {
+			if p == ALPNSerfQUIC {
 				found = true
 				break
 			}
 		}
 		if !found {
-			lnTLS.NextProtos = append(lnTLS.NextProtos, "serf-quic")
+			lnTLS.NextProtos = append(lnTLS.NextProtos, ALPNSerfQUIC)
 		}
 	}
 
@@ -204,7 +204,7 @@ func (t *QUICSerfTransport) getOrDial(addr string) (*quic.Conn, error) {
 		clientTLS = &tls.Config{InsecureSkipVerify: true}
 	}
 	if len(clientTLS.NextProtos) == 0 {
-		clientTLS.NextProtos = []string{"serf-quic"}
+		clientTLS.NextProtos = []string{ALPNSerfQUIC}
 	}
 
 	quicConf := &quic.Config{

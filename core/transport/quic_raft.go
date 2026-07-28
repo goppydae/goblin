@@ -92,7 +92,7 @@ func (l *QUICStreamLayer) Dial(addr raft.ServerAddress, timeout time.Duration) (
 	}
 	// Important: for QUIC, NextProtos must match
 	if len(clientTLS.NextProtos) == 0 {
-		clientTLS.NextProtos = []string{"raft-quic"}
+		clientTLS.NextProtos = []string{ALPNRaftQUIC}
 	}
 
 	conn, err := quic.DialAddr(ctx, string(addr), clientTLS, quicConf)
