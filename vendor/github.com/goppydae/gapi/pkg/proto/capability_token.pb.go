@@ -22,9 +22,10 @@ const (
 )
 
 // CapabilityToken is a bearer token authorizing an action against one
-// agent instance. The signature covers the literal payload bytes, not
-// a message: protobuf serialization is not canonical, so verifiers
-// check Ed25519(payload) and only then unmarshal the payload.
+// subject: an agent instance, or a named orchestration resource such as
+// a spec, node, job, or topic. The signature covers the literal payload
+// bytes, not a message: protobuf serialization is not canonical, so
+// verifiers check Ed25519(payload) and only then unmarshal the payload.
 type CapabilityToken struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Payload       []byte                 `protobuf:"bytes,1,opt,name=payload,proto3" json:"payload,omitempty"`     // serialized CapabilityTokenPayload
@@ -80,14 +81,19 @@ func (x *CapabilityToken) GetSignature() []byte {
 // CapabilityTokenPayload is the signed content of a capability token.
 // TTL policy (issuer-side): 120s default, clamped to 60-300s.
 type CapabilityTokenPayload struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TokenId       []byte                 `protobuf:"bytes,1,opt,name=token_id,json=tokenId,proto3" json:"token_id,omitempty"`                // UUIDv7
-	InstanceUuid  []byte                 `protobuf:"bytes,2,opt,name=instance_uuid,json=instanceUuid,proto3" json:"instance_uuid,omitempty"` // subject instance
-	Rights        uint64                 `protobuf:"varint,3,opt,name=rights,proto3" json:"rights,omitempty"`                                // rights bitmap (see crypto package constants)
-	IssuedAtMs    int64                  `protobuf:"varint,4,opt,name=issued_at_ms,json=issuedAtMs,proto3" json:"issued_at_ms,omitempty"`    // unix milliseconds
-	ExpiresAtMs   int64                  `protobuf:"varint,5,opt,name=expires_at_ms,json=expiresAtMs,proto3" json:"expires_at_ms,omitempty"` // unix milliseconds
-	IssuerNodeId  string                 `protobuf:"bytes,6,opt,name=issuer_node_id,json=issuerNodeId,proto3" json:"issuer_node_id,omitempty"`
-	KeyId         string                 `protobuf:"bytes,7,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"` // identifies the issuer signing key
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	TokenId []byte                 `protobuf:"bytes,1,opt,name=token_id,json=tokenId,proto3" json:"token_id,omitempty"` // UUIDv7
+	// The subject this token authorizes against. Usually an agent
+	// instance, but orchestration tokens scope to a named resource -
+	// spec, node, job, or topic (GOBLIN-DIV-027). Renamed from
+	// instance_uuid; the field number does not move, so the wire is
+	// unaffected and persisted data stays readable (GOBLIN-DIV-028).
+	SubjectUuid   []byte `protobuf:"bytes,2,opt,name=subject_uuid,json=subjectUuid,proto3" json:"subject_uuid,omitempty"`
+	Rights        uint64 `protobuf:"varint,3,opt,name=rights,proto3" json:"rights,omitempty"`                                // rights bitmap (see crypto package constants)
+	IssuedAtMs    int64  `protobuf:"varint,4,opt,name=issued_at_ms,json=issuedAtMs,proto3" json:"issued_at_ms,omitempty"`    // unix milliseconds
+	ExpiresAtMs   int64  `protobuf:"varint,5,opt,name=expires_at_ms,json=expiresAtMs,proto3" json:"expires_at_ms,omitempty"` // unix milliseconds
+	IssuerNodeId  string `protobuf:"bytes,6,opt,name=issuer_node_id,json=issuerNodeId,proto3" json:"issuer_node_id,omitempty"`
+	KeyId         string `protobuf:"bytes,7,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"` // identifies the issuer signing key
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -129,9 +135,9 @@ func (x *CapabilityTokenPayload) GetTokenId() []byte {
 	return nil
 }
 
-func (x *CapabilityTokenPayload) GetInstanceUuid() []byte {
+func (x *CapabilityTokenPayload) GetSubjectUuid() []byte {
 	if x != nil {
-		return x.InstanceUuid
+		return x.SubjectUuid
 	}
 	return nil
 }
@@ -178,10 +184,10 @@ const file_gapi_v1_capability_token_proto_rawDesc = "" +
 	"\x1egapi/v1/capability_token.proto\x12\agapi.v1\"I\n" +
 	"\x0fCapabilityToken\x12\x18\n" +
 	"\apayload\x18\x01 \x01(\fR\apayload\x12\x1c\n" +
-	"\tsignature\x18\x02 \x01(\fR\tsignature\"\xf3\x01\n" +
+	"\tsignature\x18\x02 \x01(\fR\tsignature\"\xf1\x01\n" +
 	"\x16CapabilityTokenPayload\x12\x19\n" +
-	"\btoken_id\x18\x01 \x01(\fR\atokenId\x12#\n" +
-	"\rinstance_uuid\x18\x02 \x01(\fR\finstanceUuid\x12\x16\n" +
+	"\btoken_id\x18\x01 \x01(\fR\atokenId\x12!\n" +
+	"\fsubject_uuid\x18\x02 \x01(\fR\vsubjectUuid\x12\x16\n" +
 	"\x06rights\x18\x03 \x01(\x04R\x06rights\x12 \n" +
 	"\fissued_at_ms\x18\x04 \x01(\x03R\n" +
 	"issuedAtMs\x12\"\n" +
