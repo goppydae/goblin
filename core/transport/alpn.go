@@ -14,6 +14,12 @@ const (
 	ALPNSerfQUIC = "serf-quic"
 	// ALPNRaftQUIC carries the Raft transport stream.
 	ALPNRaftQUIC = "raft-quic"
+	// ALPNGoblinCkpt carries CRIU checkpoint images between nodes
+	// during migration (GOBLIN-DIV-018). Deliberately its own ALPN, and
+	// therefore its own QUIC connection: a multi-gigabyte image sharing
+	// a connection-level flow-control window with Raft heartbeats would
+	// degrade the control plane exactly when a migration is in flight.
+	ALPNGoblinCkpt = "goblin-ckpt"
 	// ALPNGapiQUIC is the kernel's protocol, imported - never redefined
 	// - so the two repos cannot drift (consumes GAPI-DIV-011).
 	ALPNGapiQUIC = gapitransport.ALPNGapiQUIC

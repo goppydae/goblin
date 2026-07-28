@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package goblin.v1;
+
+option go_package = "github.com/goppydae/goblin/proto;goblinv1";
+
+// Checkpoint image transfer for live migration (GOBLIN-DIV-018).
+//
+// Images move on their own ALPN (goblin-ckpt) rather than sharing
+// goblin-rpc: a multi-gigabyte transfer and Raft heartbeats on one QUIC
+// connection share a congestion window, so bulk data would degrade
+// control-plane latency exactly when the cluster is doing something
+// delicate.
+//
+// The DESTINATION pulls. Pull gives the receiver natural backpressure,
+// and keying by {instance_uuid, checkpoint_epoch} makes a retry
+// idempotent - a half-transferred image is simply refetched. Push would
+// put retry logic on the node that is about to be torn down.
+
+// CheckpointFetchRequest asks a source node for one instance's image.
+message CheckpointFetchRequest {
+  // Subject instance. Stable across migration - that is the whole
+  // point - so it identifies the image without naming a location.
+  bytes instance_uuid = 1;
+
+  // Which checkpoint of that instance. Increments per dump, so a
+  // retried migration never collides with an earlier image.
+  uint64 checkpoint_epoch = 2;
+
+  // Serialized gapi.v1.CapabilityToken authorizing the fetch. Carried
+  // as opaque bytes because the signature covers the literal payload
+  // bytes; re-encoding it here would invalidate the signature.
+  bytes capability_token = 3;
+}
+
+// CheckpointFetchStatus is why a fetch did or did not proceed. An enum
+// rather than a message string: the destination branches on this, and
+// branching on prose is how retry logic rots.
+enum CheckpointFetchStatus {
+  // Rejected by the receiver: a response decoded from an unknown or
+  // truncated writer must never read as success.
+  CHECKPOINT_FETCH_STATUS_UNSPECIFIED = 0;
+  CHECKPOINT_FETCH_STATUS_OK = 1;
+  // No image for this {instance_uuid, epoch}.
+  CHECKPOINT_FETCH_STATUS_NOT_FOUND = 2;
+  // Token missing, expired, or lacking the migrate right.
+  CHECKPOINT_FETCH_STATUS_UNAUTHORIZED = 3;
+  // The source could not read its own image directory.
+  CHECKPOINT_FETCH_STATUS_INTERNAL = 4;
+}
+
+// CheckpointFile is one image file in the manifest. Sizes are declared
+// up front so the destination knows exactly how many bytes to expect
+// per file and can detect truncation rather than inferring completion
+// from a closed stream.
+message CheckpointFile {
+  string name = 1;
+  uint64 size = 2;
+}
+
+// CheckpointFetchResponse is the header sent before any image bytes.
+// On OK the source then writes each manifest file's contents in
+// manifest order, with no framing between them - the declared sizes are
+// the framing.
+message CheckpointFetchResponse {
+  CheckpointFetchStatus status = 1;
+  repeated CheckpointFile files = 2;
+}

@@ -28,7 +28,7 @@ const (
 // registryALPNs is the listener's view of the ecosystem ALPN registry:
 // the identifiers this listener may ever advertise or route. Adding a
 // row is a registry change (ecosystem manifesto section 6).
-var registryALPNs = []string{ALPNGapiQUIC, ALPNGoblinRPC, ALPNSerfQUIC, ALPNRaftQUIC}
+var registryALPNs = []string{ALPNGapiQUIC, ALPNGoblinRPC, ALPNSerfQUIC, ALPNRaftQUIC, ALPNGoblinCkpt}
 
 // RegistryALPNs returns the full ALPN registry the shared listener
 // advertises; per-ALPN TLS policies (GetConfigForClient) must carry
