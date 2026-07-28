@@ -12,21 +12,22 @@ import (
 )
 
 // RegisterAgent validates and stores the agent specification. Identity
-// is the spec UUID (UUIDv7); the leader mints it here if the caller did
-// not. Name is the operator-facing handle and must be unique among
-// live specs.
+// is the spec UUID, derived from the operator-facing name as a UUIDv5
+// (ident.SpecUUID). The derivation replaces a minted UUIDv7 plus a
+// lookup: a spec's identity is now a pure function of its name, so it
+// is the same on every node, across restarts, and across clusters -
+// re-registering a name can no longer mint a second identity for one
+// handle, and callers can compute a spec's UUID without asking the
+// leader. Instances and tokens stay UUIDv7: they are per-occurrence
+// identities, and the lifecycle FSM's tombstones are append-only
+// forever, so a reused instance UUID would collide with its own
+// tombstone.
 func (s *Scheduler) RegisterAgent(ctx context.Context, spec *goblinv1.AgentSpec) error {
 	if spec.Name == "" {
 		return fmt.Errorf("agent name is required")
 	}
 	if len(spec.SpecUuid) == 0 {
-		if existing, err := s.GetAgent(ctx, spec.Name); err == nil {
-			// Re-registering an existing name updates that spec instead
-			// of minting a duplicate identity for the same handle.
-			spec.SpecUuid = existing.SpecUuid
-		} else {
-			spec.SpecUuid = ident.NewV7()
-		}
+		spec.SpecUuid = ident.SpecUUID(spec.Name)
 	}
 	specID := ident.String(spec.SpecUuid)
 	if specID == "" {
