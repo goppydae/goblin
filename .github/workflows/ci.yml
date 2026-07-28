@@ -13,6 +13,10 @@ jobs:
   full-build-and-test:
     name: Full Build and Test
     runs-on: ubuntu-latest
+    env:
+      # CI has no sibling checkouts for the committed go.work to
+      # resolve; vendored builds are the lone-clone contract.
+      GOWORK: "off"
     steps:
       - name: Checkout Workspace (Goblin)
         uses: actions/checkout@v4
