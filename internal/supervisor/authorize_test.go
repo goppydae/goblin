@@ -100,10 +100,10 @@ func TestAuthorize_ScopesTheTokenToTheNamedSubject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("authorize: %v", err)
 	}
-	if string(payload.InstanceUuid) != string(specSubject("web")) {
+	if string(payload.SubjectUuid) != string(specSubject("web")) {
 		t.Error("token subject is not the named agent")
 	}
-	if string(payload.InstanceUuid) == string(specSubject("api")) {
+	if string(payload.SubjectUuid) == string(specSubject("api")) {
 		t.Error("token for web would authorize api")
 	}
 	// Exactly the verb's right, nothing more: a scale token must not

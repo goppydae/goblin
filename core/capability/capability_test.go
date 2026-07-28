@@ -43,7 +43,7 @@ func TestIssue_VerifiesThroughKernelCodepath(t *testing.T) {
 	if payload.IssuerNodeId != "node-1" {
 		t.Errorf("issuer = %q, want node-1", payload.IssuerNodeId)
 	}
-	if ident.String(payload.InstanceUuid) != ident.String(inst) {
+	if ident.String(payload.SubjectUuid) != ident.String(inst) {
 		t.Errorf("subject mismatch")
 	}
 }

@@ -58,13 +58,16 @@ func (i *Issuer) PublicKey() ed25519.PublicKey {
 	return append(ed25519.PublicKey(nil), i.pub...)
 }
 
-// Issue mints a bearer token for one instance with the given rights.
+// Issue mints a bearer token for one subject with the given rights. The
+// subject is usually an agent instance, but orchestration tokens scope
+// to a named resource instead - spec, node, job, or topic
+// (GOBLIN-DIV-027) - which is why it is not called an instance UUID.
 // ttl 0 means the 120s default; anything outside 60-300s is clamped.
 // Returns the token and its raw UUIDv7 token id (the revocation
 // handle).
-func (i *Issuer) Issue(instanceUUID []byte, rights uint64, ttl time.Duration) (*gapiv1.CapabilityToken, []byte, error) {
-	if len(instanceUUID) != 16 {
-		return nil, nil, fmt.Errorf("capability issue: instance UUID must be 16 bytes, got %d", len(instanceUUID))
+func (i *Issuer) Issue(subjectUUID []byte, rights uint64, ttl time.Duration) (*gapiv1.CapabilityToken, []byte, error) {
+	if len(subjectUUID) != 16 {
+		return nil, nil, fmt.Errorf("capability issue: subject UUID must be 16 bytes, got %d", len(subjectUUID))
 	}
 	switch {
 	case ttl == 0:
@@ -79,7 +82,7 @@ func (i *Issuer) Issue(instanceUUID []byte, rights uint64, ttl time.Duration) (*
 	issued := i.now()
 	payload := &gapiv1.CapabilityTokenPayload{
 		TokenId:      tokenID,
-		InstanceUuid: append([]byte(nil), instanceUUID...),
+		SubjectUuid:  append([]byte(nil), subjectUUID...),
 		Rights:       rights,
 		IssuedAtMs:   issued.UnixMilli(),
 		ExpiresAtMs:  issued.Add(ttl).UnixMilli(),
