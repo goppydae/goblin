@@ -6,6 +6,10 @@
 # 'nix build .#checks.x86_64-linux.<name>'.
 { pkgs, self }:
 
-{
+# NixOS VM tests only run on Linux. eachDefaultSystem also covers the
+# darwin systems, and advertising checks there would make 'nix flake
+# check' fail for anyone on a Mac rather than simply find nothing to do.
+pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
   module-boot = import ./tests/module-boot.nix { inherit pkgs self; };
+  module-hardening = import ./tests/module-hardening.nix { inherit pkgs self; };
 }
