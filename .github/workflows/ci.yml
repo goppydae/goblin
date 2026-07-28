@@ -41,6 +41,15 @@ jobs:
         working-directory: goblin
         run: nix develop -c mage build
 
+      # The Magefile has carried a govulncheck target since the build
+      # library landed, but no workflow ever called it, so CVE drift
+      # accumulated as Dependabot alerts instead of failing a build.
+      # govulncheck is call-graph filtered: it fails only on a
+      # vulnerability this code actually reaches.
+      - name: Audit Dependencies for Reachable CVEs
+        working-directory: goblin
+        run: nix develop -c mage vuln
+
       - name: Execute System Tests
         working-directory: goblin
         run: nix develop -c go test -v ./...
