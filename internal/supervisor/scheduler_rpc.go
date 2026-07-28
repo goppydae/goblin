@@ -92,6 +92,9 @@ type MigrateRequest struct {
 
 // SubmitJob handles job submission via RPC
 func (s *SchedulerRPC) SubmitJob(job *scheduler.Job, resp *string) error {
+	if _, err := s.authorize(capability.VerbJobSubmit, jobSubject(job.ID)); err != nil {
+		return err
+	}
 	if err := s.scheduler.SubmitJob(context.Background(), job); err != nil {
 		*resp = fmt.Sprintf("failed: %v", err)
 		return err
@@ -102,6 +105,9 @@ func (s *SchedulerRPC) SubmitJob(job *scheduler.Job, resp *string) error {
 
 // DrainNode handles node draining via RPC
 func (s *SchedulerRPC) DrainNode(nodeID *string, resp *[]string) error {
+	if _, err := s.authorize(capability.VerbNodeDrain, nodeSubject(*nodeID)); err != nil {
+		return err
+	}
 	migratedJobs, err := s.scheduler.DrainNode(context.Background(), *nodeID)
 	if err != nil {
 		return err
@@ -112,6 +118,9 @@ func (s *SchedulerRPC) DrainNode(nodeID *string, resp *[]string) error {
 
 // MigrateJob handles job migration via RPC
 func (s *SchedulerRPC) MigrateJob(req *MigrateRequest, resp *string) error {
+	if _, err := s.authorize(capability.VerbJobMigrate, jobSubject(req.JobID)); err != nil {
+		return err
+	}
 	if err := s.scheduler.MigrateJob(context.Background(), req.JobID, req.ToNode); err != nil {
 		*resp = fmt.Sprintf("failed: %v", err)
 		return err
@@ -264,6 +273,9 @@ type PublishRequest struct {
 
 // PublishEvent publishes an event to the cluster via the EventBus
 func (s *SchedulerRPC) PublishEvent(req *PublishRequest, resp *string) error {
+	if _, err := s.authorize(capability.VerbEventPublish, topicSubject(req.Topic)); err != nil {
+		return err
+	}
 	// Forward to membership (Serf) UserEvent for now, or preferably use the EventBus directly
 	// The EventBus wraps Serf, so we should publish "user" type events.
 	// However, SchedulerRPC has access to s.membership (interface{}) and s.consensus.
@@ -306,6 +318,9 @@ type LocalAgentInfo struct {
 
 // RegisterGlobalAgent registers a new global agent
 func (s *SchedulerRPC) RegisterGlobalAgent(spec *goblinv1.AgentSpec, resp *string) error {
+	if _, err := s.authorize(capability.VerbAgentRegister, specSubject(spec.Name)); err != nil {
+		return err
+	}
 	if err := s.scheduler.RegisterAgent(context.Background(), spec); err != nil {
 		*resp = fmt.Sprintf("failed: %v", err)
 		return err
@@ -370,6 +385,9 @@ type ScaleAgentRequest struct {
 
 // ScaleAgent updates the replica count for an agent
 func (s *SchedulerRPC) ScaleAgent(req *ScaleAgentRequest, resp *string) error {
+	if _, err := s.authorize(capability.VerbAgentScale, specSubject(req.AgentID)); err != nil {
+		return err
+	}
 	// 1. Get existing spec
 	spec, err := s.scheduler.GetAgent(context.Background(), req.AgentID)
 	if err != nil {
@@ -391,6 +409,9 @@ func (s *SchedulerRPC) ScaleAgent(req *ScaleAgentRequest, resp *string) error {
 
 // DeleteGlobalAgent removes a global agent
 func (s *SchedulerRPC) DeleteGlobalAgent(agentID *string, resp *string) error {
+	if _, err := s.authorize(capability.VerbAgentDelete, specSubject(*agentID)); err != nil {
+		return err
+	}
 	if err := s.scheduler.DeleteAgent(context.Background(), *agentID); err != nil {
 		*resp = fmt.Sprintf("failed: %v", err)
 		return err
