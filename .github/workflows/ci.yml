@@ -60,6 +60,10 @@ jobs:
         env:
           GOWORK: "off"
           GOFLAGS: "-mod=mod"
+          GOPRIVATE: "github.com/goppydae"
         run: |
+          # goppydae modules are private: rewrite fetches through the
+          # operator-provided read token (repo secret GOPPYDAE_READ_TOKEN).
+          git config --global url."https://x-access-token:${{ secrets.GOPPYDAE_READ_TOKEN }}@github.com/goppydae/".insteadOf "https://github.com/goppydae/"
           rm -rf vendor
           nix develop -c go build ./...

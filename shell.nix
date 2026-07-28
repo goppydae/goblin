@@ -55,6 +55,8 @@ pkgs.mkShell {
   ];
 
   shellHook = ''
+            # goppydae modules are private: skip proxy/sumdb, fetch direct.
+            export GOPRIVATE=github.com/goppydae
     export GOBIN=$PWD/.bin
     export PATH=$GOBIN:$PATH
 

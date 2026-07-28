@@ -6,8 +6,8 @@ toolchain go1.26.5
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/goppydae/gapi v0.0.0-00010101000000-000000000000
-	github.com/goppydae/magelib v0.0.0-00010101000000-000000000000
+	github.com/goppydae/gapi v0.1.0-proto2
+	github.com/goppydae/magelib v0.1.0
 	github.com/hashicorp/go-metrics v0.5.4
 	github.com/hashicorp/go-msgpack v0.5.5
 	github.com/hashicorp/memberlist v0.5.2
@@ -85,7 +85,3 @@ require (
 	golang.org/x/tools v0.43.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 )
-
-replace github.com/goppydae/gapi => ../gapi
-
-replace github.com/goppydae/magelib => ../magelib
