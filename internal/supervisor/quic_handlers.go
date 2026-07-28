@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/goppydae/goblin/core/migration"
 	"github.com/goppydae/goblin/core/scheduler"
 	goblinv1 "github.com/goppydae/goblin/proto"
 	"google.golang.org/protobuf/proto"
@@ -241,6 +242,44 @@ func RegisterNodeHandlers(server *QUICRPCServer, rpc *NodeRPC) {
 		}
 		var resp string
 		if err := rpc.SignalAgentInstance(&req, &resp); err != nil {
+			return nil, err
+		}
+		return json.Marshal(resp)
+	})
+
+	// Migration RPCs (GOBLIN-DIV-031). Names come from constants in
+	// core/migration so the caller and this registration cannot drift.
+	server.RegisterHandler(migration.MethodCheckpoint, func(payload []byte) ([]byte, error) {
+		var req CheckpointAgentRequest
+		if err := json.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("invalid request: %w", err)
+		}
+		var resp string
+		if err := rpc.CheckpointAgentInstance(&req, &resp); err != nil {
+			return nil, err
+		}
+		return json.Marshal(resp)
+	})
+
+	server.RegisterHandler(migration.MethodRestore, func(payload []byte) ([]byte, error) {
+		var req RestoreAgentRequest
+		if err := json.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("invalid request: %w", err)
+		}
+		var resp string
+		if err := rpc.RestoreAgentInstance(&req, &resp); err != nil {
+			return nil, err
+		}
+		return json.Marshal(resp)
+	})
+
+	server.RegisterHandler(migration.MethodPull, func(payload []byte) ([]byte, error) {
+		var req PullCheckpointRequest
+		if err := json.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("invalid request: %w", err)
+		}
+		var resp string
+		if err := rpc.PullCheckpoint(&req, &resp); err != nil {
 			return nil, err
 		}
 		return json.Marshal(resp)

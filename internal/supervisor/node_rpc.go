@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"syscall"
@@ -30,6 +31,11 @@ type NodeRPC struct {
 	// is not configured, in which case the migration RPCs refuse rather
 	// than inventing a directory.
 	images *migration.Store
+	// ckptTLS is the client TLS policy used when dialing a peer's
+	// goblin-ckpt listener. Nil refuses the pull: this package must not
+	// invent a verification policy for a transfer that carries an
+	// instance's memory.
+	ckptTLS *tls.Config
 }
 
 // StartAgentRequest defines payload for starting an agent instance

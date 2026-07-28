@@ -10,7 +10,6 @@ import (
 
 	"github.com/goppydae/goblin/core/migration"
 	"github.com/goppydae/goblin/internal/logattr"
-	goblinv1 "github.com/goppydae/goblin/proto"
 )
 
 // Node-local halves of a migration (GOBLIN-DIV-018).
@@ -21,21 +20,14 @@ import (
 // and neither moves the instance's Raft record. All they change is
 // where the process runs, which the heartbeat publishes as a locator.
 
-// CheckpointAgentRequest asks this node to dump one running instance.
-type CheckpointAgentRequest struct {
-	InstanceID   string
-	InstanceUUID []byte
-	Epoch        uint64
-}
-
-// RestoreAgentRequest asks this node to restore an instance from an
-// image already present in its store.
-type RestoreAgentRequest struct {
-	InstanceID   string
-	InstanceUUID []byte
-	Epoch        uint64
-	Spec         *goblinv1.AgentSpec
-}
+// Request types are shared with the callers in core/migration rather
+// than redeclared here, so a field added on one side cannot silently
+// go unread on the other.
+type (
+	CheckpointAgentRequest = migration.CheckpointRPCRequest
+	RestoreAgentRequest    = migration.RestoreRPCRequest
+	PullCheckpointRequest  = migration.PullRPCRequest
+)
 
 // CheckpointAgentInstance dumps a running instance into this node's
 // image store, leaving it stopped.
@@ -155,6 +147,38 @@ func (n *NodeRPC) captureIdentity(instanceID string, a any) {
 	// the safe direction - better to refuse a signal than to aim one at
 	// an unverified pid.
 	n.tracker.SetIdentity(instanceID, pid, 0)
+}
+
+// PullCheckpoint fetches an instance's image from a peer into this
+// node's store.
+//
+// This runs on the DESTINATION. The coordinator on the leader tells it
+// where to pull from rather than relaying the bytes: the leader is
+// frequently neither end of the transfer, and routing a multi-gigabyte
+// image through the node running consensus is exactly what the separate
+// goblin-ckpt ALPN exists to avoid.
+func (n *NodeRPC) PullCheckpoint(req *PullCheckpointRequest, resp *string) error {
+	if n.images == nil {
+		return fmt.Errorf("checkpoint store not configured on this node")
+	}
+	if n.ckptTLS == nil {
+		return fmt.Errorf("checkpoint transport TLS not configured on this node")
+	}
+	if req.SourceAddr == "" {
+		return fmt.Errorf("pull request for %s names no source address", req.InstanceID)
+	}
+
+	dir, err := migration.DialAndFetch(context.Background(), req.SourceAddr, n.ckptTLS,
+		n.images, req.InstanceUUID, req.Epoch, req.Token)
+	if err != nil {
+		return fmt.Errorf("pulling image for %s from %s: %w", req.InstanceID, req.SourceAddr, err)
+	}
+
+	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "checkpoint image pulled",
+		logattr.InstanceID(req.InstanceID), slog.String("source", req.SourceAddr),
+		slog.String("dir", dir), slog.Uint64("epoch", req.Epoch))
+	*resp = dir
+	return nil
 }
 
 // Images is this node's checkpoint image store.
