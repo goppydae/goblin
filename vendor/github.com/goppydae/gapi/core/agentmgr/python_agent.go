@@ -65,6 +65,20 @@ type PythonAgent struct {
 
 	waitOnce sync.Once
 	waitErr  error
+	// stopping marks an exit as Stop-initiated so the exit watcher does
+	// not double-report it (parity with GoAgent, GAPI-DIV-026).
+	stopping bool
+}
+
+// Pid returns the running agent process id, or false when no process
+// is running (parity with GoAgent).
+func (a *PythonAgent) Pid() (int, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.cmd == nil || a.cmd.Process == nil {
+		return 0, false
+	}
+	return a.cmd.Process.Pid, true
 }
 
 func NewPythonAgent(
@@ -375,6 +389,7 @@ func (a *PythonAgent) Start(ctx context.Context) error {
 
 	var err error
 	a.waitOnce = sync.Once{} // Reset for new run
+	a.stopping = false
 	a.stdout, err = a.cmd.StdoutPipe()
 
 	if err != nil {
@@ -427,6 +442,26 @@ func (a *PythonAgent) Start(ctx context.Context) error {
 		return nil
 	}
 
+	// Service agents: watch for an exit the supervisor did not initiate
+	// (external kill, crash, cluster-delivered signal). A silently dead
+	// process must never keep a live state - report FAILED and reap.
+	// Stop-initiated exits are its business: the watcher stays quiet
+	// (parity with GoAgent, GAPI-DIV-026).
+	watchRunID := a.nextRunID
+	watchCmd := a.cmd
+	go func() {
+		a.waitOnce.Do(func() {
+			a.waitErr = watchCmd.Wait()
+		})
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		if a.stopping || a.cmd != watchCmd {
+			return // Stop owns this exit, or a new run replaced the slot
+		}
+		a.publishStatusWithRunID("FAILED", fmt.Sprintf("process exited unexpectedly: %v", a.waitErr), watchRunID)
+		a.cleanupAfterExit()
+	}()
+
 	return nil
 }
 
@@ -439,6 +474,7 @@ func (a *PythonAgent) Stop(ctx context.Context) error {
 	}
 
 	rid := a.nextRunID
+	a.stopping = true
 	_ = a.cmd.Process.Signal(syscall.SIGTERM)
 
 	done := make(chan error, 1)

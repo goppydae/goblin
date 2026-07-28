@@ -59,8 +59,27 @@ type TimeoutConfig struct {
 	SupervisorShutdown string `mapstructure:"supervisorShutdown"`
 }
 
+type WatchdogConfig struct {
+	Enabled  bool   `mapstructure:"enabled"`
+	Device   string `mapstructure:"device"`
+	Interval string `mapstructure:"interval"`
+}
+
+type ShutdownConfig struct {
+	GracePeriod string `mapstructure:"gracePeriod"`
+}
+
 type SupervisorConfig struct {
 	ProductionMode bool `mapstructure:"productionMode"`
+	// Pid1Mode activates the Phase-0 pre-userspace boot sequence
+	// (subreaper, PID-1 signals, kmsg, early mounts). Off by default:
+	// gapid runs as an ordinary supervisor unless it IS init.
+	Pid1Mode bool `mapstructure:"pid1Mode"`
+	// NoEarlyMounts skips the mount phase (the OCI runtime owns mounts
+	// in a container).
+	NoEarlyMounts bool           `mapstructure:"noEarlyMounts"`
+	Watchdog      WatchdogConfig `mapstructure:"watchdog"`
+	Shutdown      ShutdownConfig `mapstructure:"shutdown"`
 }
 
 type Config struct {

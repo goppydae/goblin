@@ -177,6 +177,7 @@ var cryptoCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(pingCmd)
+	rootCmd.AddCommand(shutdownCmd)
 	rootCmd.AddCommand(tuiCmd)
 	rootCmd.AddCommand(cryptoCmd)
 

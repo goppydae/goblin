@@ -34,4 +34,12 @@ const (
 	// TopicAgentLifecycleTransition carries state-machine transition
 	// events. Payload: LifecycleTransition.
 	TopicAgentLifecycleTransition = "agent/lifecycle.transition"
+
+	// TopicSystemShutdown is the operator/client -> supervisor system
+	// shutdown request. Payload: wrapperspb.StringValue holding one of
+	// "poweroff", "reboot", "halt"; decode fails closed on anything
+	// else. In PID-1 mode the supervisor answers with the full
+	// teardown (StopAll -> sync -> umount -> reboot(2)); otherwise it
+	// stops the runtime and exits.
+	TopicSystemShutdown = "system.shutdown"
 )

@@ -72,12 +72,24 @@ github.com/goppydae/gapi/core/eventbus
 github.com/goppydae/gapi/core/lifecycle
 github.com/goppydae/gapi/core/logging
 github.com/goppydae/gapi/core/metrics
+github.com/goppydae/gapi/core/mounts
+github.com/goppydae/gapi/core/pid1
 github.com/goppydae/gapi/core/procsig
 github.com/goppydae/gapi/core/schema
+github.com/goppydae/gapi/core/shutdown
 github.com/goppydae/gapi/core/state
+github.com/goppydae/gapi/core/store
+github.com/goppydae/gapi/core/subreaper
+github.com/goppydae/gapi/core/supervisor
 github.com/goppydae/gapi/core/transport
 github.com/goppydae/gapi/core/tui
 github.com/goppydae/gapi/core/version
+github.com/goppydae/gapi/core/watchdog
+github.com/goppydae/gapi/internal/agentreg
+github.com/goppydae/gapi/internal/db
+github.com/goppydae/gapi/internal/db/graphdb
+github.com/goppydae/gapi/internal/db/hybriddb
+github.com/goppydae/gapi/internal/db/kvdb
 github.com/goppydae/gapi/internal/ident
 github.com/goppydae/gapi/internal/logattr
 github.com/goppydae/gapi/internal/safeio
@@ -381,6 +393,7 @@ google.golang.org/protobuf/runtime/protoiface
 google.golang.org/protobuf/runtime/protoimpl
 google.golang.org/protobuf/types/known/anypb
 google.golang.org/protobuf/types/known/timestamppb
+google.golang.org/protobuf/types/known/wrapperspb
 # gopkg.in/natefinch/lumberjack.v2 v2.2.1
 ## explicit; go 1.13
 gopkg.in/natefinch/lumberjack.v2

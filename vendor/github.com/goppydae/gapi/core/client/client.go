@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/goppydae/gapi/core/config"
 	"github.com/goppydae/gapi/core/eventbus"
@@ -85,6 +86,22 @@ func (c *Client) ReloadAgents(ctx context.Context) error {
 	evt := eventbus.NewEvent[*anypb.Any]("system", "", "agent.reload", "client", nil, true)
 	if err := c.bus.Publish(evt); err != nil {
 		return fmt.Errorf("failed to publish reload: %w", err)
+	}
+	return nil
+}
+
+// Shutdown requests a system shutdown from the daemon. action is one
+// of "poweroff", "reboot", "halt" (the topic's documented payload
+// vocabulary); in PID-1 mode the daemon answers with the full init
+// teardown.
+func (c *Client) Shutdown(ctx context.Context, action string) error {
+	payload, err := anypb.New(wrapperspb.String(action))
+	if err != nil {
+		return fmt.Errorf("encode shutdown action: %w", err)
+	}
+	evt := eventbus.NewEvent[*anypb.Any]("system", "", eventbus.TopicSystemShutdown, "client", payload, true)
+	if err := c.bus.Publish(evt); err != nil {
+		return fmt.Errorf("failed to publish shutdown: %w", err)
 	}
 	return nil
 }
