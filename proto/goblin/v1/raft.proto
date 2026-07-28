@@ -1,14 +1,18 @@
 syntax = "proto3";
 
-package goblin.v1.proto;
+package goblin.v1;
 
 option go_package = "github.com/goppydae/goblin/proto;goblinv1";
 
 // CommandType defines the operation type for the FSM
 enum CommandType {
-  SET = 0;
-  DELETE = 1;
-  CAS = 2; // Compare-And-Swap
+  // UNSPECIFIED takes the zero value: a LogEntry decoded from data
+  // written before this schema (when SET was 0) surfaces as
+  // UNSPECIFIED and must be rejected by the FSM, never misapplied.
+  COMMAND_TYPE_UNSPECIFIED = 0;
+  COMMAND_TYPE_SET = 1;
+  COMMAND_TYPE_DELETE = 2;
+  COMMAND_TYPE_CAS = 3; // Compare-And-Swap
 }
 
 // LogEntry represents a command in the Raft log

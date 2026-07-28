@@ -24,7 +24,7 @@ func TestFSM_SetIncrementsVersion(t *testing.T) {
 	f := NewFSM()
 
 	resp := mustApply(t, f, &goblinv1.LogEntry{
-		Type: goblinv1.CommandType_SET, Namespace: "ns", Key: "k", Value: []byte("v1"),
+		Type: goblinv1.CommandType_COMMAND_TYPE_SET, Namespace: "ns", Key: "k", Value: []byte("v1"),
 	})
 	if resp != nil {
 		t.Fatalf("SET response = %v, want nil", resp)
@@ -36,7 +36,7 @@ func TestFSM_SetIncrementsVersion(t *testing.T) {
 	}
 
 	mustApply(t, f, &goblinv1.LogEntry{
-		Type: goblinv1.CommandType_SET, Namespace: "ns", Key: "k", Value: []byte("v2"),
+		Type: goblinv1.CommandType_COMMAND_TYPE_SET, Namespace: "ns", Key: "k", Value: []byte("v2"),
 	})
 	_, ver, _ = f.GetWithVersion("ns", "k")
 	if ver != 2 {
@@ -47,11 +47,11 @@ func TestFSM_SetIncrementsVersion(t *testing.T) {
 func TestFSM_CASAppliesOnVersionMatch(t *testing.T) {
 	f := NewFSM()
 	mustApply(t, f, &goblinv1.LogEntry{
-		Type: goblinv1.CommandType_SET, Namespace: "ns", Key: "k", Value: []byte("v1"),
+		Type: goblinv1.CommandType_COMMAND_TYPE_SET, Namespace: "ns", Key: "k", Value: []byte("v1"),
 	})
 
 	resp := mustApply(t, f, &goblinv1.LogEntry{
-		Type: goblinv1.CommandType_CAS, Namespace: "ns", Key: "k",
+		Type: goblinv1.CommandType_COMMAND_TYPE_CAS, Namespace: "ns", Key: "k",
 		Value: []byte("v2"), CasVersion: 1,
 	})
 	if resp != nil {
@@ -67,14 +67,14 @@ func TestFSM_CASAppliesOnVersionMatch(t *testing.T) {
 func TestFSM_CASRejectsStaleVersion(t *testing.T) {
 	f := NewFSM()
 	mustApply(t, f, &goblinv1.LogEntry{
-		Type: goblinv1.CommandType_SET, Namespace: "ns", Key: "k", Value: []byte("v1"),
+		Type: goblinv1.CommandType_COMMAND_TYPE_SET, Namespace: "ns", Key: "k", Value: []byte("v1"),
 	})
 	mustApply(t, f, &goblinv1.LogEntry{
-		Type: goblinv1.CommandType_SET, Namespace: "ns", Key: "k", Value: []byte("v2"),
+		Type: goblinv1.CommandType_COMMAND_TYPE_SET, Namespace: "ns", Key: "k", Value: []byte("v2"),
 	})
 
 	resp := mustApply(t, f, &goblinv1.LogEntry{
-		Type: goblinv1.CommandType_CAS, Namespace: "ns", Key: "k",
+		Type: goblinv1.CommandType_COMMAND_TYPE_CAS, Namespace: "ns", Key: "k",
 		Value: []byte("stale-write"), CasVersion: 1,
 	})
 	err, ok := resp.(error)
@@ -93,7 +93,7 @@ func TestFSM_CASOnMissingKey(t *testing.T) {
 
 	// Version 0 = "key must not exist yet": create-if-absent.
 	resp := mustApply(t, f, &goblinv1.LogEntry{
-		Type: goblinv1.CommandType_CAS, Namespace: "ns", Key: "new",
+		Type: goblinv1.CommandType_COMMAND_TYPE_CAS, Namespace: "ns", Key: "new",
 		Value: []byte("v1"), CasVersion: 0,
 	})
 	if resp != nil {
@@ -106,7 +106,7 @@ func TestFSM_CASOnMissingKey(t *testing.T) {
 
 	// Nonzero expected version on a missing key is a mismatch.
 	resp = mustApply(t, f, &goblinv1.LogEntry{
-		Type: goblinv1.CommandType_CAS, Namespace: "ns", Key: "absent",
+		Type: goblinv1.CommandType_COMMAND_TYPE_CAS, Namespace: "ns", Key: "absent",
 		Value: []byte("x"), CasVersion: 3,
 	})
 	if err, ok := resp.(error); !ok || !errors.Is(err, ErrCASMismatch) {
@@ -137,10 +137,10 @@ func (s *fakeSink) Close() error  { return nil }
 func TestFSM_SnapshotRestoreCarriesVersions(t *testing.T) {
 	f := NewFSM()
 	mustApply(t, f, &goblinv1.LogEntry{
-		Type: goblinv1.CommandType_SET, Namespace: "ns", Key: "k", Value: []byte("v1"),
+		Type: goblinv1.CommandType_COMMAND_TYPE_SET, Namespace: "ns", Key: "k", Value: []byte("v1"),
 	})
 	mustApply(t, f, &goblinv1.LogEntry{
-		Type: goblinv1.CommandType_CAS, Namespace: "ns", Key: "k",
+		Type: goblinv1.CommandType_COMMAND_TYPE_CAS, Namespace: "ns", Key: "k",
 		Value: []byte("v2"), CasVersion: 1,
 	})
 
@@ -165,7 +165,7 @@ func TestFSM_SnapshotRestoreCarriesVersions(t *testing.T) {
 
 	// CAS against the restored version must behave exactly as pre-snapshot.
 	resp := mustApply(t, restored, &goblinv1.LogEntry{
-		Type: goblinv1.CommandType_CAS, Namespace: "ns", Key: "k",
+		Type: goblinv1.CommandType_COMMAND_TYPE_CAS, Namespace: "ns", Key: "k",
 		Value: []byte("v3"), CasVersion: 2,
 	})
 	if resp != nil {

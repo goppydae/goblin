@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package goblin.v1.proto;
+package goblin.v1;
 
 option go_package = "github.com/goppydae/goblin/proto;goblinv1";
 
@@ -21,7 +21,8 @@ message RPCResponse {
 
 // Stream type enum
 enum StreamType {
-  RPC_REQUEST = 0;
-  RPC_RESPONSE = 1;
-  EVENT_STREAM = 2;     // Future: Serf events
+  STREAM_TYPE_UNSPECIFIED = 0;
+  STREAM_TYPE_RPC_REQUEST = 1;
+  STREAM_TYPE_RPC_RESPONSE = 2;
+  STREAM_TYPE_EVENT_STREAM = 3;
 }

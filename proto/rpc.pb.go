@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        (unknown)
-// source: proto/rpc.proto
+// source: goblin/v1/rpc.proto
 
 package goblinv1
 
@@ -25,22 +25,25 @@ const (
 type StreamType int32
 
 const (
-	StreamType_RPC_REQUEST  StreamType = 0
-	StreamType_RPC_RESPONSE StreamType = 1
-	StreamType_EVENT_STREAM StreamType = 2 // Future: Serf events
+	StreamType_STREAM_TYPE_UNSPECIFIED  StreamType = 0
+	StreamType_STREAM_TYPE_RPC_REQUEST  StreamType = 1
+	StreamType_STREAM_TYPE_RPC_RESPONSE StreamType = 2
+	StreamType_STREAM_TYPE_EVENT_STREAM StreamType = 3
 )
 
 // Enum value maps for StreamType.
 var (
 	StreamType_name = map[int32]string{
-		0: "RPC_REQUEST",
-		1: "RPC_RESPONSE",
-		2: "EVENT_STREAM",
+		0: "STREAM_TYPE_UNSPECIFIED",
+		1: "STREAM_TYPE_RPC_REQUEST",
+		2: "STREAM_TYPE_RPC_RESPONSE",
+		3: "STREAM_TYPE_EVENT_STREAM",
 	}
 	StreamType_value = map[string]int32{
-		"RPC_REQUEST":  0,
-		"RPC_RESPONSE": 1,
-		"EVENT_STREAM": 2,
+		"STREAM_TYPE_UNSPECIFIED":  0,
+		"STREAM_TYPE_RPC_REQUEST":  1,
+		"STREAM_TYPE_RPC_RESPONSE": 2,
+		"STREAM_TYPE_EVENT_STREAM": 3,
 	}
 )
 
@@ -55,11 +58,11 @@ func (x StreamType) String() string {
 }
 
 func (StreamType) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_rpc_proto_enumTypes[0].Descriptor()
+	return file_goblin_v1_rpc_proto_enumTypes[0].Descriptor()
 }
 
 func (StreamType) Type() protoreflect.EnumType {
-	return &file_proto_rpc_proto_enumTypes[0]
+	return &file_goblin_v1_rpc_proto_enumTypes[0]
 }
 
 func (x StreamType) Number() protoreflect.EnumNumber {
@@ -68,7 +71,7 @@ func (x StreamType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use StreamType.Descriptor instead.
 func (StreamType) EnumDescriptor() ([]byte, []int) {
-	return file_proto_rpc_proto_rawDescGZIP(), []int{0}
+	return file_goblin_v1_rpc_proto_rawDescGZIP(), []int{0}
 }
 
 // RPC Request message
@@ -83,7 +86,7 @@ type RPCRequest struct {
 
 func (x *RPCRequest) Reset() {
 	*x = RPCRequest{}
-	mi := &file_proto_rpc_proto_msgTypes[0]
+	mi := &file_goblin_v1_rpc_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -95,7 +98,7 @@ func (x *RPCRequest) String() string {
 func (*RPCRequest) ProtoMessage() {}
 
 func (x *RPCRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_rpc_proto_msgTypes[0]
+	mi := &file_goblin_v1_rpc_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -108,7 +111,7 @@ func (x *RPCRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RPCRequest.ProtoReflect.Descriptor instead.
 func (*RPCRequest) Descriptor() ([]byte, []int) {
-	return file_proto_rpc_proto_rawDescGZIP(), []int{0}
+	return file_goblin_v1_rpc_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *RPCRequest) GetRequestId() uint32 {
@@ -145,7 +148,7 @@ type RPCResponse struct {
 
 func (x *RPCResponse) Reset() {
 	*x = RPCResponse{}
-	mi := &file_proto_rpc_proto_msgTypes[1]
+	mi := &file_goblin_v1_rpc_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -157,7 +160,7 @@ func (x *RPCResponse) String() string {
 func (*RPCResponse) ProtoMessage() {}
 
 func (x *RPCResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_rpc_proto_msgTypes[1]
+	mi := &file_goblin_v1_rpc_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -170,7 +173,7 @@ func (x *RPCResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RPCResponse.ProtoReflect.Descriptor instead.
 func (*RPCResponse) Descriptor() ([]byte, []int) {
-	return file_proto_rpc_proto_rawDescGZIP(), []int{1}
+	return file_goblin_v1_rpc_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *RPCResponse) GetRequestId() uint32 {
@@ -201,11 +204,11 @@ func (x *RPCResponse) GetError() string {
 	return ""
 }
 
-var File_proto_rpc_proto protoreflect.FileDescriptor
+var File_goblin_v1_rpc_proto protoreflect.FileDescriptor
 
-const file_proto_rpc_proto_rawDesc = "" +
+const file_goblin_v1_rpc_proto_rawDesc = "" +
 	"\n" +
-	"\x0fproto/rpc.proto\x12\x0fgoblin.v1.proto\"]\n" +
+	"\x13goblin/v1/rpc.proto\x12\tgoblin.v1\"]\n" +
 	"\n" +
 	"RPCRequest\x12\x1d\n" +
 	"\n" +
@@ -217,33 +220,34 @@ const file_proto_rpc_proto_rawDesc = "" +
 	"request_id\x18\x01 \x01(\rR\trequestId\x12\x18\n" +
 	"\asuccess\x18\x02 \x01(\bR\asuccess\x12\x18\n" +
 	"\apayload\x18\x03 \x01(\fR\apayload\x12\x14\n" +
-	"\x05error\x18\x04 \x01(\tR\x05error*A\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error*\x82\x01\n" +
 	"\n" +
-	"StreamType\x12\x0f\n" +
-	"\vRPC_REQUEST\x10\x00\x12\x10\n" +
-	"\fRPC_RESPONSE\x10\x01\x12\x10\n" +
-	"\fEVENT_STREAM\x10\x02B+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
+	"StreamType\x12\x1b\n" +
+	"\x17STREAM_TYPE_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17STREAM_TYPE_RPC_REQUEST\x10\x01\x12\x1c\n" +
+	"\x18STREAM_TYPE_RPC_RESPONSE\x10\x02\x12\x1c\n" +
+	"\x18STREAM_TYPE_EVENT_STREAM\x10\x03B+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
 
 var (
-	file_proto_rpc_proto_rawDescOnce sync.Once
-	file_proto_rpc_proto_rawDescData []byte
+	file_goblin_v1_rpc_proto_rawDescOnce sync.Once
+	file_goblin_v1_rpc_proto_rawDescData []byte
 )
 
-func file_proto_rpc_proto_rawDescGZIP() []byte {
-	file_proto_rpc_proto_rawDescOnce.Do(func() {
-		file_proto_rpc_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_rpc_proto_rawDesc), len(file_proto_rpc_proto_rawDesc)))
+func file_goblin_v1_rpc_proto_rawDescGZIP() []byte {
+	file_goblin_v1_rpc_proto_rawDescOnce.Do(func() {
+		file_goblin_v1_rpc_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_goblin_v1_rpc_proto_rawDesc), len(file_goblin_v1_rpc_proto_rawDesc)))
 	})
-	return file_proto_rpc_proto_rawDescData
+	return file_goblin_v1_rpc_proto_rawDescData
 }
 
-var file_proto_rpc_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proto_rpc_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
-var file_proto_rpc_proto_goTypes = []any{
-	(StreamType)(0),     // 0: goblin.v1.proto.StreamType
-	(*RPCRequest)(nil),  // 1: goblin.v1.proto.RPCRequest
-	(*RPCResponse)(nil), // 2: goblin.v1.proto.RPCResponse
+var file_goblin_v1_rpc_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_goblin_v1_rpc_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_goblin_v1_rpc_proto_goTypes = []any{
+	(StreamType)(0),     // 0: goblin.v1.StreamType
+	(*RPCRequest)(nil),  // 1: goblin.v1.RPCRequest
+	(*RPCResponse)(nil), // 2: goblin.v1.RPCResponse
 }
-var file_proto_rpc_proto_depIdxs = []int32{
+var file_goblin_v1_rpc_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for method output_type
 	0, // [0:0] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
@@ -251,27 +255,27 @@ var file_proto_rpc_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for field type_name
 }
 
-func init() { file_proto_rpc_proto_init() }
-func file_proto_rpc_proto_init() {
-	if File_proto_rpc_proto != nil {
+func init() { file_goblin_v1_rpc_proto_init() }
+func file_goblin_v1_rpc_proto_init() {
+	if File_goblin_v1_rpc_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_rpc_proto_rawDesc), len(file_proto_rpc_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_goblin_v1_rpc_proto_rawDesc), len(file_goblin_v1_rpc_proto_rawDesc)),
 			NumEnums:      1,
 			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_proto_rpc_proto_goTypes,
-		DependencyIndexes: file_proto_rpc_proto_depIdxs,
-		EnumInfos:         file_proto_rpc_proto_enumTypes,
-		MessageInfos:      file_proto_rpc_proto_msgTypes,
+		GoTypes:           file_goblin_v1_rpc_proto_goTypes,
+		DependencyIndexes: file_goblin_v1_rpc_proto_depIdxs,
+		EnumInfos:         file_goblin_v1_rpc_proto_enumTypes,
+		MessageInfos:      file_goblin_v1_rpc_proto_msgTypes,
 	}.Build()
-	File_proto_rpc_proto = out.File
-	file_proto_rpc_proto_goTypes = nil
-	file_proto_rpc_proto_depIdxs = nil
+	File_goblin_v1_rpc_proto = out.File
+	file_goblin_v1_rpc_proto_goTypes = nil
+	file_goblin_v1_rpc_proto_depIdxs = nil
 }

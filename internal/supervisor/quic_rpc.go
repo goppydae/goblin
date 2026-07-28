@@ -73,7 +73,7 @@ func (s *QUICRPCServer) handleStream(stream *quic.Stream) {
 		return
 	}
 
-	if goblinv1.StreamType(streamType[0]) != goblinv1.StreamType_RPC_REQUEST {
+	if goblinv1.StreamType(streamType[0]) != goblinv1.StreamType_STREAM_TYPE_RPC_REQUEST {
 		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "invalid stream type", logattr.StreamType(int(streamType[0])))
 		return
 	}
@@ -144,7 +144,7 @@ func (s *QUICRPCServer) sendResponse(stream *quic.Stream, requestID uint32, payl
 	}
 
 	// Write stream type
-	if _, err := stream.Write([]byte{byte(goblinv1.StreamType_RPC_RESPONSE)}); err != nil {
+	if _, err := stream.Write([]byte{byte(goblinv1.StreamType_STREAM_TYPE_RPC_RESPONSE)}); err != nil {
 		return fmt.Errorf("write stream type: %w", err)
 	}
 

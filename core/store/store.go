@@ -39,7 +39,7 @@ func NewStore(c *consensus.Consensus, bus eventbus.EventBus) *Store {
 // Set writes a key-value pair to the store
 func (s *Store) Set(ctx context.Context, namespace, key string, value []byte) error {
 	cmd := &goblinv1.LogEntry{
-		Type:      goblinv1.CommandType_SET,
+		Type:      goblinv1.CommandType_COMMAND_TYPE_SET,
 		Namespace: namespace,
 		Key:       key,
 		Value:     value,
@@ -78,7 +78,7 @@ func (s *Store) Set(ctx context.Context, namespace, key string, value []byte) er
 // callers must not treat it as a transport failure.
 func (s *Store) CompareAndSwap(ctx context.Context, namespace, key string, value []byte, casVersion uint64) error {
 	cmd := &goblinv1.LogEntry{
-		Type:       goblinv1.CommandType_CAS,
+		Type:       goblinv1.CommandType_COMMAND_TYPE_CAS,
 		Namespace:  namespace,
 		Key:        key,
 		Value:      value,
@@ -164,7 +164,7 @@ func (s *Store) Scan(ctx context.Context, namespace, prefix string) (map[string]
 // Delete removes a key from the store
 func (s *Store) Delete(ctx context.Context, namespace, key string) error {
 	cmd := &goblinv1.LogEntry{
-		Type:      goblinv1.CommandType_DELETE,
+		Type:      goblinv1.CommandType_COMMAND_TYPE_DELETE,
 		Namespace: namespace,
 		Key:       key,
 	}

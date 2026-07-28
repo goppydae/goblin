@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package goblin.v1.proto;
+package goblin.v1;
 
 option go_package = "github.com/goppydae/goblin/proto;goblinv1";
 

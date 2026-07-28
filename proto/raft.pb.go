@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        (unknown)
-// source: proto/raft.proto
+// source: goblin/v1/raft.proto
 
 package goblinv1
 
@@ -25,22 +25,28 @@ const (
 type CommandType int32
 
 const (
-	CommandType_SET    CommandType = 0
-	CommandType_DELETE CommandType = 1
-	CommandType_CAS    CommandType = 2 // Compare-And-Swap
+	// UNSPECIFIED takes the zero value: a LogEntry decoded from data
+	// written before this schema (when SET was 0) surfaces as
+	// UNSPECIFIED and must be rejected by the FSM, never misapplied.
+	CommandType_COMMAND_TYPE_UNSPECIFIED CommandType = 0
+	CommandType_COMMAND_TYPE_SET         CommandType = 1
+	CommandType_COMMAND_TYPE_DELETE      CommandType = 2
+	CommandType_COMMAND_TYPE_CAS         CommandType = 3 // Compare-And-Swap
 )
 
 // Enum value maps for CommandType.
 var (
 	CommandType_name = map[int32]string{
-		0: "SET",
-		1: "DELETE",
-		2: "CAS",
+		0: "COMMAND_TYPE_UNSPECIFIED",
+		1: "COMMAND_TYPE_SET",
+		2: "COMMAND_TYPE_DELETE",
+		3: "COMMAND_TYPE_CAS",
 	}
 	CommandType_value = map[string]int32{
-		"SET":    0,
-		"DELETE": 1,
-		"CAS":    2,
+		"COMMAND_TYPE_UNSPECIFIED": 0,
+		"COMMAND_TYPE_SET":         1,
+		"COMMAND_TYPE_DELETE":      2,
+		"COMMAND_TYPE_CAS":         3,
 	}
 )
 
@@ -55,11 +61,11 @@ func (x CommandType) String() string {
 }
 
 func (CommandType) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_raft_proto_enumTypes[0].Descriptor()
+	return file_goblin_v1_raft_proto_enumTypes[0].Descriptor()
 }
 
 func (CommandType) Type() protoreflect.EnumType {
-	return &file_proto_raft_proto_enumTypes[0]
+	return &file_goblin_v1_raft_proto_enumTypes[0]
 }
 
 func (x CommandType) Number() protoreflect.EnumNumber {
@@ -68,13 +74,13 @@ func (x CommandType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use CommandType.Descriptor instead.
 func (CommandType) EnumDescriptor() ([]byte, []int) {
-	return file_proto_raft_proto_rawDescGZIP(), []int{0}
+	return file_goblin_v1_raft_proto_rawDescGZIP(), []int{0}
 }
 
 // LogEntry represents a command in the Raft log
 type LogEntry struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          CommandType            `protobuf:"varint,1,opt,name=type,proto3,enum=goblin.v1.proto.CommandType" json:"type,omitempty"`
+	Type          CommandType            `protobuf:"varint,1,opt,name=type,proto3,enum=goblin.v1.CommandType" json:"type,omitempty"`
 	Namespace     string                 `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
 	Key           string                 `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"`
 	Value         []byte                 `protobuf:"bytes,4,opt,name=value,proto3" json:"value,omitempty"`
@@ -85,7 +91,7 @@ type LogEntry struct {
 
 func (x *LogEntry) Reset() {
 	*x = LogEntry{}
-	mi := &file_proto_raft_proto_msgTypes[0]
+	mi := &file_goblin_v1_raft_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -97,7 +103,7 @@ func (x *LogEntry) String() string {
 func (*LogEntry) ProtoMessage() {}
 
 func (x *LogEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_raft_proto_msgTypes[0]
+	mi := &file_goblin_v1_raft_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -110,14 +116,14 @@ func (x *LogEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogEntry.ProtoReflect.Descriptor instead.
 func (*LogEntry) Descriptor() ([]byte, []int) {
-	return file_proto_raft_proto_rawDescGZIP(), []int{0}
+	return file_goblin_v1_raft_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *LogEntry) GetType() CommandType {
 	if x != nil {
 		return x.Type
 	}
-	return CommandType_SET
+	return CommandType_COMMAND_TYPE_UNSPECIFIED
 }
 
 func (x *LogEntry) GetNamespace() string {
@@ -148,44 +154,44 @@ func (x *LogEntry) GetCasVersion() uint64 {
 	return 0
 }
 
-var File_proto_raft_proto protoreflect.FileDescriptor
+var File_goblin_v1_raft_proto protoreflect.FileDescriptor
 
-const file_proto_raft_proto_rawDesc = "" +
+const file_goblin_v1_raft_proto_rawDesc = "" +
 	"\n" +
-	"\x10proto/raft.proto\x12\x0fgoblin.v1.proto\"\xa3\x01\n" +
-	"\bLogEntry\x120\n" +
-	"\x04type\x18\x01 \x01(\x0e2\x1c.goblin.v1.proto.CommandTypeR\x04type\x12\x1c\n" +
+	"\x14goblin/v1/raft.proto\x12\tgoblin.v1\"\x9d\x01\n" +
+	"\bLogEntry\x12*\n" +
+	"\x04type\x18\x01 \x01(\x0e2\x16.goblin.v1.CommandTypeR\x04type\x12\x1c\n" +
 	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12\x10\n" +
 	"\x03key\x18\x03 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x04 \x01(\fR\x05value\x12\x1f\n" +
 	"\vcas_version\x18\x05 \x01(\x04R\n" +
-	"casVersion*+\n" +
-	"\vCommandType\x12\a\n" +
-	"\x03SET\x10\x00\x12\n" +
-	"\n" +
-	"\x06DELETE\x10\x01\x12\a\n" +
-	"\x03CAS\x10\x02B+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
+	"casVersion*p\n" +
+	"\vCommandType\x12\x1c\n" +
+	"\x18COMMAND_TYPE_UNSPECIFIED\x10\x00\x12\x14\n" +
+	"\x10COMMAND_TYPE_SET\x10\x01\x12\x17\n" +
+	"\x13COMMAND_TYPE_DELETE\x10\x02\x12\x14\n" +
+	"\x10COMMAND_TYPE_CAS\x10\x03B+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
 
 var (
-	file_proto_raft_proto_rawDescOnce sync.Once
-	file_proto_raft_proto_rawDescData []byte
+	file_goblin_v1_raft_proto_rawDescOnce sync.Once
+	file_goblin_v1_raft_proto_rawDescData []byte
 )
 
-func file_proto_raft_proto_rawDescGZIP() []byte {
-	file_proto_raft_proto_rawDescOnce.Do(func() {
-		file_proto_raft_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_raft_proto_rawDesc), len(file_proto_raft_proto_rawDesc)))
+func file_goblin_v1_raft_proto_rawDescGZIP() []byte {
+	file_goblin_v1_raft_proto_rawDescOnce.Do(func() {
+		file_goblin_v1_raft_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_goblin_v1_raft_proto_rawDesc), len(file_goblin_v1_raft_proto_rawDesc)))
 	})
-	return file_proto_raft_proto_rawDescData
+	return file_goblin_v1_raft_proto_rawDescData
 }
 
-var file_proto_raft_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proto_raft_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
-var file_proto_raft_proto_goTypes = []any{
-	(CommandType)(0), // 0: goblin.v1.proto.CommandType
-	(*LogEntry)(nil), // 1: goblin.v1.proto.LogEntry
+var file_goblin_v1_raft_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_goblin_v1_raft_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_goblin_v1_raft_proto_goTypes = []any{
+	(CommandType)(0), // 0: goblin.v1.CommandType
+	(*LogEntry)(nil), // 1: goblin.v1.LogEntry
 }
-var file_proto_raft_proto_depIdxs = []int32{
-	0, // 0: goblin.v1.proto.LogEntry.type:type_name -> goblin.v1.proto.CommandType
+var file_goblin_v1_raft_proto_depIdxs = []int32{
+	0, // 0: goblin.v1.LogEntry.type:type_name -> goblin.v1.CommandType
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -193,27 +199,27 @@ var file_proto_raft_proto_depIdxs = []int32{
 	0, // [0:1] is the sub-list for field type_name
 }
 
-func init() { file_proto_raft_proto_init() }
-func file_proto_raft_proto_init() {
-	if File_proto_raft_proto != nil {
+func init() { file_goblin_v1_raft_proto_init() }
+func file_goblin_v1_raft_proto_init() {
+	if File_goblin_v1_raft_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_raft_proto_rawDesc), len(file_proto_raft_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_goblin_v1_raft_proto_rawDesc), len(file_goblin_v1_raft_proto_rawDesc)),
 			NumEnums:      1,
 			NumMessages:   1,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_proto_raft_proto_goTypes,
-		DependencyIndexes: file_proto_raft_proto_depIdxs,
-		EnumInfos:         file_proto_raft_proto_enumTypes,
-		MessageInfos:      file_proto_raft_proto_msgTypes,
+		GoTypes:           file_goblin_v1_raft_proto_goTypes,
+		DependencyIndexes: file_goblin_v1_raft_proto_depIdxs,
+		EnumInfos:         file_goblin_v1_raft_proto_enumTypes,
+		MessageInfos:      file_goblin_v1_raft_proto_msgTypes,
 	}.Build()
-	File_proto_raft_proto = out.File
-	file_proto_raft_proto_goTypes = nil
-	file_proto_raft_proto_depIdxs = nil
+	File_goblin_v1_raft_proto = out.File
+	file_goblin_v1_raft_proto_goTypes = nil
+	file_goblin_v1_raft_proto_depIdxs = nil
 }

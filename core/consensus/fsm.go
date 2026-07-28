@@ -52,11 +52,18 @@ func (f *FSM) Apply(log *raft.Log) interface{} {
 	defer f.mu.Unlock()
 
 	switch cmd.Type {
-	case goblinv1.CommandType_SET:
+	case goblinv1.CommandType_COMMAND_TYPE_UNSPECIFIED:
+		// Zero means either a truly unset type or a LogEntry written
+		// before the 2026-07 schema reset (when SET was 0). Reject it
+		// loudly: applying it as anything would silently corrupt state.
+		return fmt.Errorf("log entry with unspecified command type (namespace %s, key %s): "+
+			"possibly pre-schema-reset raft data - wipe the data dir and rejoin", cmd.Namespace, cmd.Key)
+
+	case goblinv1.CommandType_COMMAND_TYPE_SET:
 		f.write(cmd.Namespace, cmd.Key, cmd.Value)
 		return nil
 
-	case goblinv1.CommandType_DELETE:
+	case goblinv1.CommandType_COMMAND_TYPE_DELETE:
 		if kv, ok := f.state[cmd.Namespace]; ok {
 			delete(kv, cmd.Key)
 			if len(kv) == 0 {
@@ -71,7 +78,7 @@ func (f *FSM) Apply(log *raft.Log) interface{} {
 		}
 		return nil
 
-	case goblinv1.CommandType_CAS:
+	case goblinv1.CommandType_COMMAND_TYPE_CAS:
 		current := f.versions[cmd.Namespace][cmd.Key] // 0 when absent
 		if current != cmd.CasVersion {
 			return fmt.Errorf("%w: key %s/%s is at version %d, expected %d",

@@ -78,7 +78,7 @@ func (c *QUICRPCClient) Call(method string, request interface{}, response interf
 	}()
 
 	// Write stream type (RPC_REQUEST = 0)
-	if _, err := stream.Write([]byte{byte(goblinv1.StreamType_RPC_REQUEST)}); err != nil {
+	if _, err := stream.Write([]byte{byte(goblinv1.StreamType_STREAM_TYPE_RPC_REQUEST)}); err != nil {
 		return fmt.Errorf("failed to write stream type: %w", err)
 	}
 
@@ -104,7 +104,7 @@ func (c *QUICRPCClient) Call(method string, request interface{}, response interf
 		return fmt.Errorf("failed to read response type: %w", err)
 	}
 
-	if goblinv1.StreamType(respType[0]) != goblinv1.StreamType_RPC_RESPONSE {
+	if goblinv1.StreamType(respType[0]) != goblinv1.StreamType_STREAM_TYPE_RPC_RESPONSE {
 		return fmt.Errorf("invalid response stream type: %d", respType[0])
 	}
 

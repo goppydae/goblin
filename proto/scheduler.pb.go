@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        (unknown)
-// source: proto/scheduler.proto
+// source: goblin/v1/scheduler.proto
 
 package goblinv1
 
@@ -36,7 +36,7 @@ type AgentSpec struct {
 
 func (x *AgentSpec) Reset() {
 	*x = AgentSpec{}
-	mi := &file_proto_scheduler_proto_msgTypes[0]
+	mi := &file_goblin_v1_scheduler_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -48,7 +48,7 @@ func (x *AgentSpec) String() string {
 func (*AgentSpec) ProtoMessage() {}
 
 func (x *AgentSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_scheduler_proto_msgTypes[0]
+	mi := &file_goblin_v1_scheduler_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -61,7 +61,7 @@ func (x *AgentSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentSpec.ProtoReflect.Descriptor instead.
 func (*AgentSpec) Descriptor() ([]byte, []int) {
-	return file_proto_scheduler_proto_rawDescGZIP(), []int{0}
+	return file_goblin_v1_scheduler_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *AgentSpec) GetId() string {
@@ -117,7 +117,7 @@ type ResourceReq struct {
 
 func (x *ResourceReq) Reset() {
 	*x = ResourceReq{}
-	mi := &file_proto_scheduler_proto_msgTypes[1]
+	mi := &file_goblin_v1_scheduler_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -129,7 +129,7 @@ func (x *ResourceReq) String() string {
 func (*ResourceReq) ProtoMessage() {}
 
 func (x *ResourceReq) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_scheduler_proto_msgTypes[1]
+	mi := &file_goblin_v1_scheduler_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -142,7 +142,7 @@ func (x *ResourceReq) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceReq.ProtoReflect.Descriptor instead.
 func (*ResourceReq) Descriptor() ([]byte, []int) {
-	return file_proto_scheduler_proto_rawDescGZIP(), []int{1}
+	return file_goblin_v1_scheduler_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *ResourceReq) GetCpu() float64 {
@@ -173,7 +173,7 @@ type AgentInstance struct {
 
 func (x *AgentInstance) Reset() {
 	*x = AgentInstance{}
-	mi := &file_proto_scheduler_proto_msgTypes[2]
+	mi := &file_goblin_v1_scheduler_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -185,7 +185,7 @@ func (x *AgentInstance) String() string {
 func (*AgentInstance) ProtoMessage() {}
 
 func (x *AgentInstance) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_scheduler_proto_msgTypes[2]
+	mi := &file_goblin_v1_scheduler_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -198,7 +198,7 @@ func (x *AgentInstance) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentInstance.ProtoReflect.Descriptor instead.
 func (*AgentInstance) Descriptor() ([]byte, []int) {
-	return file_proto_scheduler_proto_rawDescGZIP(), []int{2}
+	return file_goblin_v1_scheduler_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *AgentInstance) GetInstanceId() string {
@@ -248,7 +248,7 @@ type HealthStatus struct {
 
 func (x *HealthStatus) Reset() {
 	*x = HealthStatus{}
-	mi := &file_proto_scheduler_proto_msgTypes[3]
+	mi := &file_goblin_v1_scheduler_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -260,7 +260,7 @@ func (x *HealthStatus) String() string {
 func (*HealthStatus) ProtoMessage() {}
 
 func (x *HealthStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_scheduler_proto_msgTypes[3]
+	mi := &file_goblin_v1_scheduler_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -273,7 +273,7 @@ func (x *HealthStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthStatus.ProtoReflect.Descriptor instead.
 func (*HealthStatus) Descriptor() ([]byte, []int) {
-	return file_proto_scheduler_proto_rawDescGZIP(), []int{3}
+	return file_goblin_v1_scheduler_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *HealthStatus) GetStatus() string {
@@ -306,7 +306,7 @@ type RegisterAgentRequest struct {
 
 func (x *RegisterAgentRequest) Reset() {
 	*x = RegisterAgentRequest{}
-	mi := &file_proto_scheduler_proto_msgTypes[4]
+	mi := &file_goblin_v1_scheduler_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -318,7 +318,7 @@ func (x *RegisterAgentRequest) String() string {
 func (*RegisterAgentRequest) ProtoMessage() {}
 
 func (x *RegisterAgentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_scheduler_proto_msgTypes[4]
+	mi := &file_goblin_v1_scheduler_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -331,7 +331,7 @@ func (x *RegisterAgentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterAgentRequest.ProtoReflect.Descriptor instead.
 func (*RegisterAgentRequest) Descriptor() ([]byte, []int) {
-	return file_proto_scheduler_proto_rawDescGZIP(), []int{4}
+	return file_goblin_v1_scheduler_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *RegisterAgentRequest) GetSpec() *AgentSpec {
@@ -351,7 +351,7 @@ type RegisterAgentResponse struct {
 
 func (x *RegisterAgentResponse) Reset() {
 	*x = RegisterAgentResponse{}
-	mi := &file_proto_scheduler_proto_msgTypes[5]
+	mi := &file_goblin_v1_scheduler_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -363,7 +363,7 @@ func (x *RegisterAgentResponse) String() string {
 func (*RegisterAgentResponse) ProtoMessage() {}
 
 func (x *RegisterAgentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_scheduler_proto_msgTypes[5]
+	mi := &file_goblin_v1_scheduler_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -376,7 +376,7 @@ func (x *RegisterAgentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterAgentResponse.ProtoReflect.Descriptor instead.
 func (*RegisterAgentResponse) Descriptor() ([]byte, []int) {
-	return file_proto_scheduler_proto_rawDescGZIP(), []int{5}
+	return file_goblin_v1_scheduler_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *RegisterAgentResponse) GetSuccess() bool {
@@ -401,7 +401,7 @@ type ListAgentsRequest struct {
 
 func (x *ListAgentsRequest) Reset() {
 	*x = ListAgentsRequest{}
-	mi := &file_proto_scheduler_proto_msgTypes[6]
+	mi := &file_goblin_v1_scheduler_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -413,7 +413,7 @@ func (x *ListAgentsRequest) String() string {
 func (*ListAgentsRequest) ProtoMessage() {}
 
 func (x *ListAgentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_scheduler_proto_msgTypes[6]
+	mi := &file_goblin_v1_scheduler_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -426,7 +426,7 @@ func (x *ListAgentsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAgentsRequest.ProtoReflect.Descriptor instead.
 func (*ListAgentsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_scheduler_proto_rawDescGZIP(), []int{6}
+	return file_goblin_v1_scheduler_proto_rawDescGZIP(), []int{6}
 }
 
 type ListAgentsResponse struct {
@@ -438,7 +438,7 @@ type ListAgentsResponse struct {
 
 func (x *ListAgentsResponse) Reset() {
 	*x = ListAgentsResponse{}
-	mi := &file_proto_scheduler_proto_msgTypes[7]
+	mi := &file_goblin_v1_scheduler_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -450,7 +450,7 @@ func (x *ListAgentsResponse) String() string {
 func (*ListAgentsResponse) ProtoMessage() {}
 
 func (x *ListAgentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_scheduler_proto_msgTypes[7]
+	mi := &file_goblin_v1_scheduler_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -463,7 +463,7 @@ func (x *ListAgentsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAgentsResponse.ProtoReflect.Descriptor instead.
 func (*ListAgentsResponse) Descriptor() ([]byte, []int) {
-	return file_proto_scheduler_proto_rawDescGZIP(), []int{7}
+	return file_goblin_v1_scheduler_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListAgentsResponse) GetAgents() []*AgentSpec {
@@ -482,7 +482,7 @@ type GetAgentRequest struct {
 
 func (x *GetAgentRequest) Reset() {
 	*x = GetAgentRequest{}
-	mi := &file_proto_scheduler_proto_msgTypes[8]
+	mi := &file_goblin_v1_scheduler_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -494,7 +494,7 @@ func (x *GetAgentRequest) String() string {
 func (*GetAgentRequest) ProtoMessage() {}
 
 func (x *GetAgentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_scheduler_proto_msgTypes[8]
+	mi := &file_goblin_v1_scheduler_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -507,7 +507,7 @@ func (x *GetAgentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAgentRequest.ProtoReflect.Descriptor instead.
 func (*GetAgentRequest) Descriptor() ([]byte, []int) {
-	return file_proto_scheduler_proto_rawDescGZIP(), []int{8}
+	return file_goblin_v1_scheduler_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetAgentRequest) GetId() string {
@@ -526,7 +526,7 @@ type GetAgentResponse struct {
 
 func (x *GetAgentResponse) Reset() {
 	*x = GetAgentResponse{}
-	mi := &file_proto_scheduler_proto_msgTypes[9]
+	mi := &file_goblin_v1_scheduler_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -538,7 +538,7 @@ func (x *GetAgentResponse) String() string {
 func (*GetAgentResponse) ProtoMessage() {}
 
 func (x *GetAgentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_scheduler_proto_msgTypes[9]
+	mi := &file_goblin_v1_scheduler_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -551,7 +551,7 @@ func (x *GetAgentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAgentResponse.ProtoReflect.Descriptor instead.
 func (*GetAgentResponse) Descriptor() ([]byte, []int) {
-	return file_proto_scheduler_proto_rawDescGZIP(), []int{9}
+	return file_goblin_v1_scheduler_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetAgentResponse) GetSpec() *AgentSpec {
@@ -561,81 +561,81 @@ func (x *GetAgentResponse) GetSpec() *AgentSpec {
 	return nil
 }
 
-var File_proto_scheduler_proto protoreflect.FileDescriptor
+var File_goblin_v1_scheduler_proto protoreflect.FileDescriptor
 
-const file_proto_scheduler_proto_rawDesc = "" +
+const file_goblin_v1_scheduler_proto_rawDesc = "" +
 	"\n" +
-	"\x15proto/scheduler.proto\x12\x0fgoblin.v1.proto\"\xb2\x02\n" +
+	"\x19goblin/v1/scheduler.proto\x12\tgoblin.v1\"\xa6\x02\n" +
 	"\tAgentSpec\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x1a\n" +
-	"\breplicas\x18\x03 \x01(\x05R\breplicas\x12M\n" +
-	"\vconstraints\x18\x04 \x03(\v2+.goblin.v1.proto.AgentSpec.ConstraintsEntryR\vconstraints\x12:\n" +
-	"\tresources\x18\x05 \x01(\v2\x1c.goblin.v1.proto.ResourceReqR\tresources\x12\x1a\n" +
+	"\breplicas\x18\x03 \x01(\x05R\breplicas\x12G\n" +
+	"\vconstraints\x18\x04 \x03(\v2%.goblin.v1.AgentSpec.ConstraintsEntryR\vconstraints\x124\n" +
+	"\tresources\x18\x05 \x01(\v2\x16.goblin.v1.ResourceReqR\tresources\x12\x1a\n" +
 	"\bstrategy\x18\x06 \x01(\tR\bstrategy\x1a>\n" +
 	"\x10ConstraintsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"7\n" +
 	"\vResourceReq\x12\x10\n" +
 	"\x03cpu\x18\x01 \x01(\x01R\x03cpu\x12\x16\n" +
-	"\x06memory\x18\x02 \x01(\x03R\x06memory\"\xaf\x01\n" +
+	"\x06memory\x18\x02 \x01(\x03R\x06memory\"\xa9\x01\n" +
 	"\rAgentInstance\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
 	"instanceId\x12\x17\n" +
 	"\aspec_id\x18\x02 \x01(\tR\x06specId\x12\x17\n" +
 	"\anode_id\x18\x03 \x01(\tR\x06nodeId\x12\x14\n" +
-	"\x05state\x18\x04 \x01(\tR\x05state\x125\n" +
-	"\x06health\x18\x05 \x01(\v2\x1d.goblin.v1.proto.HealthStatusR\x06health\"\\\n" +
+	"\x05state\x18\x04 \x01(\tR\x05state\x12/\n" +
+	"\x06health\x18\x05 \x01(\v2\x17.goblin.v1.HealthStatusR\x06health\"\\\n" +
 	"\fHealthStatus\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1a\n" +
-	"\bfailures\x18\x03 \x01(\x03R\bfailures\"F\n" +
-	"\x14RegisterAgentRequest\x12.\n" +
-	"\x04spec\x18\x01 \x01(\v2\x1a.goblin.v1.proto.AgentSpecR\x04spec\"K\n" +
+	"\bfailures\x18\x03 \x01(\x03R\bfailures\"@\n" +
+	"\x14RegisterAgentRequest\x12(\n" +
+	"\x04spec\x18\x01 \x01(\v2\x14.goblin.v1.AgentSpecR\x04spec\"K\n" +
 	"\x15RegisterAgentResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"\x13\n" +
-	"\x11ListAgentsRequest\"H\n" +
-	"\x12ListAgentsResponse\x122\n" +
-	"\x06agents\x18\x01 \x03(\v2\x1a.goblin.v1.proto.AgentSpecR\x06agents\"!\n" +
+	"\x11ListAgentsRequest\"B\n" +
+	"\x12ListAgentsResponse\x12,\n" +
+	"\x06agents\x18\x01 \x03(\v2\x14.goblin.v1.AgentSpecR\x06agents\"!\n" +
 	"\x0fGetAgentRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"B\n" +
-	"\x10GetAgentResponse\x12.\n" +
-	"\x04spec\x18\x01 \x01(\v2\x1a.goblin.v1.proto.AgentSpecR\x04specB+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
+	"\x02id\x18\x01 \x01(\tR\x02id\"<\n" +
+	"\x10GetAgentResponse\x12(\n" +
+	"\x04spec\x18\x01 \x01(\v2\x14.goblin.v1.AgentSpecR\x04specB+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
 
 var (
-	file_proto_scheduler_proto_rawDescOnce sync.Once
-	file_proto_scheduler_proto_rawDescData []byte
+	file_goblin_v1_scheduler_proto_rawDescOnce sync.Once
+	file_goblin_v1_scheduler_proto_rawDescData []byte
 )
 
-func file_proto_scheduler_proto_rawDescGZIP() []byte {
-	file_proto_scheduler_proto_rawDescOnce.Do(func() {
-		file_proto_scheduler_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_scheduler_proto_rawDesc), len(file_proto_scheduler_proto_rawDesc)))
+func file_goblin_v1_scheduler_proto_rawDescGZIP() []byte {
+	file_goblin_v1_scheduler_proto_rawDescOnce.Do(func() {
+		file_goblin_v1_scheduler_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_goblin_v1_scheduler_proto_rawDesc), len(file_goblin_v1_scheduler_proto_rawDesc)))
 	})
-	return file_proto_scheduler_proto_rawDescData
+	return file_goblin_v1_scheduler_proto_rawDescData
 }
 
-var file_proto_scheduler_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
-var file_proto_scheduler_proto_goTypes = []any{
-	(*AgentSpec)(nil),             // 0: goblin.v1.proto.AgentSpec
-	(*ResourceReq)(nil),           // 1: goblin.v1.proto.ResourceReq
-	(*AgentInstance)(nil),         // 2: goblin.v1.proto.AgentInstance
-	(*HealthStatus)(nil),          // 3: goblin.v1.proto.HealthStatus
-	(*RegisterAgentRequest)(nil),  // 4: goblin.v1.proto.RegisterAgentRequest
-	(*RegisterAgentResponse)(nil), // 5: goblin.v1.proto.RegisterAgentResponse
-	(*ListAgentsRequest)(nil),     // 6: goblin.v1.proto.ListAgentsRequest
-	(*ListAgentsResponse)(nil),    // 7: goblin.v1.proto.ListAgentsResponse
-	(*GetAgentRequest)(nil),       // 8: goblin.v1.proto.GetAgentRequest
-	(*GetAgentResponse)(nil),      // 9: goblin.v1.proto.GetAgentResponse
-	nil,                           // 10: goblin.v1.proto.AgentSpec.ConstraintsEntry
+var file_goblin_v1_scheduler_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_goblin_v1_scheduler_proto_goTypes = []any{
+	(*AgentSpec)(nil),             // 0: goblin.v1.AgentSpec
+	(*ResourceReq)(nil),           // 1: goblin.v1.ResourceReq
+	(*AgentInstance)(nil),         // 2: goblin.v1.AgentInstance
+	(*HealthStatus)(nil),          // 3: goblin.v1.HealthStatus
+	(*RegisterAgentRequest)(nil),  // 4: goblin.v1.RegisterAgentRequest
+	(*RegisterAgentResponse)(nil), // 5: goblin.v1.RegisterAgentResponse
+	(*ListAgentsRequest)(nil),     // 6: goblin.v1.ListAgentsRequest
+	(*ListAgentsResponse)(nil),    // 7: goblin.v1.ListAgentsResponse
+	(*GetAgentRequest)(nil),       // 8: goblin.v1.GetAgentRequest
+	(*GetAgentResponse)(nil),      // 9: goblin.v1.GetAgentResponse
+	nil,                           // 10: goblin.v1.AgentSpec.ConstraintsEntry
 }
-var file_proto_scheduler_proto_depIdxs = []int32{
-	10, // 0: goblin.v1.proto.AgentSpec.constraints:type_name -> goblin.v1.proto.AgentSpec.ConstraintsEntry
-	1,  // 1: goblin.v1.proto.AgentSpec.resources:type_name -> goblin.v1.proto.ResourceReq
-	3,  // 2: goblin.v1.proto.AgentInstance.health:type_name -> goblin.v1.proto.HealthStatus
-	0,  // 3: goblin.v1.proto.RegisterAgentRequest.spec:type_name -> goblin.v1.proto.AgentSpec
-	0,  // 4: goblin.v1.proto.ListAgentsResponse.agents:type_name -> goblin.v1.proto.AgentSpec
-	0,  // 5: goblin.v1.proto.GetAgentResponse.spec:type_name -> goblin.v1.proto.AgentSpec
+var file_goblin_v1_scheduler_proto_depIdxs = []int32{
+	10, // 0: goblin.v1.AgentSpec.constraints:type_name -> goblin.v1.AgentSpec.ConstraintsEntry
+	1,  // 1: goblin.v1.AgentSpec.resources:type_name -> goblin.v1.ResourceReq
+	3,  // 2: goblin.v1.AgentInstance.health:type_name -> goblin.v1.HealthStatus
+	0,  // 3: goblin.v1.RegisterAgentRequest.spec:type_name -> goblin.v1.AgentSpec
+	0,  // 4: goblin.v1.ListAgentsResponse.agents:type_name -> goblin.v1.AgentSpec
+	0,  // 5: goblin.v1.GetAgentResponse.spec:type_name -> goblin.v1.AgentSpec
 	6,  // [6:6] is the sub-list for method output_type
 	6,  // [6:6] is the sub-list for method input_type
 	6,  // [6:6] is the sub-list for extension type_name
@@ -643,26 +643,26 @@ var file_proto_scheduler_proto_depIdxs = []int32{
 	0,  // [0:6] is the sub-list for field type_name
 }
 
-func init() { file_proto_scheduler_proto_init() }
-func file_proto_scheduler_proto_init() {
-	if File_proto_scheduler_proto != nil {
+func init() { file_goblin_v1_scheduler_proto_init() }
+func file_goblin_v1_scheduler_proto_init() {
+	if File_goblin_v1_scheduler_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_scheduler_proto_rawDesc), len(file_proto_scheduler_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_goblin_v1_scheduler_proto_rawDesc), len(file_goblin_v1_scheduler_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_proto_scheduler_proto_goTypes,
-		DependencyIndexes: file_proto_scheduler_proto_depIdxs,
-		MessageInfos:      file_proto_scheduler_proto_msgTypes,
+		GoTypes:           file_goblin_v1_scheduler_proto_goTypes,
+		DependencyIndexes: file_goblin_v1_scheduler_proto_depIdxs,
+		MessageInfos:      file_goblin_v1_scheduler_proto_msgTypes,
 	}.Build()
-	File_proto_scheduler_proto = out.File
-	file_proto_scheduler_proto_goTypes = nil
-	file_proto_scheduler_proto_depIdxs = nil
+	File_goblin_v1_scheduler_proto = out.File
+	file_goblin_v1_scheduler_proto_goTypes = nil
+	file_goblin_v1_scheduler_proto_depIdxs = nil
 }
