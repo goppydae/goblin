@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -69,9 +70,12 @@ type Agent interface {
 }
 
 type AgentManager struct {
-	bus            *eventbus.EventBus[*anypb.Any] // ← T is *anypb.Any
-	lbus           *lifecycle.TypedBus
-	pyRun          string // path to adk runner
+	bus   *eventbus.EventBus[*anypb.Any] // ← T is *anypb.Any
+	lbus  *lifecycle.TypedBus
+	pyRun string // path to adk runner
+	// mu guards agents: discovery, Register, and the orchestrator's
+	// concurrent Instantiate/Deregister RPCs all touch the map.
+	mu             sync.RWMutex
 	agents         map[string]Agent
 	productionMode bool
 	// verifyKey validates agent-binary signatures during discovery in
@@ -86,9 +90,21 @@ func NewAgentManager(bus *eventbus.EventBus[*anypb.Any], lbus *lifecycle.TypedBu
 	}
 }
 
-func (am *AgentManager) Register(a Agent)    { am.agents[a.ID()] = a }
-func (am *AgentManager) Get(id string) Agent { return am.agents[id] }
+func (am *AgentManager) Register(a Agent) {
+	am.mu.Lock()
+	defer am.mu.Unlock()
+	am.agents[a.ID()] = a
+}
+
+func (am *AgentManager) Get(id string) Agent {
+	am.mu.RLock()
+	defer am.mu.RUnlock()
+	return am.agents[id]
+}
+
 func (am *AgentManager) All() map[string]Agent {
+	am.mu.RLock()
+	defer am.mu.RUnlock()
 	out := make(map[string]Agent, len(am.agents))
 	for k, v := range am.agents {
 		out[k] = v
