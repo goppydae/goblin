@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,7 +23,7 @@ import (
 	"github.com/goppydae/gapi/core/eventbus"
 	"github.com/goppydae/gapi/core/lifecycle"
 	"github.com/goppydae/gapi/core/schema"
-	"github.com/goppydae/gapi/internal/logging/logcore"
+	"github.com/goppydae/gapi/internal/logattr"
 )
 
 type Discovered struct {
@@ -114,12 +115,12 @@ func (am *AgentManager) DiscoverFromPaths() ([]map[string]string, error) {
 		}
 
 		pathType := config.ClassifyPath(searchPath)
-		logcore.Info().Str("module", "discovery").Str("path", searchPath).Str("path_type", pathType.String()).Msg("scanning agent search path")
+		slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "scanning agent search path", logattr.Module("discovery"), logattr.Path(searchPath), logattr.PathType(pathType.String()))
 
 		// Discover agents from this path
 		agents, err := am.discoverFromSinglePath(searchPath, pathType)
 		if err != nil {
-			logcore.Warn().Str("module", "discovery").Str("path", searchPath).Err(err).Msg("failed to scan agent search path")
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "failed to scan agent search path", logattr.Module("discovery"), logattr.Path(searchPath), logattr.Err(err))
 			continue
 		}
 
@@ -127,18 +128,18 @@ func (am *AgentManager) DiscoverFromPaths() ([]map[string]string, error) {
 		for _, agent := range agents {
 			agentID := agent.ID()
 			if _, exists := discovered[agentID]; exists {
-				logcore.Debug().Str("module", "discovery").Str("agent_id", agentID).Str("path", searchPath).Msg("skipping agent already found in higher priority path")
+				slog.Default().LogAttrs(context.Background(), slog.LevelDebug, "skipping agent already found in higher priority path", logattr.Module("discovery"), logattr.AgentID(agentID), logattr.Path(searchPath))
 				continue
 			}
 
 			discovered[agentID] = agent
 			am.Register(agent)
 			out = append(out, agent.Describe())
-			logcore.Info().Str("module", "discovery").Str("agent_id", agentID).Str("path", searchPath).Str("path_type", pathType.String()).Msg("registered agent")
+			slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "registered agent", logattr.Module("discovery"), logattr.AgentID(agentID), logattr.Path(searchPath), logattr.PathType(pathType.String()))
 		}
 	}
 
-	logcore.Info().Str("module", "discovery").Int("count", len(discovered)).Msg("agent discovery complete")
+	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "agent discovery complete", logattr.Module("discovery"), logattr.Count(len(discovered)))
 	return out, nil
 }
 
@@ -238,7 +239,7 @@ func (am *AgentManager) processDiscovered(path string, d struct {
 		RequiredBy:   d.RequiredBy,
 		Capabilities: d.Capabilities,
 	}); err != nil {
-		logcore.Warn().Str("module", "discovery").Str("path", path).Err(err).Msg("agent metadata validation failed")
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "agent metadata validation failed", logattr.Module("discovery"), logattr.Path(path), logattr.Err(err))
 		return nil
 	}
 
@@ -313,8 +314,7 @@ func (am *AgentManager) safeToExecute(binPath string) error {
 	}
 
 	reject := func(reason string) error {
-		logcore.Warn().Str("module", "discovery").Str("path", binPath).Str("reason", reason).
-			Msg("refusing to execute agent binary for --describe")
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "refusing to execute agent binary for --describe", logattr.Module("discovery"), logattr.Path(binPath), logattr.Reason(reason))
 		return fmt.Errorf("unsafe agent binary %s: %s", binPath, reason)
 	}
 

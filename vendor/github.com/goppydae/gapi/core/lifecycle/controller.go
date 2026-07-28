@@ -3,6 +3,7 @@ package lifecycle
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -12,7 +13,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/goppydae/gapi/core/eventbus"
-	"github.com/goppydae/gapi/internal/logging/logcore"
+	"github.com/goppydae/gapi/internal/logattr"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
 )
 
@@ -181,9 +182,7 @@ func (c *Controller) ApplyWithContext(ctx context.Context, a Action) error {
 			// startup continues, rather than blocking like a hard dependency.
 			for _, dep := range soft {
 				if err := c.deps.EnsureStarted(ctx, dep); err != nil {
-					logcore.Warn().Str("module", "lifecycle").Str("agent_id", c.id).
-						Str("dependency", dep).Err(err).
-						Msg("soft (wants) dependency failed to start; continuing")
+					slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "soft (wants) dependency failed to start; continuing", logattr.Module("lifecycle"), logattr.AgentID(c.id), logattr.Dependency(dep), logattr.Err(err))
 				}
 			}
 		}
@@ -291,7 +290,7 @@ func (c *Controller) publishControl(a protopkg.LifecycleControl_Action) {
 	// must not abort the lifecycle action itself (aborting stop/start on a
 	// closed bus would invert priorities during shutdown).
 	if err := c.bus.Publish(eventbus.NewEvent("system", "", "agent/lifecycle.control", c.id, anyMsg, true)); err != nil {
-		logcore.Error().Str("module", "lifecycle").Str("agent_id", c.id).Err(err).Msg("failed to publish lifecycle control event")
+		slog.Default().LogAttrs(context.Background(), slog.LevelError, "failed to publish lifecycle control event", logattr.Module("lifecycle"), logattr.AgentID(c.id), logattr.Err(err))
 	}
 }
 
@@ -306,7 +305,7 @@ func (c *Controller) publishStatus(state protopkg.AgentState, message string) {
 	anyMsg, _ := anypb.New(st)
 	// Advisory observability event; see publishControl for the no-abort rationale.
 	if err := c.bus.Publish(eventbus.NewEvent("system", "", "agent/lifecycle.status", c.id, anyMsg, true)); err != nil {
-		logcore.Error().Str("module", "lifecycle").Str("agent_id", c.id).Err(err).Msg("failed to publish lifecycle status event")
+		slog.Default().LogAttrs(context.Background(), slog.LevelError, "failed to publish lifecycle status event", logattr.Module("lifecycle"), logattr.AgentID(c.id), logattr.Err(err))
 	}
 }
 

@@ -11,7 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"math"
 	"math/big"
 	"net"
@@ -22,6 +22,7 @@ import (
 
 	"github.com/goppydae/gapi/core/config"
 	"github.com/goppydae/gapi/core/eventbus"
+	"github.com/goppydae/gapi/internal/logattr"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
 	quic "github.com/quic-go/quic-go"
 	"google.golang.org/protobuf/proto"
@@ -117,7 +118,7 @@ func CreateClientTLSConfig(cfg TLSConfig) (*tls.Config, error) {
 // unlocked field read here races it. Close() closing the listener makes
 // Accept return ErrServerClosed, which remains the shutdown signal.
 func (q *QUIC) acceptLoop(ln *quic.Listener) {
-	log.Printf("[INFO] QUIC listener started on %s", ln.Addr())
+	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "quic listener started", logattr.Addr(ln.Addr().String()))
 	var tempDelay time.Duration
 
 	for {
@@ -125,7 +126,7 @@ func (q *QUIC) acceptLoop(ln *quic.Listener) {
 		if err != nil {
 			// Check for intentional shutdown
 			if errors.Is(err, quic.ErrServerClosed) {
-				log.Println("[INFO] QUIC listener closed")
+				slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "quic listener closed")
 				return
 			}
 
@@ -141,13 +142,13 @@ func (q *QUIC) acceptLoop(ln *quic.Listener) {
 				if max := 1 * time.Second; tempDelay > max {
 					tempDelay = max
 				}
-				log.Printf("[WARN] QUIC accept temporary error: %v; retrying in %v", err, tempDelay)
+				slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "quic accept temporary error, retrying", logattr.Err(err), logattr.RetryIn(tempDelay))
 				time.Sleep(tempDelay)
 				continue
 			}
 
 			// Fatal error
-			log.Printf("[ERROR] QUIC accept fatal error: %v", err)
+			slog.Default().LogAttrs(context.Background(), slog.LevelError, "quic accept fatal error", logattr.Err(err))
 			return
 		}
 
@@ -164,7 +165,7 @@ func (q *QUIC) handleConn(conn *quic.Conn) {
 	for {
 		s, err := conn.AcceptStream(context.Background())
 		if err != nil {
-			log.Println("AcceptStream:", err)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "accept stream failed", logattr.Err(err))
 			return
 		}
 		go q.handleStream(s)
@@ -175,26 +176,26 @@ func (q *QUIC) handleStream(s *quic.Stream) {
 	// Read-side stream close in a handler goroutine: the terminus is a log.
 	defer func() {
 		if cerr := s.Close(); cerr != nil {
-			log.Println("close stream:", cerr)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "close stream failed", logattr.Err(cerr))
 		}
 	}()
 
 	var lenBuf [4]byte
 	if _, err := io.ReadFull(s, lenBuf[:]); err != nil {
-		log.Println("read len:", err)
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "read length prefix failed", logattr.Err(err))
 		return
 	}
 	n := binary.BigEndian.Uint32(lenBuf[:])
 
 	data := make([]byte, n)
 	if _, err := io.ReadFull(s, data); err != nil {
-		log.Println("read payload:", err)
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "read payload failed", logattr.Err(err))
 		return
 	}
 
 	var env protopkg.Envelope
 	if err := proto.Unmarshal(data, &env); err != nil {
-		log.Println("unmarshal:", err)
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "unmarshal envelope failed", logattr.Err(err))
 		return
 	}
 
@@ -251,7 +252,7 @@ func (q *QUIC) PublishRemote(ctx context.Context, e eventbus.Event[*anypb.Any]) 
 		// error can mean the frame did not flush - log it loudly.
 		defer func() {
 			if cerr := s.Close(); cerr != nil {
-				log.Printf("close publish stream: %v\n", cerr)
+				slog.Default().LogAttrs(ctx, slog.LevelWarn, "close publish stream failed", logattr.Err(cerr))
 			}
 		}()
 
@@ -265,7 +266,7 @@ func (q *QUIC) PublishRemote(ctx context.Context, e eventbus.Event[*anypb.Any]) 
 
 		data, err := proto.Marshal(env)
 		if err != nil {
-			log.Printf("marshal error: %v\n", err)
+			slog.Default().LogAttrs(ctx, slog.LevelError, "marshal envelope failed", logattr.Err(err))
 			return
 		}
 
@@ -273,7 +274,7 @@ func (q *QUIC) PublishRemote(ctx context.Context, e eventbus.Event[*anypb.Any]) 
 		// the conversion itself must be provably in range.
 		dataLen := len(data)
 		if dataLen > math.MaxUint32 {
-			log.Printf("envelope too large to frame: %d bytes\n", dataLen)
+			slog.Default().LogAttrs(ctx, slog.LevelError, "envelope too large to frame", logattr.Bytes(dataLen))
 			return
 		}
 		lenBuf := make([]byte, 4)

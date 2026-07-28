@@ -1,12 +1,14 @@
 package transport
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
+	"log/slog"
 
 	"github.com/goppydae/gapi/core/config"
 	"github.com/goppydae/gapi/core/eventbus"
-	"github.com/goppydae/gapi/internal/logging/logcore"
+	"github.com/goppydae/gapi/internal/logattr"
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
@@ -24,8 +26,7 @@ func NewQUICServerTransport(addr, tlsCert, tlsKey string) (eventbus.Transport[*a
 		// No cert configured: fall back to a single canonical self-signed
 		// generator (1-year validity) rather than a second, shorter-lived one.
 		// This is insecure and only appropriate for dev/test, so warn loudly.
-		logcore.Warn().Str("module", "transport").Str("addr", addr).
-			Msg("no TLS cert/key configured; using auto-generated self-signed certificate (insecure, not for production)")
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "no TLS cert/key configured; using auto-generated self-signed certificate (insecure, not for production)", logattr.Module("transport"), logattr.Addr(addr))
 		cert, err = GenerateInsecureSelfSignedCert()
 		if err != nil {
 			return nil, fmt.Errorf("generate self-signed cert: %w", err)

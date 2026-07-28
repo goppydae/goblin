@@ -3,8 +3,9 @@ package crypto
 import (
 	"crypto/ed25519"
 	"fmt"
-	"github.com/goppydae/gapi/internal/safeio"
 	"strings"
+
+	"github.com/goppydae/gapi/internal/safeio"
 )
 
 // VerifySignedBinary checks a binary against its sidecar provenance files:

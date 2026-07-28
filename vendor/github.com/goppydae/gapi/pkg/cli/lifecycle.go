@@ -3,13 +3,15 @@ package cli
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/goppydae/gapi/core/client"
 	"github.com/goppydae/gapi/core/config"
+	"github.com/goppydae/gapi/internal/logattr"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
 )
 
@@ -17,12 +19,14 @@ import (
 func sendLifecycleCommand(agentIDs []string, action protopkg.LifecycleControl_Action) {
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
+		slog.Default().LogAttrs(context.Background(), slog.LevelError, "failed to load config", logattr.Err(err))
+		os.Exit(1)
 	}
 
 	c, err := client.New(cfg)
 	if err != nil {
-		log.Fatalf("failed to init client: %v", err)
+		slog.Default().LogAttrs(context.Background(), slog.LevelError, "failed to init client", logattr.Err(err))
+		os.Exit(1)
 	}
 
 	// Long timeout for lifecycle

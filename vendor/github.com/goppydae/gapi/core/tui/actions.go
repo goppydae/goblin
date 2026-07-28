@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -10,7 +12,7 @@ import (
 	"github.com/goppydae/gapi/core/config"
 	"github.com/goppydae/gapi/core/eventbus"
 	"github.com/goppydae/gapi/core/transport"
-	"github.com/goppydae/gapi/internal/logging/logcore"
+	"github.com/goppydae/gapi/internal/logattr"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
 )
 
@@ -34,7 +36,7 @@ func sendLifecycleAction(agentID, action string) tea.Cmd {
 		}
 		defer func() {
 			if cerr := t.Close(); cerr != nil {
-				logcore.Error().Str("module", "tui").Err(cerr).Msg("failed to close transport")
+				slog.Default().LogAttrs(context.Background(), slog.LevelError, "failed to close transport", logattr.Module("tui"), logattr.Err(cerr))
 			}
 		}()
 

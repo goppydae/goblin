@@ -1,10 +1,11 @@
 package cli
 
 import (
+	"context"
 	"embed"
 	_ "embed"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/goppydae/gapi/core/crypto"
+	"github.com/goppydae/gapi/internal/logattr"
 )
 
 //go:embed templates/*.tmpl
@@ -109,11 +111,11 @@ func watchAndBuild(sourcePath string, isDir bool) error {
 	fmt.Println("🔨 Initial build...")
 	if isDir {
 		if err := buildDirectory(sourcePath); err != nil {
-			log.Printf("Initial build failed: %v", err)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "initial build failed", logattr.Err(err))
 		}
 	} else {
 		if err := buildAgent(sourcePath); err != nil {
-			log.Printf("Initial build failed: %v", err)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "initial build failed", logattr.Err(err))
 		}
 	}
 
@@ -170,13 +172,13 @@ func watchAndBuild(sourcePath string, isDir bool) error {
 
 					if isDir {
 						if err := buildDirectory(sourcePath); err != nil {
-							log.Printf("Build failed: %v", err)
+							slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "build failed", logattr.Err(err))
 						} else {
 							fmt.Println("✅ Rebuild complete")
 						}
 					} else {
 						if err := buildAgent(sourcePath); err != nil {
-							log.Printf("Build failed: %v", err)
+							slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "build failed", logattr.Err(err))
 						} else {
 							fmt.Println("✅ Rebuild complete")
 						}
@@ -190,7 +192,7 @@ func watchAndBuild(sourcePath string, isDir bool) error {
 			if !ok {
 				return nil
 			}
-			log.Printf("Watcher error: %v", err)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "watcher error", logattr.Err(err))
 		}
 	}
 }
@@ -237,7 +239,7 @@ func buildDirectory(dir string) error {
 
 	for _, agentDir := range agentDirs {
 		if err := buildAgent(agentDir); err != nil {
-			log.Printf("Failed to build %s: %v", agentDir, err)
+			slog.Default().LogAttrs(context.Background(), slog.LevelError, "build failed", logattr.Path(agentDir), logattr.Err(err))
 		}
 	}
 
@@ -264,7 +266,7 @@ func buildAgent(sourcePath string) error {
 	// Compute source hash for verification chain
 	sourceHash, err := crypto.HashDirectory(sourcePath, "*.go")
 	if err != nil {
-		log.Printf("Warning: failed to compute source hash: %v", err)
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "failed to compute source hash", logattr.Err(err))
 		sourceHash = "unknown"
 	}
 
@@ -338,7 +340,7 @@ func runAgentClean(cmd *cobra.Command, args []string) error {
 
 		fmt.Printf("Cleaning %s...\n", dir)
 		if err := os.RemoveAll(dir); err != nil {
-			log.Printf("Failed to clean %s: %v", dir, err)
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "failed to clean directory", logattr.Path(dir), logattr.Err(err))
 		}
 	}
 

@@ -3,21 +3,22 @@ package metrics
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
-	"github.com/rs/zerolog"
+	"github.com/goppydae/gapi/internal/logattr"
 )
 
 // Server provides an HTTP endpoint for Prometheus metrics
 type Server struct {
 	addr   string
 	server *http.Server
-	logger zerolog.Logger
+	logger *slog.Logger
 }
 
 // NewServer creates a new metrics server
-func NewServer(addr string, logger zerolog.Logger) *Server {
+func NewServer(addr string, logger *slog.Logger) *Server {
 	mux := http.NewServeMux()
 	// Serve GAPI's dedicated registry rather than the global default registry.
 	mux.Handle("/metrics", Handler())
@@ -28,7 +29,7 @@ func NewServer(addr string, logger zerolog.Logger) *Server {
 		// The ResponseWriter is the terminus: a failed write means the
 		// client is gone; nothing upstream can act on it beyond a log.
 		if _, err := fmt.Fprintln(w, "OK"); err != nil {
-			logger.Warn().Err(err).Msg("health endpoint write failed")
+			logger.LogAttrs(context.Background(), slog.LevelWarn, "health endpoint write failed", logattr.Err(err))
 		}
 	})
 
@@ -41,13 +42,13 @@ func NewServer(addr string, logger zerolog.Logger) *Server {
 			WriteTimeout: 10 * time.Second,
 			IdleTimeout:  60 * time.Second,
 		},
-		logger: logger.With().Str("component", "metrics").Logger(),
+		logger: logger.With(logattr.Component("metrics")),
 	}
 }
 
 // Start starts the metrics HTTP server
 func (s *Server) Start() error {
-	s.logger.Info().Str("addr", s.addr).Msg("starting metrics server")
+	s.logger.LogAttrs(context.Background(), slog.LevelInfo, "starting metrics server", logattr.Addr(s.addr))
 
 	if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("metrics server failed: %w", err)
@@ -57,6 +58,6 @@ func (s *Server) Start() error {
 
 // Stop gracefully stops the metrics server
 func (s *Server) Stop(ctx context.Context) error {
-	s.logger.Info().Msg("stopping metrics server")
+	s.logger.LogAttrs(context.Background(), slog.LevelInfo, "stopping metrics server")
 	return s.server.Shutdown(ctx)
 }

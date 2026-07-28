@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net"
 	"os"
@@ -23,7 +24,7 @@ import (
 	"github.com/goppydae/gapi/core/cgroups"
 	"github.com/goppydae/gapi/core/eventbus"
 	"github.com/goppydae/gapi/core/lifecycle"
-	"github.com/goppydae/gapi/internal/logging/logcore"
+	"github.com/goppydae/gapi/internal/logattr"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
 )
 
@@ -232,7 +233,7 @@ func (a *PythonAgent) watchLoop(ctx context.Context, f *os.File) {
 	// Goroutine terminus: the loop has no caller to return to.
 	defer func() {
 		if cerr := f.Close(); cerr != nil {
-			logcore.Error().Str("module", "agentmgr").Str("agent_id", a.id).Err(cerr).Msg("failed to close watch fd")
+			slog.Default().LogAttrs(context.Background(), slog.LevelError, "failed to close watch fd", logattr.Module("agentmgr"), logattr.AgentID(a.id), logattr.Err(cerr))
 		}
 	}()
 
@@ -325,7 +326,7 @@ func (a *PythonAgent) Start(ctx context.Context) error {
 			// close failure only leaks our dup - log it, don't fail Start.
 			defer func() {
 				if cerr := socketFile.Close(); cerr != nil {
-					logcore.Error().Str("module", "agentmgr").Str("agent_id", a.id).Err(cerr).Msg("failed to close listener fd dup")
+					slog.Default().LogAttrs(context.Background(), slog.LevelError, "failed to close listener fd dup", logattr.Module("agentmgr"), logattr.AgentID(a.id), logattr.Err(cerr))
 				}
 			}()
 		}

@@ -3,6 +3,7 @@ package eventbus
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -11,8 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/goppydae/gapi/core/metrics"
-	"github.com/goppydae/gapi/internal/logging/logcore"
-	"github.com/goppydae/gapi/internal/logging/logevent"
+	"github.com/goppydae/gapi/internal/logattr"
 )
 
 // ---- Event Definition ----
@@ -386,9 +386,7 @@ func SubscribePrefixTyped[M proto.Message](
 
 func (b *EventBus[T]) Publish(e Event[T]) error {
 	if err := ValidateEvent(e); err != nil {
-		logcore.Warn().Str("event", "reject").Str("event_id", e.ID).
-			Str("topic", e.Topic).Str("scope", e.Scope).
-			Msg("rejected invalid event")
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "rejected invalid event", logattr.Event("reject"), logattr.EventID(e.ID), logattr.Topic(e.Topic), logattr.Scope(e.Scope))
 		return err
 	}
 
@@ -396,15 +394,10 @@ func (b *EventBus[T]) Publish(e Event[T]) error {
 		return fmt.Errorf("eventbus: publish on nil bus")
 	}
 
-	logevent.Log(logcore.With().Str("module", "eventbus").Logger(), logevent.Event{
-		ID:     e.ID,
-		Type:   "publish",
-		Source: e.Source,
-		Payload: logevent.BusPayload{
-			Topic:   e.Topic,
-			Payload: fmt.Sprintf("%T", e.Payload),
-		},
-	})
+	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "structured event",
+		logattr.Module("eventbus"), logattr.Event("publish"), logattr.EventID(e.ID),
+		logattr.Source(e.Source), logattr.Topic(e.Topic),
+		logattr.PayloadType(fmt.Sprintf("%T", e.Payload)))
 
 	if b.transport != nil {
 		var terr error
@@ -414,15 +407,14 @@ func (b *EventBus[T]) Publish(e Event[T]) error {
 			terr = b.transport.PublishRemote(context.Background(), e)
 		}
 		if terr != nil {
-			logcore.Error().Err(terr).Str("event_id", e.ID).
-				Str("topic", e.Topic).Msg("transport publish failed")
+			slog.Default().LogAttrs(context.Background(), slog.LevelError, "transport publish failed", logattr.Err(terr), logattr.EventID(e.ID), logattr.Topic(e.Topic))
 		}
 	}
 
 	// Record event publish metric
 	metrics.RecordEvent(e.Topic)
 
-	logcore.Debug().Str("topic", e.Topic).Str("event_id", e.ID).Str("scope", e.Scope).Msg("publishing event")
+	slog.Default().LogAttrs(context.Background(), slog.LevelDebug, "publishing event", logattr.Topic(e.Topic), logattr.EventID(e.ID), logattr.Scope(e.Scope))
 
 	return b.dispatch(e)
 }

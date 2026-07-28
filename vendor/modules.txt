@@ -73,15 +73,14 @@ github.com/goppydae/gapi/core/config
 github.com/goppydae/gapi/core/crypto
 github.com/goppydae/gapi/core/eventbus
 github.com/goppydae/gapi/core/lifecycle
+github.com/goppydae/gapi/core/logging
 github.com/goppydae/gapi/core/metrics
 github.com/goppydae/gapi/core/schema
 github.com/goppydae/gapi/core/state
 github.com/goppydae/gapi/core/transport
 github.com/goppydae/gapi/core/tui
 github.com/goppydae/gapi/core/version
-github.com/goppydae/gapi/internal/logging/logcore
-github.com/goppydae/gapi/internal/logging/logevent
-github.com/goppydae/gapi/internal/logging/logoutput
+github.com/goppydae/gapi/internal/logattr
 github.com/goppydae/gapi/internal/safeio
 github.com/goppydae/gapi/internal/statewatch
 github.com/goppydae/gapi/internal/toposort
@@ -229,12 +228,6 @@ github.com/rivo/uniseg
 # github.com/robfig/cron/v3 v3.0.1
 ## explicit; go 1.12
 github.com/robfig/cron/v3
-# github.com/rs/zerolog v1.34.0
-## explicit; go 1.15
-github.com/rs/zerolog
-github.com/rs/zerolog/internal/cbor
-github.com/rs/zerolog/internal/json
-github.com/rs/zerolog/log
 # github.com/sagikazarmark/locafero v0.11.0
 ## explicit; go 1.23.0
 github.com/sagikazarmark/locafero

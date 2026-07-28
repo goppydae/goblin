@@ -3,6 +3,7 @@ package agentmgr
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"sync"
@@ -13,8 +14,8 @@ import (
 
 	"github.com/goppydae/gapi/core/eventbus"
 	"github.com/goppydae/gapi/core/lifecycle"
+	"github.com/goppydae/gapi/internal/logattr"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
-	"github.com/rs/zerolog/log"
 )
 
 // TimerAgent executes a Python agent on a schedule
@@ -98,10 +99,7 @@ func (ta *TimerAgent) Start(_ context.Context) error {
 		return fmt.Errorf("invalid schedule %q: %w", ta.schedule, err)
 	}
 
-	log.Info().
-		Str("agent", ta.id).
-		Str("schedule", ta.schedule).
-		Msg("timer agent started")
+	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "timer agent started", logattr.AgentID(ta.id), slog.String("schedule", ta.schedule))
 
 	// Start ticker goroutine
 	runCtx, cancel := context.WithCancel(context.Background())
@@ -128,7 +126,7 @@ func (ta *TimerAgent) Stop(ctx context.Context) error {
 
 	ta.publishStatusWithRunID("STOPPED", "timer stopped", ta.nextRunID)
 
-	log.Info().Str("agent", ta.id).Msg("timer agent stopped")
+	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "timer agent stopped", logattr.AgentID(ta.id))
 	return nil
 }
 
@@ -193,7 +191,7 @@ func (ta *TimerAgent) run(ctx context.Context, schedule Schedule) {
 }
 
 func (ta *TimerAgent) execute() {
-	log.Info().Str("agent", ta.id).Msg("timer triggered, executing agent")
+	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "timer triggered, executing agent", logattr.AgentID(ta.id))
 
 	// Execute the Python agent (one-shot)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -211,9 +209,9 @@ func (ta *TimerAgent) execute() {
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
-		log.Error().Err(err).Str("agent", ta.id).Msg("timer execution failed")
+		slog.Default().LogAttrs(context.Background(), slog.LevelError, "timer execution failed", logattr.Err(err), logattr.AgentID(ta.id))
 		return
 	}
 
-	log.Info().Str("agent", ta.id).Msg("timer execution completed")
+	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "timer execution completed", logattr.AgentID(ta.id))
 }

@@ -1,12 +1,15 @@
 package lifecycle
 
 import (
+	"context"
+	"log/slog"
+
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/goppydae/gapi/core/eventbus"
 	"github.com/goppydae/gapi/core/state"
-	"github.com/goppydae/gapi/internal/logging/logcore"
+	"github.com/goppydae/gapi/internal/logattr"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
 )
 
@@ -66,7 +69,7 @@ func (lsm *LifecycleStateMachine) emitLifecycleEvent(from, to string) {
 
 	anyMsg, err := anypb.New(msg)
 	if err != nil {
-		logcore.Error().Str("module", "lifecycle").Str("agent_id", lsm.agentID).Err(err).Msg("failed to marshal lifecycle transition event")
+		slog.Default().LogAttrs(context.Background(), slog.LevelError, "failed to marshal lifecycle transition event", logattr.Module("lifecycle"), logattr.AgentID(lsm.agentID), logattr.Err(err))
 		return
 	}
 
@@ -82,7 +85,7 @@ func (lsm *LifecycleStateMachine) emitLifecycleEvent(from, to string) {
 	// Advisory observability event: log failures loudly, never abort the
 	// transition itself (see Controller.publishControl).
 	if err := lsm.bus.Publish(event); err != nil {
-		logcore.Error().Str("module", "lifecycle").Str("agent_id", lsm.agentID).Err(err).Msg("failed to publish lifecycle transition event")
+		slog.Default().LogAttrs(context.Background(), slog.LevelError, "failed to publish lifecycle transition event", logattr.Module("lifecycle"), logattr.AgentID(lsm.agentID), logattr.Err(err))
 	}
 }
 

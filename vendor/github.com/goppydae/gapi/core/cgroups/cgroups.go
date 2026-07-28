@@ -3,11 +3,12 @@ package cgroups
 import (
 	"bufio"
 	"fmt"
-	"github.com/goppydae/gapi/internal/safeio"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/goppydae/gapi/internal/safeio"
 )
 
 // ResourceSpec defines limits
