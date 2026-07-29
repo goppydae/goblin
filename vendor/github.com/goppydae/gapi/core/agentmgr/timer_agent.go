@@ -20,9 +20,18 @@ import (
 
 // TimerAgent executes a Python agent on a schedule
 type TimerAgent struct {
+	// enabled is the resolved ENABLED metadata. Default true:
+	// a runner constructed without discovery (tests, direct use)
+	// must not be silently un-startable.
+	enabled bool
+
 	id       string
 	path     string
 	schedule string // systemd-style: OnBootSec=5s, OnUnitActiveSec=30s, etc.
+	// lang selects how a fire is executed: "python" runs the module
+	// through pyRunner, "go" executes the binary at path directly.
+	// Scheduling itself is language-agnostic; only the fire is not.
+	lang     string
 	pyRunner string
 	hostname string
 
@@ -37,12 +46,31 @@ type TimerAgent struct {
 	mu        sync.Mutex
 }
 
+// NewTimerAgent schedules a Python agent module, executed through the
+// ADK runner.
 func NewTimerAgent(id, path, schedule, pyRunner string, bus *eventbus.EventBus[*anypb.Any], lbus *lifecycle.TypedBus) *TimerAgent {
+	return newTimerAgent(id, path, schedule, "python", pyRunner, lbus)
+}
+
+// NewBinaryTimerAgent schedules an executable agent, run directly.
+//
+// Timers used to be Python-only: discovery routed TYPE=timer here just
+// for .py paths, and everything else became a GoAgent, which has no
+// scheduling code at all - so a Go timer ran once at discovery and never
+// again while its declared SCHEDULE was silently discarded
+// (GAPI-DIV-037). The two ADKs are meant to have identical semantics.
+func NewBinaryTimerAgent(id, path, schedule string, bus *eventbus.EventBus[*anypb.Any], lbus *lifecycle.TypedBus) *TimerAgent {
+	return newTimerAgent(id, path, schedule, "go", "", lbus)
+}
+
+func newTimerAgent(id, path, schedule, lang, pyRunner string, lbus *lifecycle.TypedBus) *TimerAgent {
 	host, _ := os.Hostname()
 	ta := &TimerAgent{
+		enabled:  true,
 		id:       id,
 		path:     path,
 		schedule: schedule,
+		lang:     lang,
 		pyRunner: pyRunner,
 		hostname: host,
 		lbus:     lbus,
@@ -56,7 +84,7 @@ func NewTimerAgent(id, path, schedule, pyRunner string, bus *eventbus.EventBus[*
 
 func (ta *TimerAgent) ID() string             { return ta.id }
 func (ta *TimerAgent) Type() string           { return "timer" }
-func (ta *TimerAgent) Lang() string           { return "python" }
+func (ta *TimerAgent) Lang() string           { return ta.lang }
 func (ta *TimerAgent) Dependencies() []string { return nil }
 func (ta *TimerAgent) Requires() []string     { return nil }
 func (ta *TimerAgent) Wants() []string        { return nil }
@@ -71,7 +99,7 @@ func (ta *TimerAgent) Describe() map[string]string {
 	return map[string]string{
 		"id":       ta.id,
 		"type":     "timer",
-		"language": "python",
+		"language": ta.lang,
 		"path":     ta.path,
 		"schedule": ta.schedule,
 	}
@@ -179,23 +207,43 @@ func (ta *TimerAgent) run(ctx context.Context, schedule Schedule) {
 	for {
 		now := time.Now()
 		next := schedule.Next(now)
-		duration := next.Sub(now)
+
+		// A zero next is a schedule that will not fire again - the
+		// one-shot forms after their single fire. Stop the loop rather
+		// than busy-waiting on a zero duration.
+		if next.IsZero() {
+			slog.Default().LogAttrs(ctx, slog.LevelInfo,
+				"timer schedule exhausted; no further fires",
+				logattr.AgentID(ta.id), slog.String("schedule", ta.schedule))
+			return
+		}
+
+		// An elapse point in the past fires immediately, once. Without
+		// the clamp a negative duration makes time.After fire at once
+		// anyway, but the intent should be explicit.
+		duration := max(next.Sub(now), 0)
 
 		select {
 		case <-ctx.Done():
 			return
 		case <-time.After(duration):
-			ta.execute()
+			ta.execute(ctx)
 		}
 	}
 }
 
-func (ta *TimerAgent) execute() {
-	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "timer triggered, executing agent", logattr.AgentID(ta.id))
+// TimerFireTimeout bounds a single timer fire. Work that runs longer is
+// killed mid-flight, so a scheduled job expecting more time must either
+// bound itself below this or be restructured as a service.
+const TimerFireTimeout = 30 * time.Second
 
-	// Execute the Python agent (one-shot)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+// fireCommand builds the command for one fire. Python modules go through
+// the ADK runner; an executable agent is run directly, which is what its
+// own main does when not asked to --describe.
+func (ta *TimerAgent) fireCommand(ctx context.Context) *exec.Cmd {
+	if ta.lang != "python" {
+		return exec.CommandContext(ctx, ta.path)
+	}
 
 	pythonBin := "python"
 	if _, err := exec.LookPath(pythonBin); err != nil {
@@ -204,14 +252,55 @@ func (ta *TimerAgent) execute() {
 		}
 	}
 
-	cmd := exec.CommandContext(ctx, pythonBin, ta.pyRunner, "--module", ta.path, "--start")
+	// --id and --type are not optional here. Without --type the runner
+	// defaulted to "service", entered its supervision loop and never
+	// exited, so cmd.Run blocked until the deadline and the next fire
+	// never happened (GAPI-DIV-039).
+	return exec.CommandContext(ctx, pythonBin, ta.pyRunner,
+		"--module", ta.path,
+		"--id", ta.id,
+		"--type", "timer",
+		"--start")
+}
+
+// execute runs one fire. runCtx is the timer's own loop context, so
+// Stop cancels a fire that is already in flight instead of leaving it to
+// run out the full timeout after the agent has been told to stop.
+func (ta *TimerAgent) execute(runCtx context.Context) {
+	slog.Default().LogAttrs(runCtx, slog.LevelInfo, "timer triggered, executing agent", logattr.AgentID(ta.id))
+
+	// Each fire is a one-shot: the process must run to completion and
+	// exit, because the next fire is not scheduled until this one
+	// returns.
+	ctx, cancel := context.WithTimeout(runCtx, TimerFireTimeout)
+	defer cancel()
+
+	cmd := ta.fireCommand(ctx)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
-		slog.Default().LogAttrs(context.Background(), slog.LevelError, "timer execution failed", logattr.Err(err), logattr.AgentID(ta.id))
+		slog.Default().LogAttrs(runCtx, slog.LevelError, "timer execution failed", logattr.Err(err), logattr.AgentID(ta.id))
 		return
 	}
 
-	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "timer execution completed", logattr.AgentID(ta.id))
+	slog.Default().LogAttrs(runCtx, slog.LevelInfo, "timer execution completed", logattr.AgentID(ta.id))
+}
+
+// SetEnabled records whether this agent should be started
+// automatically. Set from discovery metadata; absent metadata
+// means enabled.
+func (a *TimerAgent) SetEnabled(v bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.enabled = v
+}
+
+// Enabled reports whether this agent is started automatically.
+// A disabled agent is still discovered and registered, and can
+// still be started explicitly - the systemd model.
+func (a *TimerAgent) Enabled() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.enabled
 }

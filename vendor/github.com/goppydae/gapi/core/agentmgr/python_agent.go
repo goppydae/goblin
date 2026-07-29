@@ -29,6 +29,11 @@ import (
 )
 
 type PythonAgent struct {
+	// enabled is the resolved ENABLED metadata. Default true:
+	// a runner constructed without discovery (tests, direct use)
+	// must not be silently un-startable.
+	enabled bool
+
 	id       string
 	typ      string
 	path     string
@@ -102,6 +107,7 @@ func NewPythonAgent(
 	host, _ := os.Hostname()
 	a := &PythonAgent{
 		id: id, typ: typ, path: modulePath, runner: runnerPath,
+		enabled:        true,
 		requires:       append([]string(nil), reqs...),
 		wants:          append([]string(nil), wants...),
 		wantedBy:       append([]string(nil), wantedBy...),
@@ -631,7 +637,7 @@ func (a *PythonAgent) streamControl(r io.Reader) {
 		case "heartbeat":
 			a.publishHeartbeat()
 		default:
-			// no control topic publications from agents — by design
+			// no control topic publications from agents - by design
 		}
 	}
 }
@@ -780,4 +786,22 @@ func parseLimits(cpu, mem string) cgroups.ResourceSpec {
 	}
 
 	return spec
+}
+
+// SetEnabled records whether this agent should be started
+// automatically. Set from discovery metadata; absent metadata
+// means enabled.
+func (a *PythonAgent) SetEnabled(v bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.enabled = v
+}
+
+// Enabled reports whether this agent is started automatically.
+// A disabled agent is still discovered and registered, and can
+// still be started explicitly - the systemd model.
+func (a *PythonAgent) Enabled() bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.enabled
 }

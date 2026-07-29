@@ -37,7 +37,7 @@ func NewQUICServerTransport(addr, tlsCert, tlsKey string) (eventbus.Transport[*a
 			return nil, fmt.Errorf("load cert: %w", err)
 		}
 	}
-	// 👇 removed generic index syntax
+	// Generic index syntax removed.
 	return NewQUICServer(addr, cert)
 }
 

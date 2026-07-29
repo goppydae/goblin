@@ -56,7 +56,7 @@ func runAgentVerify(cmd *cobra.Command, args []string) error {
 	fmt.Println("1. Binary Hash Verification")
 	hashFile := binaryPath + ".b3"
 	if _, err := os.Stat(hashFile); os.IsNotExist(err) {
-		fmt.Printf("   ⚠️  No .b3 file found\n")
+		fmt.Printf("   [WARN] No .b3 file found\n")
 	} else {
 		expectedHash, err := safeio.ReadFile(hashFile)
 		if err != nil {
@@ -70,10 +70,10 @@ func runAgentVerify(cmd *cobra.Command, args []string) error {
 		}
 
 		if actualHash == expectedHashStr {
-			fmt.Printf("   ✅ VERIFIED\n")
+			fmt.Printf("   [OK] VERIFIED\n")
 			fmt.Printf("      Hash: %s\n", actualHash[:16]+"...")
 		} else {
-			fmt.Printf("   ❌ FAILED\n")
+			fmt.Printf("   [FAIL] FAILED\n")
 			fmt.Printf("      Expected: %s\n", expectedHashStr[:16]+"...")
 			fmt.Printf("      Actual:   %s\n", actualHash[:16]+"...")
 			allPassed = false
@@ -84,9 +84,9 @@ func runAgentVerify(cmd *cobra.Command, args []string) error {
 	fmt.Println("\n2. Signature Verification")
 	sigFile := binaryPath + ".sig"
 	if _, err := os.Stat(sigFile); os.IsNotExist(err) {
-		fmt.Printf("   ⚠️  No .sig file found (not signed)\n")
+		fmt.Printf("   [WARN] No .sig file found (not signed)\n")
 	} else if verifyPubkey == "" {
-		fmt.Printf("   ⚠️  Signature file exists but no --pubkey provided\n")
+		fmt.Printf("   [WARN] Signature file exists but no --pubkey provided\n")
 	} else {
 		// Read signature
 		sigData, err := safeio.ReadFile(sigFile)
@@ -115,10 +115,10 @@ func runAgentVerify(cmd *cobra.Command, args []string) error {
 
 		// Verify
 		if crypto.Verify(pubKey, []byte(strings.TrimSpace(string(hashData))), sigBytes) {
-			fmt.Printf("   ✅ VERIFIED\n")
+			fmt.Printf("   [OK] VERIFIED\n")
 			fmt.Printf("      Signed with key: %x...\n", pubKey[:8])
 		} else {
-			fmt.Printf("   ❌ FAILED\n")
+			fmt.Printf("   [FAIL] FAILED\n")
 			fmt.Printf("      Invalid signature\n")
 			allPassed = false
 		}
@@ -132,39 +132,39 @@ func runAgentVerify(cmd *cobra.Command, args []string) error {
 		describeCmd := exec.Command(binaryPath, "--describe")
 		output, err := describeCmd.Output()
 		if err != nil {
-			fmt.Printf("   ⚠️  Failed to run --describe: %v\n", err)
+			fmt.Printf("   [WARN] Failed to run --describe: %v\n", err)
 		} else {
 			var metadata map[string]interface{}
 			if err := json.Unmarshal(output, &metadata); err != nil {
-				fmt.Printf("   ⚠️  Failed to parse describe output: %v\n", err)
+				fmt.Printf("   [WARN] Failed to parse describe output: %v\n", err)
 			} else {
 				describe, ok := metadata["describe"].(map[string]interface{})
 				if !ok {
-					fmt.Printf("   ⚠️  No describe metadata found\n")
+					fmt.Printf("   [WARN] No describe metadata found\n")
 				} else {
 					buildInfo, ok := describe["build_info"].(map[string]interface{})
 					if !ok || buildInfo == nil {
-						fmt.Printf("   ⚠️  No build_info found (binary may be old)\n")
+						fmt.Printf("   [WARN] No build_info found (binary may be old)\n")
 					} else {
 						embeddedHash, ok := buildInfo["source_hash"].(string)
 						if !ok || embeddedHash == "" {
-							fmt.Printf("   ⚠️  No source_hash in build_info\n")
+							fmt.Printf("   [WARN] No source_hash in build_info\n")
 						} else {
 							// Compute current source hash
 							sourceDir := verifySource
 							if sourceDir == "" {
-								fmt.Printf("   ⚠️  No --source directory provided\n")
+								fmt.Printf("   [WARN] No --source directory provided\n")
 							} else {
 								currentHash, err := crypto.HashDirectory(sourceDir, "*.go")
 								if err != nil {
-									fmt.Printf("   ⚠️  Failed to compute source hash: %v\n", err)
+									fmt.Printf("   [WARN] Failed to compute source hash: %v\n", err)
 								} else {
 									if currentHash == embeddedHash {
-										fmt.Printf("   ✅ VERIFIED\n")
+										fmt.Printf("   [OK] VERIFIED\n")
 										fmt.Printf("      Source hash: %s...\n", currentHash[:16])
 										fmt.Printf("      Build time: %v\n", buildInfo["build_time"])
 									} else {
-										fmt.Printf("   ❌ FAILED\n")
+										fmt.Printf("   [FAIL] FAILED\n")
 										fmt.Printf("      Embedded: %s...\n", embeddedHash[:16])
 										fmt.Printf("      Current:  %s...\n", currentHash[:16])
 										fmt.Printf("      (source has changed since build)\n")
@@ -182,10 +182,10 @@ func runAgentVerify(cmd *cobra.Command, args []string) error {
 	// Final result
 	fmt.Println("\n" + strings.Repeat("=", 50))
 	if allPassed {
-		fmt.Println("Result: ✅ VERIFIED")
+		fmt.Println("Result: VERIFIED")
 		return nil
 	} else {
-		fmt.Println("Result: ❌ VERIFICATION FAILED")
+		fmt.Println("Result: VERIFICATION FAILED")
 		return fmt.Errorf("verification failed")
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"time"
 
@@ -91,45 +92,109 @@ type Config struct {
 	Supervisor SupervisorConfig `mapstructure:"supervisor"`
 }
 
-func Load() (*Config, error) {
-	if env := os.Getenv("RUNTIME_CONFIG"); env != "" {
-		viper.SetConfigFile(env)
-	} else {
-		viper.SetConfigName("config")
-		viper.SetConfigType("yaml")
-		addDefaultPaths() // uses build tag-specific implementation
+// EnvPrefix is the prefix on every environment variable that overrides a
+// config key. It is RUNTIME, not GAPI.
+const EnvPrefix = "RUNTIME"
+
+// EnvKeyFor renders a dotted config path as the environment variable that
+// overrides it: "supervisor.pid1Mode" becomes "RUNTIME_SUPERVISOR_PID1MODE".
+func EnvKeyFor(path string) string {
+	return EnvPrefix + "_" + strings.ToUpper(strings.ReplaceAll(path, ".", "_"))
+}
+
+// bindEnvOverrides walks the config struct by its mapstructure tags and
+// binds every scalar leaf to its environment variable.
+//
+// AutomaticEnv alone is not enough: viper's Unmarshal builds its result
+// from the keys viper already knows about, and it learns a key only from
+// a config file, a default, or an explicit bind. Every key that happened
+// to lack a SetDefault was therefore unreachable from the environment and
+// dropped in silence - the whole supervisor section, security.verifyKey,
+// and the transport TLS paths (GAPI-DIV-038).
+//
+// Walking the struct rather than listing keys is the point: a field added
+// later is bound because it exists, not because someone remembered. The
+// environment variable name is passed explicitly so the binding does not
+// depend on how viper happens to compose a prefix with a key replacer.
+func bindEnvOverrides(v *viper.Viper, t reflect.Type, prefix string) {
+	for i := range t.NumField() {
+		f := t.Field(i)
+		tag := f.Tag.Get("mapstructure")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		name, _, _ := strings.Cut(tag, ",")
+		if name == "" {
+			continue
+		}
+		path := name
+		if prefix != "" {
+			path = prefix + "." + name
+		}
+
+		ft := f.Type
+		for ft.Kind() == reflect.Pointer {
+			ft = ft.Elem()
+		}
+		if ft.Kind() == reflect.Struct {
+			bindEnvOverrides(v, ft, path)
+			continue
+		}
+		// Maps and slices have no sensible single-variable spelling; a
+		// caller wanting logging.loki.labels uses the config file.
+		if ft.Kind() == reflect.Map || ft.Kind() == reflect.Slice {
+			continue
+		}
+		_ = v.BindEnv(path, EnvKeyFor(path))
 	}
-	viper.SetEnvPrefix("RUNTIME")
-	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	viper.AutomaticEnv()
+}
+
+func Load() (*Config, error) {
+	// A private instance rather than viper's package-level singleton:
+	// the global carried bindings and defaults across every call in a
+	// process, which is exactly the hidden global state that makes a
+	// configuration bug reproduce only in the second test.
+	v := viper.New()
+
+	if env := os.Getenv("RUNTIME_CONFIG"); env != "" {
+		v.SetConfigFile(env)
+	} else {
+		v.SetConfigName("config")
+		v.SetConfigType("yaml")
+		addDefaultPaths(v) // uses build tag-specific implementation
+	}
+	v.SetEnvPrefix(EnvPrefix)
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+	bindEnvOverrides(v, reflect.TypeOf(Config{}), "")
 
 	// Zero-config defaults
-	viper.SetDefault("transport.type", "quic")
-	viper.SetDefault("transport.address", ":14242")
-	viper.SetDefault("transport.insecureSkipVerify", true)
-	viper.SetDefault("metrics.enabled", false)
-	viper.SetDefault("metrics.addr", "127.0.0.1:19090")
+	v.SetDefault("transport.type", "quic")
+	v.SetDefault("transport.address", ":14242")
+	v.SetDefault("transport.insecureSkipVerify", true)
+	v.SetDefault("metrics.enabled", false)
+	v.SetDefault("metrics.addr", "127.0.0.1:19090")
 
 	// Logging defaults
-	viper.SetDefault("logging.level", "info")
-	viper.SetDefault("logging.format", "json")
-	viper.SetDefault("logging.file.enabled", false)
-	viper.SetDefault("logging.file.path", "/var/log/gapi/gapi.log")
-	viper.SetDefault("logging.file.maxSize", 100) // MB
-	viper.SetDefault("logging.file.maxBackups", 3)
-	viper.SetDefault("logging.file.maxAge", 28) // days
-	viper.SetDefault("logging.file.compress", true)
-	viper.SetDefault("logging.loki.enabled", false)
+	v.SetDefault("logging.level", "info")
+	v.SetDefault("logging.format", "json")
+	v.SetDefault("logging.file.enabled", false)
+	v.SetDefault("logging.file.path", "/var/log/gapi/gapi.log")
+	v.SetDefault("logging.file.maxSize", 100) // MB
+	v.SetDefault("logging.file.maxBackups", 3)
+	v.SetDefault("logging.file.maxAge", 28) // days
+	v.SetDefault("logging.file.compress", true)
+	v.SetDefault("logging.loki.enabled", false)
 
 	// Timeout defaults (string format for parsing)
-	viper.SetDefault("timeouts.quicStream", QUICStreamTimeout.String())
-	viper.SetDefault("timeouts.quicIdle", QUICIdleTimeout.String())
-	viper.SetDefault("timeouts.clientPending", ClientPendingTimeout.String())
-	viper.SetDefault("timeouts.clientTerminal", ClientTerminalTimeout.String())
-	viper.SetDefault("timeouts.supervisorStart", SupervisorStartDeadline.String())
-	viper.SetDefault("timeouts.supervisorShutdown", SupervisorShutdownTimeout.String())
+	v.SetDefault("timeouts.quicStream", QUICStreamTimeout.String())
+	v.SetDefault("timeouts.quicIdle", QUICIdleTimeout.String())
+	v.SetDefault("timeouts.clientPending", ClientPendingTimeout.String())
+	v.SetDefault("timeouts.clientTerminal", ClientTerminalTimeout.String())
+	v.SetDefault("timeouts.supervisorStart", SupervisorStartDeadline.String())
+	v.SetDefault("timeouts.supervisorShutdown", SupervisorShutdownTimeout.String())
 
-	if err := viper.ReadInConfig(); err != nil {
+	if err := v.ReadInConfig(); err != nil {
 		var notFound viper.ConfigFileNotFoundError
 		if !errors.As(err, &notFound) {
 			return nil, fmt.Errorf("read config error: %w", err)
@@ -138,7 +203,7 @@ func Load() (*Config, error) {
 	}
 
 	var cfg Config
-	if err := viper.Unmarshal(&cfg); err != nil {
+	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal error: %w", err)
 	}
 

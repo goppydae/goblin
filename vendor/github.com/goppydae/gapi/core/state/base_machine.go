@@ -50,7 +50,7 @@ func (sm *BaseStateMachine) TransitionTo(newState string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("invalid transition: %s → %s", sm.current, newState)
+	return fmt.Errorf("invalid transition: %s -> %s", sm.current, newState)
 }
 
 func (sm *BaseStateMachine) OnTransition(f TransitionFunc) {

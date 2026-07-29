@@ -34,6 +34,17 @@ var signCmd = &cobra.Command{
 			return fmt.Errorf("hash file: %w", err)
 		}
 
+		// Write the .b3 digest alongside the signature. The signature
+		// covers this digest, and VerifySignedBinary needs both sidecars -
+		// it reads the .b3 first and fails on a missing one. Emitting only
+		// the .sig produced a pair that no consumer could verify, and no
+		// other CLI verb writes a .b3 for an arbitrary file, so the
+		// documented signing workflow could not complete (GAPI-DIV-040).
+		hashPath := file + ".b3"
+		if err := os.WriteFile(hashPath, []byte(hash+"\n"), 0600); err != nil {
+			return fmt.Errorf("write digest: %w", err)
+		}
+
 		// Sign hash
 		sig := key.Sign([]byte(hash))
 		sigHex := hex.EncodeToString(sig)
@@ -44,7 +55,7 @@ var signCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("Signed %s -> %s\n", file, sigPath)
+		fmt.Printf("Signed %s -> %s, %s\n", file, hashPath, sigPath)
 		return nil
 	},
 }

@@ -29,6 +29,11 @@ import (
 )
 
 type GoAgent struct {
+	// enabled is the resolved ENABLED metadata. Default true:
+	// a runner constructed without discovery (tests, direct use)
+	// must not be silently un-startable.
+	enabled bool
+
 	id       string
 	typ      string
 	path     string // Path to binary
@@ -87,6 +92,7 @@ func NewGoAgent(
 	host, _ := os.Hostname()
 	a := &GoAgent{
 		id: id, typ: typ, path: binaryPath,
+		enabled:      true,
 		requires:     append([]string(nil), reqs...),
 		wants:        append([]string(nil), wants...),
 		wantedBy:     append([]string(nil), wantedBy...),
@@ -692,4 +698,22 @@ func (a *GoAgent) publishLog(stream string, data any) {
 	anyp, _ := anypb.New(logMsg)
 	ev := eventbus.NewEvent[*anypb.Any]("system", "", "logs", a.id, anyp, false)
 	_ = a.bus.Publish(ev)
+}
+
+// SetEnabled records whether this agent should be started
+// automatically. Set from discovery metadata; absent metadata
+// means enabled.
+func (a *GoAgent) SetEnabled(v bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.enabled = v
+}
+
+// Enabled reports whether this agent is started automatically.
+// A disabled agent is still discovered and registered, and can
+// still be started explicitly - the systemd model.
+func (a *GoAgent) Enabled() bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.enabled
 }

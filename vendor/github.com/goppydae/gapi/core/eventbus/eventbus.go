@@ -190,7 +190,7 @@ func (b *EventBus[T]) Subscribe(scope, namespace, topic string, fn Handler[T]) e
 // SubscribePrefix subscribes to every topic that begins with topicPrefix.
 //
 // TYPE HAZARD: a prefix matches sibling topics that may carry different payload
-// types — e.g. SubscribePrefix("system","",TopicPrefixAgentLifecycle) fires for both
+// types - e.g. SubscribePrefix("system","",TopicPrefixAgentLifecycle) fires for both
 // TopicAgentLifecycleAction (LifecycleControl) and TopicAgentLifecycleStatus
 // (LifecycleStatus). A handler that assumes one proto type will panic on
 // UnmarshalTo/type-assert when the other arrives. Prefer an exact Subscribe when
@@ -247,7 +247,7 @@ func (bus *EventBus[T]) SubscribeOnce(scope, namespace, topic string, handler Ha
 // exact topic whose ID equals corrID, then unsubscribes. Events with any other
 // ID are ignored (not consumed). This is the request/reply correlation
 // primitive: a caller publishes a request, then waits for the reply whose ID the
-// responder echoed from the request — so concurrent callers sharing one reply
+// responder echoed from the request - so concurrent callers sharing one reply
 // topic don't steal each other's responses. The Envelope carries the ID over the
 // wire, so this works across transports.
 func (bus *EventBus[T]) SubscribeCorrelated(scope, namespace, topic, corrID string, handler Handler[T]) error {

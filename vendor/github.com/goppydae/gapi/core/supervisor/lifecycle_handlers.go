@@ -98,7 +98,7 @@ func (s *Supervisor) handleLifecycleAction(e eventbus.Event[*anypb.Any]) {
 
 	// Controller.Apply is synchronous: it only returns once the agent has
 	// reached a terminal state (it internally awaits running/stopped via the
-	// event bus). So the observed state is already settled here — no busy poll
+	// event bus). So the observed state is already settled here - no busy poll
 	// loop is needed. If a future async runner leaves it in flight, surface that
 	// rather than silently sleeping.
 	finalState := ag.Controller().State()

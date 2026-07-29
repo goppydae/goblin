@@ -108,7 +108,7 @@ func runAgentBuild(cmd *cobra.Command, args []string) error {
 
 func watchAndBuild(sourcePath string, isDir bool) error {
 	// Initial build
-	fmt.Println("🔨 Initial build...")
+	fmt.Println("Initial build...")
 	if isDir {
 		if err := buildDirectory(sourcePath); err != nil {
 			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "initial build failed", logattr.Err(err))
@@ -137,7 +137,7 @@ func watchAndBuild(sourcePath string, isDir bool) error {
 		return fmt.Errorf("failed to watch path: %w", err)
 	}
 
-	fmt.Printf("👀 Watching %s for changes (Ctrl+C to stop)...\n", sourcePath)
+	fmt.Printf("Watching %s for changes (Ctrl+C to stop)...\n", sourcePath)
 
 	// Debounce timer to avoid rebuilding on every file save
 	var debounceTimer *time.Timer
@@ -167,24 +167,24 @@ func watchAndBuild(sourcePath string, isDir bool) error {
 				}
 
 				debounceTimer = time.AfterFunc(debounceDuration, func() {
-					fmt.Printf("\n📝 Change detected: %s\n", event.Name)
-					fmt.Println("🔨 Rebuilding...")
+					fmt.Printf("\nChange detected: %s\n", event.Name)
+					fmt.Println("Rebuilding...")
 
 					if isDir {
 						if err := buildDirectory(sourcePath); err != nil {
 							slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "build failed", logattr.Err(err))
 						} else {
-							fmt.Println("✅ Rebuild complete")
+							fmt.Println("[OK] Rebuild complete")
 						}
 					} else {
 						if err := buildAgent(sourcePath); err != nil {
 							slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "build failed", logattr.Err(err))
 						} else {
-							fmt.Println("✅ Rebuild complete")
+							fmt.Println("[OK] Rebuild complete")
 						}
 					}
 
-					fmt.Printf("👀 Watching for changes...\n")
+					fmt.Printf("Watching for changes...\n")
 				})
 			}
 
@@ -243,7 +243,7 @@ func buildDirectory(dir string) error {
 		}
 	}
 
-	fmt.Printf("✅ Built %d agents\n", len(agentDirs))
+	fmt.Printf("[OK] Built %d agents\n", len(agentDirs))
 	return nil
 }
 
@@ -301,8 +301,8 @@ func buildAgent(sourcePath string) error {
 		return fmt.Errorf("failed to write hash file: %w", err)
 	}
 
-	fmt.Printf("  ✓ Binary: %s\n", outputBinary)
-	fmt.Printf("  ✓ Hash:   %s\n", hashFile)
+	fmt.Printf("  - Binary: %s\n", outputBinary)
+	fmt.Printf("  - Hash:   %s\n", hashFile)
 
 	// Optionally sign
 	if signBuild {
@@ -321,7 +321,7 @@ func buildAgent(sourcePath string) error {
 			return fmt.Errorf("failed to write signature: %w", err)
 		}
 
-		fmt.Printf("  ✓ Signature: %s\n", sigFile)
+		fmt.Printf("  - Signature: %s\n", sigFile)
 	}
 
 	return nil
@@ -344,6 +344,6 @@ func runAgentClean(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	fmt.Println("✅ Clean complete")
+	fmt.Println("[OK] Clean complete")
 	return nil
 }

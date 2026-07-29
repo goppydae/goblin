@@ -554,7 +554,7 @@ func (m Model) renderList() string {
 	footerStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241"))
 
-	s += footerStyle.Render("[↑↓/jk] navigate  [/] search  [f] filter state  [t] filter type  [esc] clear  [s/x/r] control  [q] quit")
+	s += footerStyle.Render("[arrows/jk] navigate  [/] search  [f] filter state  [t] filter type  [esc] clear  [s/x/r] control  [q] quit")
 
 	return s
 }

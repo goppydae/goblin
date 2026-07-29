@@ -92,7 +92,7 @@ func runAgentNew(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to render template: %w", err)
 	}
 
-	fmt.Printf("✅ Created %s agent: %s\n", agentLang, outputFile)
+	fmt.Printf("[OK] Created %s agent: %s\n", agentLang, outputFile)
 	fmt.Printf("\nNext steps:\n")
 	if agentLang == "go" {
 		fmt.Printf("  1. Edit %s\n", outputFile)

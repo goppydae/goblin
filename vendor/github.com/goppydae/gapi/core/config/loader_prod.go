@@ -4,6 +4,6 @@ package config
 
 import "github.com/spf13/viper"
 
-func addDefaultPaths() {
-	viper.AddConfigPath("/etc/gapi")
+func addDefaultPaths(v *viper.Viper) {
+	v.AddConfigPath("/etc/gapi")
 }

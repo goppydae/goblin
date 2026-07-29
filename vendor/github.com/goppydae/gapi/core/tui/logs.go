@@ -94,7 +94,7 @@ func (l LogViewer) View() string {
 	footerStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241"))
 
-	footer := footerStyle.Render("[↑↓] scroll  [ESC] back to list")
+	footer := footerStyle.Render("[up/down] scroll  [ESC] back to list")
 
 	return header + "\n" + l.viewport.View() + "\n" + footer
 }

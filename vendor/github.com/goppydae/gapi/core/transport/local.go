@@ -6,7 +6,7 @@ import (
 	"github.com/goppydae/gapi/core/eventbus"
 )
 
-// Local provides an in-proc “loopback” transport used for testing or single-process mode.
+// Local provides an in-proc "loopback" transport used for testing or single-process mode.
 type Local[T any] struct {
 	onRemote func(eventbus.Event[T])
 }

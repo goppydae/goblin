@@ -37,10 +37,10 @@ func sendLifecycleCommand(agentIDs []string, action protopkg.LifecycleControl_Ac
 
 	for _, r := range results {
 		if r.Err != nil {
-			fmt.Printf("❌ %s: %v\n", r.AgentID, r.Err)
+			fmt.Printf("[FAIL] %s: %v\n", r.AgentID, r.Err)
 			continue
 		}
-		fmt.Printf("✅ %s → %s: %s\n", r.AgentID, r.Status.GetState(), r.Status.GetMessage())
+		fmt.Printf("[OK] %s -> %s: %s\n", r.AgentID, r.Status.GetState(), r.Status.GetMessage())
 	}
 }
 

@@ -82,8 +82,8 @@ github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX
 github.com/google/gofuzz v1.0.0/go.mod h1:dBl0BpW6vV/+mYPU4Po3pmUjxk6FQPldtuIdl/M65Eg=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
-github.com/goppydae/gapi v0.1.0-proto2a h1:8XiIYD1B4cBkP6eCuw95ffkAzq7t4ofmczOU7GlF2u4=
-github.com/goppydae/gapi v0.1.0-proto2a/go.mod h1:mtjfXHAaUa1xaXGpK+1BbneSr6KyYovuE8Gm+mtmexw=
+github.com/goppydae/gapi v0.1.0-proto2b h1:dh1hjydlSu+BZ+EzS9pP0SZ1CGHzDJWwQo4G9eTIlZg=
+github.com/goppydae/gapi v0.1.0-proto2b/go.mod h1:mtjfXHAaUa1xaXGpK+1BbneSr6KyYovuE8Gm+mtmexw=
 github.com/goppydae/magelib v0.1.0 h1:AfdM/1BQYRYmo3TnTaPOjTzoDy27+d3ktT5HUZSqHo0=
 github.com/goppydae/magelib v0.1.0/go.mod h1:8CHMyugJA6y7cXLEfvIhc+h/DKYwCgnKuRboJRMSLmY=
 github.com/hashicorp/errwrap v1.0.0/go.mod h1:YH+1FKiLXxHSkmPseP+kNlulaMuP3n2brvKWEqk/Jc4=

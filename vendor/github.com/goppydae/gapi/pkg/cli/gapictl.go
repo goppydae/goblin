@@ -216,18 +216,18 @@ func printTree(agents []*protopkg.AgentStatus) {
 		agent, ok := byId[id]
 		if !ok {
 			nodeStr := fmt.Sprintf("%s [missing]", id)
-			marker := "├── "
+			marker := "|-- "
 			if isLast {
-				marker = "└── "
+				marker = "`-- "
 			}
 			fmt.Printf("%s%s%s\n", prefix, marker, nodeStr)
 			return
 		}
 
 		status := toProtoState(agent.State)
-		marker := "├── "
+		marker := "|-- "
 		if isLast {
-			marker = "└── "
+			marker = "`-- "
 		}
 		fmt.Printf("%s%s%s (%s) [%s]\n", prefix, marker, agent.Id, agent.Type, status)
 
@@ -236,7 +236,7 @@ func printTree(agents []*protopkg.AgentStatus) {
 		}
 		visited[id] = true
 
-		newPrefix := prefix + "│   "
+		newPrefix := prefix + "|   "
 		if isLast {
 			newPrefix = prefix + "    "
 		}

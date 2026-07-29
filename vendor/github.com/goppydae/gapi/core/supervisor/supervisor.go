@@ -302,6 +302,20 @@ func (s *Supervisor) setupAgents() {
 			desc := ag.Describe()
 			started := false
 
+			// A disabled agent is registered but never auto-started -
+			// the systemd model. It stays visible to 'gapictl agent
+			// status' and can still be started explicitly through the
+			// lifecycle verbs; only the automatic paths below are
+			// skipped. Anything not carrying the flag counts as enabled
+			// (agentmgr.AgentEnabled), so a runner that predates this
+			// cannot become silently un-startable.
+			if !agentmgr.AgentEnabled(ag) {
+				s.logger.LogAttrs(context.Background(), slog.LevelInfo,
+					"agent registered but not auto-started (ENABLED is false)",
+					logattr.AgentID(id))
+				continue
+			}
+
 			// lazy Activation
 			if desc["listen_stream"] != "" {
 				if armable, ok := ag.(interface {
@@ -340,7 +354,6 @@ func (s *Supervisor) setupAgents() {
 			// (We assume 'service' or 'oneshot' type and no listen_stream means it should start immediately)
 			if (desc["type"] == "service" || desc["type"] == "oneshot") && desc["listen_stream"] == "" {
 				ctrl := ag.Controller()
-				// We should verify enabled? implicit enabled for now.
 				if err := ctrl.Apply(lifecycle.ActionStart); err != nil {
 					s.logger.LogAttrs(context.Background(), slog.LevelError, "failed to start agent", logattr.Err(err), logattr.AgentID(id))
 				} else {
