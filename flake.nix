@@ -90,7 +90,7 @@
               (cd tools/gopy && GOWORK=off go build -o "$GOBIN/gopy" github.com/go-python/gopy)
             fi
 
-            echo "👺 Goblin - Distributed Orchestrator"
+            echo "Goblin - Distributed Orchestrator"
             echo ""
             echo "Available mage tasks:"
             echo "  mage build          - Build goblind and goblinctl binaries"
