@@ -46,7 +46,7 @@ func Build() error {
 		}
 	}
 
-	fmt.Println("✅ Build complete: bin/goblind, bin/goblinctl (with .b3 checksums)")
+	fmt.Println("Build complete: bin/goblind, bin/goblinctl (with .b3 checksums)")
 	return nil
 }
 
@@ -81,7 +81,7 @@ func Install() error {
 		return err
 	}
 
-	fmt.Println("✅ Installed to $GOPATH/bin")
+	fmt.Println("Installed to $GOPATH/bin")
 	return nil
 }
 
@@ -177,7 +177,7 @@ func Clean() error {
 		}
 	}
 
-	fmt.Println("✅ Clean complete")
+	fmt.Println("Clean complete")
 	return nil
 }
 
@@ -211,7 +211,7 @@ func checkHermetic() error {
 // All runs fmt, tidy, build, and test
 func All() error {
 	mg.Deps(Fmt, Tidy, Build, Test)
-	fmt.Println("✅ All tasks complete")
+	fmt.Println("All tasks complete")
 	return nil
 }
 
@@ -258,7 +258,7 @@ func (Docs) Man() error {
 		}
 	}
 
-	fmt.Println("✅ Man pages generated in ./man/man1")
+	fmt.Println("Man pages generated in ./man/man1")
 	return nil
 }
 
@@ -271,7 +271,7 @@ func TestUnit() error {
 
 // Lint runs the shared lint gate (gofmt check, pinned golangci-lint, gosec).
 //
-// Rule-level gosec carve-outs (GOBLIN-DIV-023):
+// Rule-level gosec carve-outs (GOBLIN-DIV-034):
 //   - G402: the InsecureSkipVerify fallbacks are dev-mode only; production
 //     mode fails closed at startup when TLS is not configured (supervisor
 //     Run, covered by TestRun_ProductionModeRequiresTLS).
