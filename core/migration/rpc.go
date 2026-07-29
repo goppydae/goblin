@@ -9,6 +9,7 @@ import (
 	"github.com/quic-go/quic-go"
 
 	goblintransport "github.com/goppydae/goblin/core/transport"
+	"github.com/goppydae/goblin/internal/ident"
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
 
@@ -133,6 +134,11 @@ func (p *RPCPuller) Pull(ctx context.Context, destNodeID, sourceNodeID string, u
 		return fmt.Errorf("resolving source node %s: %w", sourceNodeID, err)
 	}
 	return p.nodes.call(ctx, destNodeID, MethodPull, &PullRPCRequest{
+		// InstanceID travels for diagnostics only - the transfer is
+		// keyed by {uuid, epoch} - but omitting it produced log lines
+		// reading "pulling image for  from ..." during the two-node
+		// bring-up, which is precisely when they get read.
+		InstanceID:   ident.String(uuid),
 		InstanceUUID: uuid,
 		Epoch:        epoch,
 		SourceAddr:   sourceAddr,

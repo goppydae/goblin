@@ -37,7 +37,6 @@ import (
 	gapilifecycle "github.com/goppydae/gapi/core/lifecycle"
 	gapilogging "github.com/goppydae/gapi/core/logging"
 	"github.com/goppydae/gapi/core/procsig"
-	gapitransport "github.com/goppydae/gapi/core/transport"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
 	"github.com/goppydae/goblin/core/capability"
 	"github.com/goppydae/goblin/core/cluster"
@@ -612,28 +611,23 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 	// other. Sibling, not nested - wiping raft state must not discard
 	// images that a migration in flight still needs.
 	imageRoot := filepath.Join(filepath.Dir(s.cfg.RaftDir), "checkpoints")
-	// Client TLS for dialing a peer's goblin-ckpt listener. Built from
-	// the same material as every other client dial; DialAndFetch stamps
-	// the ALPN onto a clone, so this stays a plain client policy.
+	// Client TLS for dialing a peer's goblin-ckpt listener.
 	//
-	// A failure here does not stop the node: it leaves ckptTLS nil, and
-	// the pull RPC refuses. Migration is unavailable, which is loud and
-	// bounded; refusing to boot over it would take out a node that can
-	// still supervise everything else.
-	ckptTLS, tlsErr := gapitransport.CreateClientTLSConfig(gapitransport.TLSConfig{
-		CAFile: s.cfg.CAFile,
-	})
-	if tlsErr != nil {
-		slog.Default().LogAttrs(ctx, slog.LevelError,
-			"checkpoint transport TLS unavailable; migration pulls will refuse",
-			logattr.Err(tlsErr))
-		ckptTLS = nil
-	}
+	// This is the node's OWN tls.Config, not one synthesized from
+	// CAFile. The two-node test proved why: building it from CAFile
+	// alone produced a config that verified against the system roots,
+	// so every dial failed with "certificate signed by unknown
+	// authority" against the cluster's self-signed certs, while every
+	// other plane worked because they all share tlsCfg. One config, one
+	// verification policy, for every plane on the shared listener.
+	//
+	// DialAndFetch clones it before stamping the ALPN, so this stays
+	// usable by the other planes.
 	nodeRPC := &NodeRPC{
 		agentMgr: agentMgr,
 		tracker:  instTracker,
 		images:   migration.NewStore(imageRoot),
-		ckptTLS:  ckptTLS,
+		ckptTLS:  tlsCfg,
 	}
 	RegisterNodeHandlers(quicServer, nodeRPC)
 
@@ -769,6 +763,20 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 	if err != nil {
 		return fmt.Errorf("register gapi plane: %w", err)
 	}
+	// Checkpoint image transfer. Registering the ALPN in the registry
+	// only advertises it; without an adapter the router refuses the
+	// connection with CodeALPNNotServing, which is how a migration
+	// failed with "ALPN goblin-ckpt not serving" while every other
+	// plane worked.
+	ckptConns, err := sharedLn.Register(transport.ALPNGoblinCkpt)
+	if err != nil {
+		return fmt.Errorf("register checkpoint plane: %w", err)
+	}
+	go migration.NewServer(
+		nodeRPC.Images(),
+		checkpointAuthorizer(schedulerRPC.capabilityKeyResolver(), slog.Default()),
+		slog.Default(),
+	).Serve(ctx, ckptConns)
 	go func() {
 		for {
 			select {

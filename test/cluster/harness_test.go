@@ -45,15 +45,31 @@ func TestMain(m *testing.M) {
 
 	// One build for the daemon, one for the fixture agent; both from the
 	// module so the e2e always tests the working tree.
-	for _, b := range []struct{ out, pkg string }{
-		{builtBinaries.goblind, "../../cmd/goblind"},
-		{filepath.Join(builtBinaries.agentsDir, "sleeper"), "./fixtures/sleeper"},
-	} {
-		cmd := exec.Command("go", "build", "-o", b.out, b.pkg)
-		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-		if err := cmd.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "build %s: %v\n", b.pkg, err)
+	//
+	// GOBLIN_TEST_BIN_DIR overrides the build with binaries staged
+	// beforehand. The VM checks need it: a NixOS guest running the CRIU
+	// suite has no Go toolchain and no module cache, and building inside
+	// the guest would test whatever the guest could compile rather than
+	// what the derivation was built from.
+	if staged := os.Getenv("GOBLIN_TEST_BIN_DIR"); staged != "" {
+		builtBinaries.goblind = filepath.Join(staged, "goblind")
+		builtBinaries.agentsDir = filepath.Join(staged, "agents")
+		if _, serr := os.Stat(builtBinaries.goblind); serr != nil {
+			fmt.Fprintf(os.Stderr, "GOBLIN_TEST_BIN_DIR set but %s is missing: %v\n",
+				builtBinaries.goblind, serr)
 			os.Exit(1)
+		}
+	} else {
+		for _, b := range []struct{ out, pkg string }{
+			{builtBinaries.goblind, "../../cmd/goblind"},
+			{filepath.Join(builtBinaries.agentsDir, "sleeper"), "./fixtures/sleeper"},
+		} {
+			cmd := exec.Command("go", "build", "-o", b.out, b.pkg)
+			cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+			if err := cmd.Run(); err != nil {
+				fmt.Fprintf(os.Stderr, "build %s: %v\n", b.pkg, err)
+				os.Exit(1)
+			}
 		}
 	}
 

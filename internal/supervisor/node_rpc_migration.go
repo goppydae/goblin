@@ -132,17 +132,40 @@ func (n *NodeRPC) RestoreAgentInstance(req *RestoreAgentRequest, resp *string) e
 		return fmt.Errorf("restore instance %s: %w", req.InstanceID, err)
 	}
 
-	a, err := n.agentMgr.Instantiate(req.InstanceID, req.Spec.Type)
-	if err != nil {
-		return fmt.Errorf("instantiate %q as %s: %w", req.Spec.Type, req.InstanceID, err)
+	// Reuse an existing registration rather than instantiating over it.
+	//
+	// The ROLLBACK path lands here: the source still has the instance
+	// registered from before its dump, so an unconditional Instantiate
+	// fails with "already registered" and the rollback can never
+	// succeed - which turns every recoverable migration failure into
+	// ErrStranded. The two-node test proved exactly that.
+	//
+	// A fresh registration is only correct on the destination, which has
+	// never seen this instance.
+	a := n.agentMgr.Get(req.InstanceID)
+	fresh := a == nil
+	if fresh {
+		var err error
+		a, err = n.agentMgr.Instantiate(req.InstanceID, req.Spec.Type)
+		if err != nil {
+			return fmt.Errorf("instantiate %q as %s: %w", req.Spec.Type, req.InstanceID, err)
+		}
 	}
+
 	ckpt, ok := a.(lifecycle.Checkpointer)
 	if !ok {
-		n.agentMgr.Deregister(req.InstanceID)
+		if fresh {
+			n.agentMgr.Deregister(req.InstanceID)
+		}
 		return fmt.Errorf("agent type %q cannot be restored from a checkpoint", req.Spec.Type)
 	}
 	if err := ckpt.Restore(context.Background(), dir); err != nil {
-		n.agentMgr.Deregister(req.InstanceID)
+		// Only tear down a registration this call created. Deregistering
+		// one that predates us would strip the source of an instance it
+		// is about to keep running.
+		if fresh {
+			n.agentMgr.Deregister(req.InstanceID)
+		}
 		return fmt.Errorf("restore instance %s: %w", req.InstanceID, err)
 	}
 
