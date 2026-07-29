@@ -42,15 +42,15 @@ OUTPUT=$(./goblinctl publish test-event "hello world" --api-addr 127.0.0.1:29005
 echo "$OUTPUT"
 
 if [[ "$OUTPUT" == *"membership does not support UserEvent"* ]]; then
-    echo "❌ VERIFICATION FAILED: Membership interface mismatch detected!"
+    echo "[FAIL] VERIFICATION FAILED: Membership interface mismatch detected!"
     kill $PID
     exit 1
 fi
 
 if [[ "$OUTPUT" == *"event 'test-event' published"* ]]; then
-    echo "✅ VERIFICATION PASSED: Event published."
+    echo "[OK] VERIFICATION PASSED: Event published."
 else
-    echo "❌ VERIFICATION FAILED: Unexpected output"
+    echo "[FAIL] VERIFICATION FAILED: Unexpected output"
     kill $PID
     exit 1
 fi

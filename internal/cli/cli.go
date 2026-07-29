@@ -166,7 +166,7 @@ var drainCmd = &cobra.Command{
 			return fmt.Errorf("drain failed: %w", err)
 		}
 
-		fmt.Printf("✅ Drained %d jobs from node %s\n", len(migratedJobs), nodeID)
+		fmt.Printf("[OK] Drained %d jobs from node %s\n", len(migratedJobs), nodeID)
 		for _, jobID := range migratedJobs {
 			fmt.Printf("  - %s\n", jobID)
 		}
@@ -298,7 +298,7 @@ var statusCmd = &cobra.Command{
 			return fmt.Errorf("failed to get members: %w", err)
 		}
 
-		fmt.Printf("✅ Connected to %s (QUIC)\n", apiAddr)
+		fmt.Printf("[OK] Connected to %s (QUIC)\n", apiAddr)
 		fmt.Printf("Cluster Members: %d\n", len(members))
 		fmt.Println("NAME\t\tADDRESS\t\t\tSTATUS\t\tROLE\t\tTAGS")
 		fmt.Println("----\t\t-------\t\t\t------\t\t----\t\t----")
