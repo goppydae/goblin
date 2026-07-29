@@ -130,13 +130,33 @@ func EnvCheck() error {
 	)
 }
 
-// TestCluster runs the process-based 3-node cluster e2e (build tag
-// 'cluster' keeps it out of the ordinary suite). The harness builds
-// goblind and the fixture agent itself.
+// TestCluster runs the process-based cluster suite (build tag 'cluster'
+// keeps it out of the ordinary suite). The harness builds goblind and
+// the fixture agent itself.
+//
+// This target carried '-run TestClusterEndToEnd' and so ran one of the
+// two tests the tag compiles, leaving TestBootstrapExpect_* reachable
+// from no target at all. There is no filter now: the tag decides what
+// runs, and adding a cluster-tagged test is enough to get it gated.
+//
+// test/cluster/migration_test.go is tagged 'cluster && criu' and is not
+// built here. TestMigration runs it.
 func TestCluster() error {
 	mg.Deps(checkHermetic)
-	fmt.Println("Running 3-node cluster e2e (-race, -tags cluster)...")
-	return sh.RunV("go", "test", "-race", "-tags", "cluster", "-timeout", "15m", "-v", "-run", "TestClusterEndToEnd", "./test/cluster/")
+	fmt.Println("Running cluster suite (-race, -tags cluster)...")
+	return sh.RunV("go", "test", "-race", "-tags", "cluster", "-timeout", "15m", "-v", "./test/cluster/")
+}
+
+// TestMigration runs the live-migration tests (build tags 'cluster' and
+// 'criu'). They are separate from TestCluster because CRIU needs
+// privileges a stock CI runner does not grant; the tests fail rather
+// than skip when checkpointing is unavailable, by deliberate choice at
+// migration_test.go:60, so running them where CRIU is absent is a red
+// build and not a quiet pass.
+func TestMigration() error {
+	mg.Deps(checkHermetic)
+	fmt.Println("Running live-migration tests (-race, -tags cluster,criu)...")
+	return sh.RunV("go", "test", "-race", "-tags", "cluster,criu", "-timeout", "15m", "-v", "./test/cluster/")
 }
 
 // TestPid1 runs the goblind PID-1 container smoke (Phase 0 before the
