@@ -1,12 +1,11 @@
 # Goblin CLI Reference
 
-Complete reference for `goblind` (daemon) and `goblinctl` (CLI client).
+The single reference for both binaries: `goblind` (the daemon) and
+`goblinctl` (the control CLI). Everything here is checked against the
+command definitions in `cmd/` and `internal/cli/`; if a flag or verb is
+not listed here, it does not exist.
 
-______________________________________________________________________
-
-## `goblind` - Goblin Distributed Supervisor Daemon
-
-**Description**: Starts the Goblin supervisor daemon with cluster management and optional local agent management.
+## `goblind` - Distributed Supervisor Daemon
 
 ### Usage
 
@@ -14,104 +13,117 @@ ______________________________________________________________________
 goblind [flags]
 ```
 
+### One port, many protocols
+
+`goblind` binds a SINGLE control-plane address. GAPI, cluster RPC, Serf
+gossip, Raft and checkpoint transfer all share it, routed by TLS ALPN.
+There are no separate Serf, Raft or API ports.
+
+| ALPN | Carries |
+| ---- | ------- |
+| `gapi-quic` | the embedded GAPI kernel's own protocol |
+| `goblin-rpc` | `goblinctl` and scheduler RPC |
+| `serf-quic` | Serf membership gossip |
+| `raft-quic` | the Raft transport stream |
+| `goblin-ckpt` | CRIU checkpoint images during live migration |
+
+The registry lives in `core/transport/alpn.go`; the listener's view of
+it is `registryALPNs` in `core/transport/listener.go`.
+
 ### Flags
 
-#### Cluster Configuration
+#### Cluster
 
-| Flag                    | Type   | Default          | Description                                     |
-| ----------------------- | ------ | ---------------- | ----------------------------------------------- |
-| `--id`                  | string | hostname         | Unique Node ID                                  |
-| `--serf-addr`           | string | `127.0.0.1:9001` | Serf bind address (host:port)                   |
-| `--serf-advertise-addr` | string | -                | Serf advertise address (if different from bind) |
-| `--serf-advertise-port` | int    | -                | Serf advertise port (if different from bind)    |
-| `--raft-addr`           | string | `127.0.0.1:9002` | Raft bind address (host:port)                   |
-| `--api-addr`            | string | `127.0.0.1:9000` | API address                                     |
-| `--join`                | string | -                | Join existing cluster peer (host:port)          |
-
-#### Security
-
-| Flag         | Type   | Default | Description                                           |
-| ------------ | ------ | ------- | ----------------------------------------------------- |
-| `--encrypt`  | string | -       | Base64 encoded 32-byte secret key for Serf encryption |
-| `--tls-cert` | string | -       | Path to TLS certificate                               |
-| `--tls-key`  | string | -       | Path to TLS private key                               |
-| `--tls-ca`   | string | -       | Path to CA certificate for mTLS                       |
+| Flag | Default | Description |
+| ---- | ------- | ----------- |
+| `--id` | hostname | Unique node ID |
+| `--listen-addr` | `127.0.0.1:29000` | Single control-plane bind address |
+| `--advertise-addr` | bind host | Advertise address if it differs from the bind. A bare HOST, not `host:port` - the port follows the listen address |
+| `--join` | | Existing cluster peer to join, as `host:port` |
+| `--bootstrap-expect` | `0` | Seed once this many nodes carrying the same value are visible; one is elected to bootstrap. `0` keeps the seed model, where the node with no `--join` bootstraps alone |
 
 #### Storage
 
-| Flag     | Type   | Default       | Description                 |
-| -------- | ------ | ------------- | --------------------------- |
-| `--data` | string | `./data/raft` | Data directory for Raft log |
+| Flag | Default | Description |
+| ---- | ------- | ----------- |
+| `--data` | `./data/raft` | Data directory for the Raft log |
 
-### Agent Discovery
+Checkpoint images are written to a `checkpoints/` directory that is a
+SIBLING of the Raft directory, not nested inside it: wiping Raft state
+must not discard images an in-flight migration still needs.
 
-Local agents are **always enabled** and discovered using GAPI's standard search paths:
+#### Security
 
-- `./agents/`
-- `~/.config/gapi/agents/`
-- `/etc/gapi/agents/`
+| Flag | Description |
+| ---- | ----------- |
+| `--tls-cert` | Path to the TLS certificate |
+| `--tls-key` | Path to the TLS private key |
+| `--tls-ca` | Path to the CA certificate for mTLS |
+| `--encrypt` | Base64-encoded 32-byte key for Serf encryption |
+| `--production` | Restrict agent discovery to binaries with verified signatures |
+| `--agent-verify-key` | Ed25519 public key for agent signature verification (falls back to `$RUNTIME_VERIFY_KEY`) |
+
+Without `--tls-cert` and `--tls-key` the daemon generates an ephemeral
+self-signed certificate and does not verify peers. `--production`
+refuses to start in that state.
+
+#### PID 1 and lifecycle
+
+| Flag | Default | Description |
+| ---- | ------- | ----------- |
+| `--pid1` | `false` | Run as PID 1: kernel Phase 0 boot before the cluster stack, reversed teardown on shutdown |
+| `--no-early-mounts` | `false` | Skip the Phase 0 mount table (container environments) |
+| `--shutdown-grace` | `10s` | Per-phase shutdown grace (drain, then agent stop) before forcing |
+| `--watchdog-device` | | Hardware watchdog device to keep alive |
+| `--watchdog-interval` | `10s` | Watchdog keepalive interval |
+| `--network-gate-timeout` | `0` | Block startup until the network agent reports running, failing after this bound. `0` disables the gate |
+
+#### Observability
+
+| Flag | Default | Description |
+| ---- | ------- | ----------- |
+| `--metrics-addr` | | Prometheus metrics listen address (empty disables) |
+| `--log-level` | `info` | `debug`, `info`, `warn`, `error` |
+| `--log-format` | | `json` or `console` (json in production, console otherwise) |
+| `--log-file` | | Also write logs to this file, rotated |
+| `--log-loki-url` | | Forward logs to a Loki endpoint |
 
 ### Examples
 
-#### Single Node (Development)
+Single node, development:
 
 ```bash
-goblind --id=dev-node
+goblind --id node-1
 ```
 
-#### Multi-Node Cluster
-
-**Node 1 (Leader)**:
+Three-node cluster. Every node advertises the one address its peers
+dial:
 
 ```bash
-goblind \
-  --id=node-1 \
-  --serf-addr=0.0.0.0:7946 \
-  --raft-addr=0.0.0.0:8300 \
-  --api-addr=0.0.0.0:9000
+goblind --id node-1 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.1 --data /var/lib/goblin/raft
 ```
-
-**Node 2 (Follower)**:
 
 ```bash
-goblind \
-  --id=node-2 \
-  --serf-addr=0.0.0.0:7946 \
-  --raft-addr=0.0.0.0:8300 \
-  --api-addr=0.0.0.0:9000 \
-  --join=node-1:7946
+goblind --id node-2 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.2 --data /var/lib/goblin/raft --join 10.0.0.1:29000
 ```
-
-#### With TLS
 
 ```bash
-goblind \
-  --id=secure-node \
-  --tls-cert=certs/node.crt \
-  --tls-key=certs/node.key \
-  --tls-ca=certs/ca.crt \
-  --encrypt=$(head -c 32 /dev/urandom | base64)
+goblind --id node-3 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.3 --data /var/lib/goblin/raft --join 10.0.0.1:29000
 ```
 
-#### With Local Agents
-
-Agents are automatically discovered from standard paths.
-Place agent manifests in:
-
-- `./agents/`
-- `~/.config/gapi/agents/`
-- `/etc/gapi/agents/`
+With TLS:
 
 ```bash
-# Agents discovered automatically
-goblind --id=agent-node
+goblind --id node-1 --tls-cert /etc/goblin/node.crt --tls-key /etc/goblin/node.key --tls-ca /etc/goblin/ca.crt
 ```
 
-______________________________________________________________________
+### Agent discovery
 
-## `goblinctl` - Goblin Control CLI
+Local agents are discovered from the paths GAPI searches.
+`RUNTIME_AGENT_PATH` overrides the search root, so binaries resolve
+from there rather than from the system `PATH`.
 
-**Description**: Unified CLI for cluster management, job scheduling, and local agent operations.
+## `goblinctl` - Control CLI
 
 ### Usage
 
@@ -119,134 +131,176 @@ ______________________________________________________________________
 goblinctl [command] [flags]
 ```
 
-### Global Flags
+### Global flags
 
-| Flag             | Type   | Default           | Description                                     |
-| ---------------- | ------ | ----------------- | ----------------------------------------------- |
-| `--api-addr`     | string | `127.0.0.1:29000` | API address                                     |
-| `--tls-ca`       | string | -                 | Path to CA certificate for API TLS verification |
-| `--tls-insecure` | bool   | false             | Skip API TLS verification (INSECURE)            |
+| Flag | Default | Description |
+| ---- | ------- | ----------- |
+| `--api-addr` | `127.0.0.1:29000` | Target node's single listen address |
+| `--tls-ca` | | CA certificate for API TLS verification |
+| `--tls-insecure` | `false` | Skip API TLS verification (INSECURE) |
 
-______________________________________________________________________
+There is no `--config` flag and no configuration file.
 
-## Commands
+### Command tree
+
+Two agent namespaces exist and they are NOT interchangeable.
+`goblinctl agent` is GAPI's LOCAL tooling for agents on one node.
+`goblinctl cluster agent` manages cluster-wide agent SPECIFICATIONS
+through the leader. Reaching for the wrong one is easy to do and easy
+to miss: cobra prints help and exits 0 for a path that does not exist,
+so the mistake looks like success.
+
+```text
+goblinctl
+|-- start                     # run a supervisor from this binary
+|-- tui                       # unified cluster + agent TUI
+|-- agent                     # LOCAL agents on one node (GAPI tooling)
+|   |-- status                #   registered agents
+|   |-- lifecycle             #   start/stop/restart
+|   |-- build / new / clean   #   agent development
+|   |-- verify / crypto       #   signature verification
+|   |-- ping / reload         #   daemon interaction
+|   |-- shutdown              #   request system shutdown
+|   `-- tui                   #   local agent TUI
+`-- cluster                   # CLUSTER operations, via the leader
+    |-- status                #   members, leader, jobs
+    |-- run <file>            #   submit a job (YAML or JSON)
+    |-- drain <node>          #   drain all jobs from a node
+    |-- migrate <job> <node>  #   REASSIGN a job to another node
+    |-- migrate-instance <instance-uuid> <node>
+    |                         #   LIVE-MIGRATE a running process (CRIU)
+    |-- publish <event> <payload>
+    `-- agent                 #   global agent specifications
+        |-- register <spec-file>
+        |-- list
+        |-- get <id>
+        |-- delete <id>
+        |-- scale <id> <replicas>
+        |-- instances [spec-id]
+        `-- signal <instance-uuid> <signum>
+```
 
 ### `goblinctl cluster status`
 
-Show cluster status including members and leader information.
-
-**Usage**:
+Members, the current leader, and scheduled jobs.
 
 ```bash
-goblinctl cluster status [flags]
+goblinctl cluster status --api-addr 10.0.0.1:29000
 ```
 
-**Example**:
+### `goblinctl cluster agent`
+
+Global agent specifications: what should run, and how many replicas.
+Writes go through the leader and are committed to Raft.
 
 ```bash
-goblinctl cluster status --api-addr=node-1:9000
+goblinctl cluster agent register ./sleeper-spec.yaml
 ```
-
-______________________________________________________________________
-
-### `goblinctl tui`
-
-Unified cluster and agent TUI (Text User Interface).
-
-**Usage**:
 
 ```bash
-goblinctl tui [flags]
+goblinctl cluster agent scale sleeper-spec 3
 ```
-
-**Features**:
-
-- Real-time cluster member view
-- Job status monitoring
-- Local agent display (if enabled)
-- Event log streaming
-
-**Controls**:
-
-- `Tab`: Switch tabs
-- `↑/↓`: Navigate
-- `q`: Quit
-
-______________________________________________________________________
-
-### `goblinctl cluster`
-
-Job and cluster management operations.
-
-#### Subcommands
-
-- `run <job-file.yaml>`: Submit job
-- `drain <node-id>`: Drain node
-- `migrate <job-id> <node>`: Migrate job
-- `status`: Show cluster members
-- `publish`: Broadcast event
-
-**Example**:
 
 ```bash
-goblinctl cluster run test-job.yaml
+goblinctl cluster agent instances sleeper-spec
 ```
 
-______________________________________________________________________
+`instances` prints one row per scheduled instance: instance UUID, spec
+UUID, node, and state.
 
-### `goblinctl agent`
+### `goblinctl cluster migrate` vs `migrate-instance`
 
-Local agent management.
+These do different things, and the distinction matters.
 
-**Example**:
+`migrate <job-id> <to-node>` REASSIGNS a job. Work stops on one node
+and starts on another; the process does not survive.
+
+`migrate-instance <instance-uuid> <to-node>` LIVE-MIGRATES a running
+process with its memory intact. The instance is checkpointed with CRIU
+on its current node, the image is transferred over the `goblin-ckpt`
+ALPN, and it is restored on the destination under the SAME instance
+UUID. Only its location changes.
 
 ```bash
-goblinctl agent list
+goblinctl cluster migrate-instance 019fab39-1fd4-7134-9783-e5f827406cc9 node-2
 ```
 
-______________________________________________________________________
+Both require the `job.migrate` capability right.
+
+If any step fails, the instance is restored on its source and the
+command reports the migration as rolled back. If the rollback also
+fails, the instance is running nowhere and the error says so
+explicitly rather than reporting a generic failure - the two outcomes
+need different responses from an operator.
+
+Live migration needs CRIU on the destination and the capabilities the
+NixOS module grants; see `services.goblin.enableMigration` in
+`nix/module.nix`.
 
 ### `goblinctl cluster publish`
 
-Publish cluster event.
-
-**Usage**:
+Publish a user event to the cluster over Serf.
 
 ```bash
-goblinctl cluster publish <event> <payload>
+goblinctl cluster publish deploy '{"version":"1.2.3"}'
 ```
 
-______________________________________________________________________
+### `goblinctl tui`
 
-## Quick Reference
-
-### Start 3-Node Cluster
+A terminal UI over the cluster and the local agents.
 
 ```bash
-# Node 1
-goblind --id=n1 --serf-addr=0.0.0.0:7946
-
-# Node 2
-goblind --id=n2 --serf-addr=0.0.0.0:7947 --api-addr=0.0.0.0:9001 --join=127.0.0.1:7946
-
-# Node 3
-goblind --id=n3 --serf-addr=0.0.0.0:7948 --api-addr=0.0.0.0:9002 --join=127.0.0.1:7946
+goblinctl tui --api-addr 10.0.0.1:29000
 ```
 
-### Check Cluster
+#### Overview tab
+
+- Cluster members, with leader and follower status
+- Scheduled jobs and their assignments
+- Agents running on the selected node
+
+#### Logs tab
+
+- Cluster logs: Serf membership events, job scheduling
+- Agent logs: local agent stdout and stderr
+- Filtering between all, agents, and cluster
+
+#### Controls
+
+| Key | Action |
+| --- | ------ |
+| `Tab` | Switch between Overview and Logs |
+| Arrow keys, or `j` / `k` | Navigate lists |
+| `/` | Search |
+| `f` | Filter logs |
+| `q` | Quit |
+
+## Environment variables
+
+There is no `GOBLIN_<FLAG>` convention: daemon configuration comes from
+flags only. The variables that are actually read:
+
+| Variable | Read by | Purpose |
+| -------- | ------- | ------- |
+| `RUNTIME_AGENT_PATH` | agent discovery | Override the agent search root |
+| `RUNTIME_VERIFY_KEY` | signature verification | Fallback for `--agent-verify-key` |
+| `GOBLIN_KMSG_PATH` | PID 1 mode | Override the kmsg device |
+
+## Quick reference
 
 ```bash
-goblinctl cluster status
-goblinctl tui
+# three-node cluster
+goblind --id node-1 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.1
+goblind --id node-2 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.2 --join 10.0.0.1:29000
+goblind --id node-3 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.3 --join 10.0.0.1:29000
+
+# inspect
+goblinctl cluster status --api-addr 10.0.0.1:29000
+
+# schedule
+goblinctl cluster agent register ./spec.yaml
+goblinctl cluster agent instances
+
+# move a running process, memory intact
+goblinctl cluster migrate-instance <instance-uuid> node-2
 ```
-
-______________________________________________________________________
-
-## Environment Variables
-
-```bash
-export GOBLIN_ID=node-1
-export GOBLIN_ENABLE_LOCAL_AGENTS=true
-```
-
-Pattern: `GOBLIN_<FLAG_UPPERCASE>`

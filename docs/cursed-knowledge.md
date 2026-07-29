@@ -33,10 +33,10 @@ This file contains lessons learned the hard way. Read this before debugging "imp
 ### The quic-go API Trap
 
 ```go
-// ❌ This haunted us for 30+ iterations
+// WRONG - this haunted us for 30+ iterations
 var conn quic.Connection  // undefined: quic.Connection
 
-// ✅ The truth
+// RIGHT - the truth
 var conn *quic.Conn
 stream, _ := conn.AcceptStream(ctx)  // Returns *quic.Stream
 io.ReadFull(stream, buf)  // Use directly, not *stream
@@ -47,20 +47,20 @@ io.ReadFull(stream, buf)  // Use directly, not *stream
 When creating QUIC adapters for existing RPC methods, use the ACTUAL types:
 
 ```go
-// ❌ Creating new types breaks RPC signatures
+// WRONG - creating new types breaks RPC signatures
 type JobSubmitRequest struct { ... }
 
-// ✅ Use existing scheduler types
+// RIGHT - use existing scheduler types
 var job scheduler.Job  // Matches SubmitJob(*scheduler.Job, *string)
 ```
 
 ### TUI Field Name Changes
 
 ```go
-// ❌ OLD                  // ✅ NEW
-AgentID   → ID
-AgentType → Type  
-Status    → State
+// OLD                     // NEW
+AgentID   -> ID
+AgentType -> Type  
+Status    -> State
 ```
 
 ### The Reward

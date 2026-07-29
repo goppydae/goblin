@@ -47,7 +47,7 @@ This checklist tracks the validation steps for ensuring deterministic cluster be
 - [ ] Verify agents are healthy
 - [ ] Verify agents are in sync
 - [ ] Verify agents are in the same state
-- [ ] Verify agent lifecycle phases (Init → Start → Stop → Reload)
+- [ ] Verify agent lifecycle phases (Init -> Start -> Stop -> Reload)
 - [ ] Verify dependency semantics between agents (if applicable)
 - [ ] Verify agent introspection output is stable and comparable
 

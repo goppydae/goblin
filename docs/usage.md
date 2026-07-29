@@ -1,85 +1,103 @@
 # Goblin Usage Guide
 
-This guide covers how to run Goblin in various configurations.
+How to run Goblin. For the full flag and command surface, see the
+[CLI Reference](cli-reference.md).
 
 ## Prerequisites
 
-- **Goblin Binary**: Built via `nix develop -c mage build`.
-- **Ports**: Ensure necessary ports aren't blocked by firewalls.
+- **Binaries**: built with `nix develop -c mage build`, producing
+  `bin/goblind` and `bin/goblinctl`.
+- **Ports**: one UDP port per node, `29000` by default. Everything -
+  gossip, consensus, RPC, the embedded kernel, and checkpoint transfer
+  - shares it, routed by TLS ALPN. There is no separate Serf or Raft
+  port to open.
 
-## Single Node (Development)
-
-Start a single node with default settings:
+## Single node
 
 ```bash
-# Uses hostname as ID, listening on 127.0.0.1:29010 (Serf) and :29020 (Raft)
 ./bin/goblind
 ```
 
-## Multi-Node Local Cluster
+Uses the hostname as the node ID and binds `127.0.0.1:29000`. With no
+`--join`, the node bootstraps a cluster of one.
 
-To simulate a 3-node cluster on a single machine, you must use different ports and data directories.
+## Multi-node cluster on one machine
 
-### Node 1 (Bootstrap)
-
-Starts the first node.
-
-```bash
-./bin/goblind \
-  --id node1 \
-  --serf-addr 127.0.0.1:29010 \
-  --raft-addr 127.0.0.1:29020 \
-  --data ./data/node1
-```
-
-### Node 2
-
-Joins Node 1.
+Each node needs its own port and its own data directory. `--join`
+points at the first node's control-plane address.
 
 ```bash
-./bin/goblind \
-  --id node2 \
-  --serf-addr 127.0.0.1:29011 \
-  --raft-addr 127.0.0.1:29021 \
-  --data ./data/node2 \
-  --join 127.0.0.1:29010
+./bin/goblind --id node1 --listen-addr 127.0.0.1:29000 --data ./data/node1
 ```
-
-### Node 3
-
-Joins cluster via Node 1.
 
 ```bash
-./bin/goblind \
-  --id node3 \
-  --serf-addr 127.0.0.1:29012 \
-  --raft-addr 127.0.0.1:29022 \
-  --data ./data/node3 \
-  --join 127.0.0.1:29010
+./bin/goblind --id node2 --listen-addr 127.0.0.1:29001 --data ./data/node2 --join 127.0.0.1:29000
 ```
 
-## Command Line Reference
+```bash
+./bin/goblind --id node3 --listen-addr 127.0.0.1:29002 --data ./data/node3 --join 127.0.0.1:29000
+```
 
-| Flag             | Default           | Description                                                                 |
-| ---------------- | ----------------- | --------------------------------------------------------------------------- |
-| `--id`           | `hostname`        | Unique identifier for the node. Must be stable across restarts.             |
-| `--serf-addr`    | `127.0.0.1:29010` | Bind address for Serf gossip (host:port, UDP/TCP).                          |
-| `--raft-addr`    | `127.0.0.1:29020` | Bind address for Raft consensus (host:port, QUIC).                          |
-| `--api-addr`     | `127.0.0.1:29000` | Bind address for QUIC API (host:port, UDP).                                 |
-| `--tls-ca`       | `""`              | Path to CA certificate for API TLS verification.                            |
-| `--tls-insecure` | `false`           | Skip API TLS verification (INSECURE).                                       |
-| `--data`         | `./data/raft`     | Directory to store Raft logs and snapshots.                                 |
-| `--join`         | `""`              | Address of an existing cluster member to join (e.g., `192.168.1.10:29010`). |
+## Multi-node cluster across machines
+
+Bind to all interfaces and advertise the address peers should dial.
+`--advertise-addr` takes a bare HOST; the port follows the listen
+address.
+
+```bash
+./bin/goblind --id node1 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.1 --data /var/lib/goblin/raft
+```
+
+```bash
+./bin/goblind --id node2 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.2 --data /var/lib/goblin/raft --join 10.0.0.1:29000
+```
+
+For a fixed set of seeds, `--bootstrap-expect N` on every seed makes
+them wait until N of them are visible and then elect one to bootstrap,
+so no node has to be designated by hand.
+
+## Checking the cluster
+
+```bash
+./bin/goblinctl cluster status --tls-insecure
+```
+
+Note the path: cluster verbs live under `goblinctl cluster`. A bare
+`goblinctl status` is not a command - and because cobra prints help and
+exits 0 for a path that does not exist, the mistake looks like it
+worked.
+
+## Scheduling work
+
+```bash
+./bin/goblinctl cluster agent register ./spec.yaml --tls-insecure
+```
+
+```bash
+./bin/goblinctl cluster agent instances --tls-insecure
+```
+
+## Moving a running process
+
+```bash
+./bin/goblinctl cluster migrate-instance <instance-uuid> node2 --tls-insecure
+```
+
+The process is checkpointed with CRIU, its memory image is transferred,
+and it is restored on the destination under the same instance UUID.
+This needs CRIU on both nodes and the capabilities the NixOS module
+grants; see `nix/module.nix`.
+
+`cluster migrate <job-id> <node>` is a different operation - it
+reassigns a job, and the process does not survive.
 
 ## Monitoring
 
-Serf logs will appear in stdout/stderr indicating member joins/leaves.
-The distributed event bus will log `[cluster]` events.
+Serf membership joins and leaves appear on stdout, as do distributed
+event bus events. `--log-format json` switches to structured output,
+and `--metrics-addr` exposes Prometheus metrics.
 
-To check local status:
-
-```bash
-./bin/goblinctl status --tls-insecure
-```
-
-> **Note**: Default `goblind` uses self-signed certs. Use `--tls-insecure` locally. For production, provide a CA via `--tls-ca`.
+> **Note**: with no `--tls-cert` and `--tls-key`, `goblind` generates an
+> ephemeral self-signed certificate and does not verify peers. Use
+> `--tls-insecure` on the client locally. For production, supply real
+> certificates and a CA.

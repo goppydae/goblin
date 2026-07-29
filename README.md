@@ -8,67 +8,94 @@ While GAPI provides the local runtime library, Goblin is the **Production Daemon
 
 It **embeds** GAPI to run agents locally, while adding:
 
-- **Cluster Membership** - Node discovery via Serf
-- **Consensus** - Leader election via Raft
-- **Distributed Events** - Cluster-wide pub/sub messaging
-- **Multi-Node Coordination** - Reconcile desired state across nodes
+- **Cluster membership** - node discovery via Serf
+- **Consensus** - leader election and a replicated instance table via Raft
+- **Distributed events** - cluster-wide pub/sub messaging
+- **Multi-node coordination** - reconcile desired state across nodes
+- **Capability tokens** - every mutating verb authorized against a named
+  subject and audited through Raft
+- **Live migration** - move a running process between nodes with its
+  memory intact, under an unchanged instance UUID
+- **One control-plane port** - kernel, RPC, gossip, Raft and checkpoint
+  transfer share a single QUIC address, routed by TLS ALPN
 
 **You only need running `goblind` on your servers.** No separate `gapid` is required.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│                  Goblin Cluster                 │
-├─────────────────────────────────────────────────┤
-│                                                 │
-│  Node A (Leader)         Node B         Node C  │
-│  ┌──────────────┐     ┌──────────┐   ┌────────┐│
-│  │ GAPI (Embedded)  │     │ GAPI     │   │ GAPI   ││
-│  │ Runtime          │     │ (Embedded│   │ (Embed ││
-│  └──────┬───────┘     │ visor    │   │ visor  ││
-│         │             └────┬─────┘   └───┬────┘│
-│         │                  │             │     │
-│  ┌──────▼──────────────────▼─────────────▼────┐│
-│  │     Distributed Event Bus (Goblin)         ││
-│  │  - Cluster-wide pub/sub                    ││
-│  │  - Leader-aware routing                    ││
-│  │  - Eventual consistency                    ││
-│  └────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────┘
++-------------------------------------------------+
+|                  Goblin Cluster                 |
++-------------------------------------------------+
+|                                                 |
+|  Node A (Leader)      Node B          Node C    |
+|  +----------------+   +------------+  +-------+ |
+|  | GAPI (embedded)|   | GAPI       |  | GAPI  | |
+|  | runtime        |   | (embedded) |  | (emb) | |
+|  +--------+-------+   +-----+------+  +---+---+ |
+|           |                 |             |     |
+|  +--------v-----------------v-------------v---+ |
+|  |      Distributed Event Bus (Goblin)        | |
+|  |  - Cluster-wide pub/sub                    | |
+|  |  - Leader-aware routing                    | |
+|  |  - Eventual consistency                    | |
+|  +--------------------------------------------+ |
++-------------------------------------------------+
 ```
 
 ## Quick Start
 
 ```bash
-# Build
 nix develop -c mage build
-
-# Run single node
-./bin/goblind
-
-# Run multi-node cluster
-# See docs/usage.md
 ```
+
+Single node - with no `--join`, it bootstraps a cluster of one:
+
+```bash
+./bin/goblind
+```
+
+Inspect it. Note that cluster verbs live under `goblinctl cluster`; a
+bare `goblinctl status` is not a command:
+
+```bash
+./bin/goblinctl cluster status --tls-insecure
+```
+
+For a multi-node cluster see [docs/usage.md](docs/usage.md), and for the
+full flag and command surface see
+[docs/cli-reference.md](docs/cli-reference.md).
 
 ## Documentation
 
-- **[Installation](docs/usage.md)**: Setup and multi-node guide.
-- **[Architecture](docs/architecture.md)**: Deep dive into Serf, Raft, and Event Bus.
+- **[Usage](docs/usage.md)**: setup and multi-node guide.
+- **[CLI reference](docs/cli-reference.md)**: every `goblind` flag and `goblinctl` command.
+- **[Architecture](docs/architecture.md)**: Serf, Raft, the event bus, the ALPN registry, live migration.
+- **[Ecosystem](docs/ecosystem.md)**: how Goblin and GAPI divide the work.
 
 ## Project Structure
 
 ```
 goblin/
-├── cmd/
-│   ├── goblinctl/        # CLI Tool
-│   └── goblind/          # Daemon entry point
-├── core/
-│   ├── cluster/          # Serf Membership
-│   ├── consensus/        # Raft Consensus
-│   └── eventbus/         # Distributed Event Bus
-├── docs/                 # Documentation
-└── AGENTS.md             # Agent development guide
+|-- cmd/
+|   |-- goblinctl/        # Control CLI
+|   `-- goblind/          # Daemon entry point
+|-- core/
+|   |-- capability/       # Capability tokens: rights, verbs, revocation
+|   |-- cluster/          # Serf membership
+|   |-- consensus/        # Raft consensus and the instance FSM
+|   |-- eventbus/         # Distributed event bus
+|   |-- metrics/          # Prometheus collectors
+|   |-- migration/        # Live migration: store, transfer, coordinator
+|   |-- scheduler/        # Placement, reconciliation, locators
+|   |-- store/            # Distributed KV over Raft
+|   `-- transport/        # Shared QUIC listener, ALPN registry
+|-- internal/
+|   `-- supervisor/       # Daemon wiring and RPC handlers
+|-- nix/                  # NixOS module, package, VM tests
+|-- proto/goblin/v1/      # Schemas (raft, scheduler, rpc, migration)
+|-- docs/                 # Documentation
+`-- divergence.jsonl      # Where design and code currently disagree
 ```
 
 ## License

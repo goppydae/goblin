@@ -2,255 +2,234 @@
 
 ## Overview
 
-The GoPPydae ecosystem provides a unified platform for agent-based supervision, scaling from single-node local management to globally distributed orchestration.
+The GoPPydae ecosystem scales agent supervision from a single node to a
+distributed cluster, along one line: **mechanism versus policy**.
 
 ## Products
 
-### GAPI - Local Supervision Kernel
+### GAPI - local supervision kernel
 
-**Purpose**: Single-node agent lifecycle management
+Single-node agent lifecycle management.
 
-**Components**:
+- **Core libraries** (`gapi/core/*`): agent manager, lifecycle
+  controller, event bus, transport, signal delivery, checkpoint.
+- **Daemon** (`gapid`): standalone supervisor, and PID 1 when asked.
+- **CLI** (`gapictl`): local agent operations.
 
-- **Core Libraries** (`gapi/core/*`): Agent manager, lifecycle controller, event bus
-- **Daemon** (`gapid`): Standalone supervisor for non-cluster nodes
-- **CLI** (`gapictl`): Local agent operations
+Used for standalone nodes, development, and edge deployments.
 
-**Use Cases**:
+### Goblin - distributed supervisor
 
-- Standalone nodes (no clustering needed)
-- Development/testing environments
-- Edge deployments
+Multi-node coordination and global scheduling.
 
-______________________________________________________________________
+- **Distributed primitives**: Raft consensus, Serf membership, a
+  distributed event bus.
+- **Scheduler**: global placement with redundancy.
+- **Migration coordinator**: live process migration between nodes.
+- **Embedded GAPI kernel**: in process, not a separate daemon.
+- **Daemon** (`goblind`), **CLI** (`goblinctl`).
 
-### Goblin - Distributed Supervisor
+Used for production clusters and multi-region deployments.
 
-**Purpose**: Multi-node cluster coordination and global scheduling
-
-**Components**:
-
-- **Distributed Primitives**: Raft consensus, Serf membership, distributed event bus
-- **Scheduler**: Global job placement with redundancy
-- **Local Agent Manager**: Uses GAPI core libraries in-process
-- **Daemon** (`goblind`): Cluster node binary
-- **CLI** (`goblinctl`): Cluster operations, unified TUI
-
-**Use Cases**:
-
-- Production clusters (high availability)
-- Algorithmic trading (global redundancy)
-- Multi-region deployments
-
-______________________________________________________________________
-
-## Architecture Layers
+## Architecture layers
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                     Application Layer                         │
-│              (Trading Agents, Data Pipelines)                 │
-├──────────────────────────────────────────────────────────────┤
-│  GAPI Daemon (gapid)  │  Goblin Daemon (goblind)             │
-│  • Local supervision  │  • Global scheduling                 │
-│  • Port 4242         │  • Cluster coordination              │
-│                       │  • Uses GAPI core (in-process)       │
-│                       │  • Port 29000 (QUIC + ALPN)          │
-├──────────────────────────────────────────────────────────────┤
-│               GAPI Core Libraries (gapi/core/*)               │
-│  • agentmgr  • lifecycle  • eventbus  • transport            │
-├──────────────────────────────────────────────────────────────┤
-│                     ADK (Python/Go)                           │
-│               Agent Development Kit                           │
-└──────────────────────────────────────────────────────────────┘
++--------------------------------------------------------------+
+|                     Application layer                        |
+|              (trading agents, data pipelines)                |
++--------------------------------------------------------------+
+|  GAPI daemon (gapid)     |  Goblin daemon (goblind)          |
+|  - local supervision     |  - global scheduling              |
+|  - port 14242 (QUIC)     |  - cluster coordination           |
+|                          |  - embeds the GAPI kernel         |
+|                          |  - port 29000 (QUIC + ALPN)       |
++--------------------------------------------------------------+
+|               GAPI core libraries (gapi/core/*)              |
+|  - agentmgr  - lifecycle  - eventbus  - transport            |
+|  - procsig   - checkpoint - crypto    - cgroups              |
++--------------------------------------------------------------+
+|                        ADK (Python/Go)                       |
+|                   Agent Development Kit                      |
++--------------------------------------------------------------+
 ```
 
-## Key Design Decisions
+## Key design decisions
 
-### 1. GAPI Core as Library
+### 1. The kernel is a library
 
-**Rationale**: Enable code reuse without embedding full daemons.
+`gapi/core/*` are public APIs. `goblind` imports them and runs the agent
+manager in process, so local supervision costs no network hop and both
+products manage agents identically. A Goblin deployment is one binary.
 
-**Implementation**:
+### 2. Unified transport (QUIC + ALPN)
 
-- `gapi/core/*` packages are public APIs
-- Both `gapid` and `goblind` import from `core/`
-- Semantic versioning for stability
-
-**Benefits**:
-
-- Single executable deployment (`goblind` only)
-- Zero network overhead for local operations
-- Consistent agent management across products
-
-______________________________________________________________________
-
-### 2. Unified Transport (QUIC + ALPN)
-
-**Rationale**: Single port for all communication, protocol multiplexing via ALPN.
-
-**Goblin Port 29000**:
+One port carries every protocol, routed by TLS ALPN.
 
 ```
-QUIC Listener
-├─ ALPN: "goblin-rpc"  → Cluster RPC (SchedulerRPC, Members, etc.)
-└─ ALPN: "gapi-quic"   → Agent Events (lifecycle, logs, metrics)
+Goblin QUIC listener :29000
+|-- ALPN "gapi-quic"     -> embedded kernel protocol
+|-- ALPN "goblin-rpc"    -> cluster RPC (SchedulerRPC, NodeRPC)
+|-- ALPN "serf-quic"     -> membership gossip
+|-- ALPN "raft-quic"     -> Raft replication
+`-- ALPN "goblin-ckpt"   -> CRIU checkpoint images
 ```
 
-**Benefits**:
+One firewall rule, one certificate, stream multiplexing, and an
+append-only registry so a collision is a review failure rather than a
+runtime discovery.
 
-- Simple firewall rules (one port)
-- Unified TLS management
-- Stream multiplexing
+### 3. Event bus scoping
 
-______________________________________________________________________
+- **Local** (in-memory): `agent.*`, `metrics.*`
+- **Cluster** (Serf gossip): `cluster.node.*`, `cache.invalidate`
+- **Leader** (Raft log): `global.config`, `job.assign`
 
-### 3. Event Bus Scoping
+### 4. Identity outlives location
 
-**Local Scope** (GAPI):
+An instance UUID is minted at admission and never changes. Where the
+instance runs is a separate, mutable locator carried in gossip. That
+separation is what makes live migration expressible: the process moves,
+the identity does not.
 
-- `agent.*` - Agent lifecycle events
-- `metrics.*` - Local metrics
+## Deployment patterns
 
-**Cluster Scope** (Goblin via Serf):
-
-- `cluster.node.*` - Membership changes
-- `cache.invalidate` - Gossip-based coordination
-
-**Leader Scope** (Goblin via Raft):
-
-- `global.config` - Cluster-wide configuration
-- `job.assign` - Scheduler decisions
-
-______________________________________________________________________
-
-## Deployment Patterns
-
-### Pattern 1: Standalone GAPI
+### Pattern 1: standalone GAPI
 
 ```bash
-# Single node, no clustering
-gapid daemon start
-gapictl agent lifecycle --start my-agent
+gapid
 ```
-
-**Use Case**: Development, edge nodes, simple deployments
-
-______________________________________________________________________
-
-### Pattern 2: Goblin Cluster
 
 ```bash
-# Node 1 (bootstrap)
-goblind --id=node1 --enable-local-agents
-
-# Node 2 (join)
-goblind --id=node2 --join=node1:29010 --enable-local-agents
-
-# Unified control
-goblinctl tui  # Shows: cluster nodes + jobs + local agents
+gapictl agent status
 ```
-
-**Use Case**: Production HA clusters, global scheduling
-
-______________________________________________________________________
-
-### Pattern 3: Hybrid (Advanced)
 
 ```bash
-# Separate GAPI daemon + Goblin cluster coordination
-gapid daemon start --port=4242
-goblind --port=29000  # No local agents
+gapictl lifecycle start my-agent
 ```
 
-**Use Case**: Legacy migration, specialized deployments
+Development, edge nodes, simple deployments.
 
-______________________________________________________________________
+### Pattern 2: Goblin cluster
 
-## Migration Path
-
-### From Standalone GAPI → Goblin Cluster
-
-1. **Before**: Run `gapid` on each node
-1. **After**: Run `goblind --enable-local-agents` on each node
-1. **Result**: Agents managed locally, cluster provides global scheduling
-
-**No Breaking Changes**: `gapictl` continues to work against local GAPI if using hybrid pattern.
-
-______________________________________________________________________
-
-## Global Agent Scheduling (Future)
-
-**Vision**: Agents as first-class scheduled entities with redundancy.
+Local agent management is always on - `goblind` embeds the kernel, so
+there is no flag to enable it.
 
 ```bash
-# Submit agent job with replicas
-goblinctl job submit-agent \
-  --type=python-trader \
-  --replicas=3 \
-  --constraints region=us-east
-
-# Scheduler places across 3 nodes
-# Auto-restart on node failure via Raft watch
+goblind --id node1 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.1
 ```
 
-**Benefits for Algo Trading**:
+```bash
+goblind --id node2 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.2 --join 10.0.0.1:29000
+```
 
-- High availability (redundant instances)
-- Geographic distribution (latency optimization)
-- Automatic failover (Raft-based health monitoring)
+```bash
+goblinctl tui
+```
 
-______________________________________________________________________
+Production HA clusters and global scheduling.
 
-## Security Model
+### Pattern 3: separate GAPI daemon
 
-### GAPI (Local)
+```bash
+gapid --runtime-addr 127.0.0.1:14242
+```
 
-- **Boundary**: Process isolation, cgroups
-- **TLS**: Optional for local clients
-- **Access**: Unix socket or localhost QUIC
+```bash
+goblind --id node1 --listen-addr 0.0.0.0:29000
+```
 
-### Goblin (Distributed)
+`goblind` still embeds its own kernel; running `gapid` alongside is for
+supervising a distinct, non-clustered set of agents on the same host.
 
-- **Boundary**: Node-to-node mTLS (Raft/Serf)
-- **TLS**: Required for cluster communication
-- **Access**: Certificate-based authentication
+## Global agent scheduling
 
-______________________________________________________________________
+Shipped. Specs are registered with the cluster and the scheduler places
+replicas across nodes, restarting them elsewhere on node failure.
 
-## Performance Characteristics
+```bash
+goblinctl cluster agent register ./spec.yaml
+```
 
-### GAPI Core (In-Process)
+```bash
+goblinctl cluster agent scale my-agent 3
+```
 
-- Agent queries: **< 1ms** (direct function call)
-- Event propagation: **Memory-speed**
-- Overhead: **None** (linked library)
+```bash
+goblinctl cluster agent instances
+```
 
-### Goblin Cluster
+A running instance can also be moved between nodes with its memory
+intact:
 
-- Gossip propagation: **~100ms** (SWIM eventual consistency)
-- Raft commit: **~10ms** (2-phase quorum)
-- Leader election: **~2s** (timeout-based)
+```bash
+goblinctl cluster migrate-instance <instance-uuid> node-2
+```
 
-______________________________________________________________________
+## Security model
 
-## Component Ownership
+### GAPI (local)
 
-| Component               | GAPI             | Goblin         |
-| ----------------------- | ---------------- | -------------- |
-| Agent Lifecycle         | ✅ Core + Daemon | ✅ Via `core/` |
-| Event Bus (Local)       | ✅               | ✅ Via `core/` |
-| Event Bus (Distributed) | ❌               | ✅             |
-| Cluster Membership      | ❌               | ✅ (Serf)      |
-| Consensus               | ❌               | ✅ (Raft)      |
-| Global Scheduling       | ❌               | ✅             |
-| Metrics Collection      | ✅ Local         | ✅ Aggregated  |
+- **Boundary**: process isolation and cgroups v2.
+- **Provenance**: agent binaries carry a BLAKE3 `.b3` digest and an
+  Ed25519 `.sig`. Enforcement is `supervisor.productionMode` in
+  `gapid`'s config file, or `RUNTIME_SUPERVISOR_PRODUCTIONMODE` in its
+  environment. **`gapid` has no `--production` flag** - it accepts only
+  `--runtime-addr`, `--log-level`, `--pid1` and `--no-early-mounts`.
+  `--production` is `goblind`'s flag, and the two are not the same
+  switch: gapi's gates agent signature verification and nothing else,
+  where goblin's also refuses to start without TLS.
+- **TLS**: optional for local clients, and
+  `transport.insecureSkipVerify` defaults to **true**. Production mode
+  does not change that; set it to `false` yourself.
 
-______________________________________________________________________
+### Goblin (distributed)
+
+- **Transport**: TLS 1.3 between nodes. Without configured
+  certificates the daemon generates an ephemeral self-signed one and
+  does not verify peers; `--production` refuses to start that way.
+- **Authorization**: every mutating verb is gated on a capability
+  token - Ed25519-signed, short-TTL, scoped to a named subject, and
+  audited through Raft. A token minted for one instance cannot act on
+  another. Rights are partitioned: the kernel owns bits 0-7 (signal
+  delivery), the orchestrator owns bits 8 and up (`agent.register`,
+  `agent.scale`, `agent.delete`, `node.drain`, `job.submit`,
+  `job.migrate`, `event.publish`).
+- **Checkpoint transfer**: a peer pulling an instance's memory image
+  must present a token whose subject matches that instance.
+
+## Performance characteristics
+
+### Embedded kernel (in process)
+
+- Agent queries: direct function call.
+- Event propagation: memory speed.
+
+### Goblin cluster
+
+- Gossip propagation: ~100ms (SWIM, eventually consistent).
+- Raft commit: ~10ms (quorum).
+- Leader election: ~2s (timeout-based).
+
+## Component ownership
+
+| Component | GAPI | Goblin |
+| --------- | ---- | ------ |
+| Agent lifecycle | yes (core + daemon) | yes (via `core/`) |
+| Checkpoint/restore mechanism | yes (`core/checkpoint`) | yes (via `core/`) |
+| Signal delivery (pidfd + epoch) | yes (`core/procsig`) | yes (via `core/`) |
+| Event bus (local) | yes | yes (via `core/`) |
+| Event bus (distributed) | no | yes |
+| Cluster membership | no | yes (Serf) |
+| Consensus | no | yes (Raft) |
+| Global scheduling | no | yes |
+| Live migration policy | no | yes (`core/migration`) |
+| Capability tokens | verification | issuance + verification |
+| Metrics | local | aggregated |
 
 ## References
 
-- **GAPI AGENTS.md**: Single-node design principles
-- **Goblin AGENTS.md**: Distributed system principles
-- **Goblin docs/architecture.md**: Detailed component breakdown
-- **Implementation Plan**: Phase-based migration strategy
+- [Goblin architecture](architecture.md) - component breakdown
+- [CLI reference](cli-reference.md) - every flag and command
+- [Usage](usage.md) - running a cluster
+- Each repo's `divergence.jsonl` - where the design and the code
+  currently disagree, and why
