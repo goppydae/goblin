@@ -50,9 +50,13 @@ jobs:
         working-directory: goblin
         run: nix develop -c mage vuln
 
+      # Was 'go test -v ./...', which silently dropped the -race flag the
+      # mage target carries (GOBLIN-DIV-035). GOBLIN-DIV-002 records
+      # -race finding a real data race the moment it was enabled; running
+      # the raw tool put that back out of reach.
       - name: Execute System Tests
         working-directory: goblin
-        run: nix develop -c go test -v ./...
+        run: nix develop -c mage test
 
   no-replace-module-resolution:
     # Proves the ledger exit for the first tagged release: the module
@@ -80,3 +84,128 @@ jobs:
           git config --global url."https://x-access-token:${{ secrets.GOPPYDAE_READ_TOKEN }}@github.com/goppydae/".insteadOf "https://github.com/goppydae/"
           rm -rf vendor
           nix develop -c go build ./...
+
+  ecosystem-gates:
+    # GOBLIN-DIV-035. The gates existed and no job invoked them, so lint,
+    # gosec and schema regressions merged green. This job is the caller.
+    #
+    # Sibling checkouts are here for the gates, not for module
+    # resolution: GOWORK stays off, so the build still resolves through
+    # vendor/ exactly as the lone-clone contract requires.
+    name: Ecosystem Gates
+    runs-on: ubuntu-latest
+    env:
+      GOWORK: "off"
+    steps:
+      - name: Checkout Workspace (Goblin)
+        uses: actions/checkout@v4
+        with:
+          path: goblin
+          # buf breaking needs a baseline commit to exist locally; the
+          # default depth-1 clone has only the tip.
+          fetch-depth: 0
+
+      - name: Checkout Workspace (Gapi)
+        uses: actions/checkout@v4
+        with:
+          repository: goppydae/gapi
+          path: gapi
+          token: ${{ secrets.CI_PAT }}
+
+      - name: Checkout Workspace (Magelib)
+        uses: actions/checkout@v4
+        with:
+          repository: goppydae/magelib
+          path: magelib
+          token: ${{ secrets.CI_PAT }}
+
+      - name: Synchronize Environment (Nix)
+        uses: cachix/install-nix-action@v24
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      # Five of the six checks are real in CI. The sixth, workspace-shape,
+      # only stats the sibling directories this job just created - and its
+      # ReplaceTargets list describes replace directives that no longer
+      # exist in any go.mod. It proves nothing here; see the note filed
+      # against it in the divergence ledger.
+      - name: Validate Dev Shell Against Ecosystem Pins
+        working-directory: goblin
+        run: nix develop -c mage doctor
+
+      - name: Detect Tool Skew Across Sibling Shells
+        working-directory: goblin
+        run: nix develop -c mage envcheck
+
+      - name: Lint Gate (gofmt, golangci-lint, gosec)
+        working-directory: goblin
+        run: nix develop -c mage lint
+
+      # The Proto target's own baseline is ".git#ref=HEAD", which is
+      # correct for a developer comparing an edited tree against the last
+      # commit and inert here: a fresh checkout IS HEAD, so the schema
+      # would be compared against itself and could never fail. Name a
+      # baseline this tree does not equal. This matters most in goblin,
+      # where the cluster RPC payloads travel as JSON inside the envelope
+      # (GOBLIN-DIV-036) and buf sees only the envelope as it is.
+      - name: Schema Gate (buf lint, buf breaking)
+        working-directory: goblin
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -n "$BASE_SHA" ]; then
+            export PROTO_BREAKING_AGAINST=".git#ref=$BASE_SHA"
+          else
+            export PROTO_BREAKING_AGAINST=".git#ref=HEAD~1"
+          fi
+          nix develop -c mage proto
+
+      # 'mage proto' regenerates into proto/. If the committed output
+      # differs from what the pinned plugins produce, the tree is stale
+      # and the generated code under review is not the code the schema
+      # describes.
+      - name: Assert Committed Codegen Is Current
+        working-directory: goblin
+        run: git diff --exit-code
+
+  cluster-e2e:
+    # The 3-node e2e sits behind the 'cluster' build tag, so 'mage test'
+    # reports test/cluster as "[no test files]" and neither CI nor
+    # 'mage All' has ever run it. Measured locally over five runs:
+    # 28.7s wall, failover 17.85-19.92s against a 30s target, spread
+    # quantized by the scheduler's 2s reconciler tick rather than by
+    # machine speed - so the margin survives a slower runner.
+    name: Cluster E2E (3-node)
+    runs-on: ubuntu-latest
+    env:
+      GOWORK: "off"
+    steps:
+      - name: Checkout Workspace (Goblin)
+        uses: actions/checkout@v4
+        with:
+          path: goblin
+
+      - name: Checkout Workspace (Gapi)
+        uses: actions/checkout@v4
+        with:
+          repository: goppydae/gapi
+          path: gapi
+          token: ${{ secrets.CI_PAT }}
+
+      - name: Synchronize Environment (Nix)
+        uses: cachix/install-nix-action@v24
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      # quic-go warns "failed to sufficiently increase receive buffer
+      # size" on stock runners; the control plane is QUIC over loopback
+      # and handshakes drop under the default 208 kiB ceiling. The gapi
+      # workflow has needed this since its QUIC tests landed.
+      - name: Raise UDP Buffers for the QUIC Control Plane
+        run: |
+          sudo sysctl -w net.core.rmem_max=7500000
+          sudo sysctl -w net.core.wmem_max=7500000
+
+      - name: Execute 3-Node Cluster E2E
+        working-directory: goblin
+        run: nix develop -c mage testCluster
