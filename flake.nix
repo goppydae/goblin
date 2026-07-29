@@ -18,7 +18,13 @@
       nixosModules.goblin = self.nixosModules.default;
     }
     //
-    flake-utils.lib.eachDefaultSystem (system:
+    # An explicit system list, not eachDefaultSystem: nixpkgs 26.11 dropped
+    # x86_64-darwin, which eachDefaultSystem still enumerates, so merely
+    # instantiating pkgs for that platform throws and every output
+    # disappears - including the ones that would have evaluated fine. This
+    # list is also honest for a product whose nix/package.nix declares
+    # platforms.linux. gapi hit this first (GAPI-DIV-035).
+    flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ] (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
       in
