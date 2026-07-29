@@ -54,6 +54,19 @@ pkgs.testers.runNixOSTest {
     for cap in ["cap_sys_admin", "cap_checkpoint_restore", "cap_net_admin"]:
         assert cap in caps.lower(), f"{cap} missing from AmbientCapabilities: {caps}"
 
+    # --- criu reachable by the unit --------------------------------------
+    # Granting the capability without putting criu on the unit's PATH
+    # produces a service that is allowed to checkpoint and cannot: it
+    # fails at dump time with "criu not found on PATH". Asserted against
+    # the unit's environment, not the system profile, because that is
+    # what goblind's exec.LookPath actually searches.
+    unit_env = node.succeed(
+        "systemctl show goblin.service -p Environment --value"
+    )
+    assert "criu" in unit_env, (
+        "criu is not on the goblin.service PATH; migration would fail at dump: " + unit_env
+    )
+
     # --- cgroup delegation ---------------------------------------------
     delegate = node.succeed(
         "systemctl show goblin.service -p Delegate --value"

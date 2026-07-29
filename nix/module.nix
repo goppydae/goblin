@@ -63,6 +63,14 @@ in {
     systemd.services.goblin = {
       description = "Goblin Supervisor";
       wantedBy = [ "multi-user.target" ];
+
+      # criu must be on the unit's PATH, not merely installed system
+      # wide. goblind resolves it with exec.LookPath, and a systemd unit
+      # does not inherit a login shell's PATH - so without this the
+      # module grants CAP_CHECKPOINT_RESTORE and then makes checkpointing
+      # impossible, failing at dump time with "criu not found on PATH".
+      # Found by the two-node migration test (GOBLIN-DIV-031).
+      path = optionals cfg.enableMigration [ pkgs.criu ];
       serviceConfig = {
         ExecStart = "${cfg.package}/bin/goblind";
         Restart = "always";
