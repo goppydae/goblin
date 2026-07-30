@@ -20,7 +20,7 @@ type recordingCaller struct {
 	closed bool
 }
 
-func (c *recordingCaller) Call(method string, args, _ interface{}) error {
+func (c *recordingCaller) CallJSON(method string, args, _ interface{}) error {
 	c.method = method
 	c.args = args
 	return c.err

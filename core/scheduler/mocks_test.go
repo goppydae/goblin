@@ -171,12 +171,12 @@ func (m *MockCluster) Members() []serf.Member {
 }
 
 // MockRPCClient implements RPCClient for tests that need agent dispatch
-// to succeed. Every Call reports success; the assertions are on the
+// to succeed. Every CallJSON reports success; the assertions are on the
 // instance state the scheduler records afterwards, not on the wire
 // payload, which is the untyped JSON GOBLIN-DIV-036 tracks.
 type MockRPCClient struct{}
 
-func (MockRPCClient) Call(serviceMethod string, args, reply interface{}) error { return nil }
+func (MockRPCClient) CallJSON(serviceMethod string, args, reply interface{}) error { return nil }
 
 func (MockRPCClient) Close() error { return nil }
 
@@ -189,14 +189,14 @@ func NewMockClientFactory() ClientFactory {
 	return func(addr string) (RPCClient, error) { return MockRPCClient{}, nil }
 }
 
-// BlockingRPCClient parks inside Call until released, so a test can hold
+// BlockingRPCClient parks inside CallJSON until released, so a test can hold
 // a dispatch in flight and observe whether the reconciler waits for it.
 type BlockingRPCClient struct {
 	entered chan<- struct{}
 	release <-chan struct{}
 }
 
-func (c BlockingRPCClient) Call(serviceMethod string, args, reply interface{}) error {
+func (c BlockingRPCClient) CallJSON(serviceMethod string, args, reply interface{}) error {
 	c.entered <- struct{}{}
 	<-c.release
 	return nil

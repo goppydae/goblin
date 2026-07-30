@@ -20,7 +20,7 @@ import (
 
 // RPCClient defines a generic RPC client
 type RPCClient interface {
-	Call(serviceMethod string, args interface{}, reply interface{}) error
+	CallJSON(serviceMethod string, args interface{}, reply interface{}) error
 	Close() error
 }
 

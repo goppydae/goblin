@@ -53,7 +53,7 @@ var globalAgentRegisterCmd = &cobra.Command{
 		defer closeClient(client, &err)
 
 		var resp string
-		if err := client.Call("SchedulerRPC.RegisterGlobalAgent", &spec, &resp); err != nil {
+		if err := client.CallJSON("SchedulerRPC.RegisterGlobalAgent", &spec, &resp); err != nil {
 			return err
 		}
 		fmt.Println(resp)
@@ -72,7 +72,7 @@ var globalAgentListCmd = &cobra.Command{
 		defer closeClient(client, &err)
 
 		var specs []*goblinv1.AgentSpec
-		if err := client.Call("SchedulerRPC.ListGlobalAgents", struct{}{}, &specs); err != nil {
+		if err := client.CallJSON("SchedulerRPC.ListGlobalAgents", struct{}{}, &specs); err != nil {
 			return err
 		}
 
@@ -98,7 +98,7 @@ var globalAgentGetCmd = &cobra.Command{
 
 		id := args[0]
 		var spec goblinv1.AgentSpec
-		if err := client.Call("SchedulerRPC.GetGlobalAgent", id, &spec); err != nil {
+		if err := client.CallJSON("SchedulerRPC.GetGlobalAgent", id, &spec); err != nil {
 			return err
 		}
 
@@ -122,7 +122,7 @@ var globalAgentDeleteCmd = &cobra.Command{
 
 		id := args[0]
 		var resp string
-		if err := client.Call("SchedulerRPC.DeleteGlobalAgent", id, &resp); err != nil {
+		if err := client.CallJSON("SchedulerRPC.DeleteGlobalAgent", id, &resp); err != nil {
 			return err
 		}
 		fmt.Println(resp)
@@ -152,7 +152,7 @@ var globalAgentScaleCmd = &cobra.Command{
 			Replicas: int32(replicas),
 		}
 		var resp string
-		if err := client.Call("SchedulerRPC.ScaleAgent", &req, &resp); err != nil {
+		if err := client.CallJSON("SchedulerRPC.ScaleAgent", &req, &resp); err != nil {
 			return err
 		}
 		fmt.Println(resp)
@@ -176,7 +176,7 @@ var globalAgentInstancesCmd = &cobra.Command{
 			req.SpecID = args[0]
 		}
 		var instances []*goblinv1.AgentInstance
-		if err := client.Call("SchedulerRPC.ListAgentInstances", &req, &instances); err != nil {
+		if err := client.CallJSON("SchedulerRPC.ListAgentInstances", &req, &instances); err != nil {
 			return err
 		}
 
@@ -216,7 +216,7 @@ var globalAgentSignalCmd = &cobra.Command{
 			Signum:     int32(signum),
 		}
 		var resp string
-		if err := client.Call("SchedulerRPC.SignalAgentInstance", &req, &resp); err != nil {
+		if err := client.CallJSON("SchedulerRPC.SignalAgentInstance", &req, &resp); err != nil {
 			return err
 		}
 		fmt.Println(resp)
