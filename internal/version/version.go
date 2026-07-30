@@ -5,4 +5,4 @@ package version
 
 // Version is injected at build time via
 // -ldflags "-X github.com/goppydae/goblin/internal/version.Version=<v>".
-var Version = "dev"
+  var Version = "dev"

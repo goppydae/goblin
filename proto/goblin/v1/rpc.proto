@@ -7,7 +7,7 @@ option go_package = "github.com/goppydae/goblin/proto;goblinv1";
 // RPC Request message
 message RPCRequest {
   uint32 request_id = 1;
-  string method = 2;      // e.g. "SchedulerRPC.ListJobs"
+  int64 method = 2;      // e.g. "SchedulerRPC.ListJobs"
   bytes payload = 3;     // Protobuf-encoded request
 }
 
