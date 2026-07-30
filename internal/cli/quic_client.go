@@ -50,8 +50,8 @@ func NewQUICRPCClient(addr string, tlsConfig transport.TLSConfig) (*QUICRPCClien
 	return &QUICRPCClient{conn: conn}, nil
 }
 
-// Call makes an RPC call and returns the response
-func (c *QUICRPCClient) Call(method string, request interface{}, response interface{}) (err error) {
+// CallJSON makes an RPC call and returns the response
+func (c *QUICRPCClient) CallJSON(method string, request interface{}, response interface{}) (err error) {
 	// Marshal request payload
 	payload, err := json.Marshal(request)
 	if err != nil {

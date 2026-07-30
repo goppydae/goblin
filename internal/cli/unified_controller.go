@@ -45,7 +45,7 @@ func (u *UnifiedController) FetchStatus(ctx context.Context) (_ []tui.AgentStatu
 	}
 
 	var members []MemberShort
-	if err := client.Call("SchedulerRPC.Members", struct{}{}, &members); err != nil {
+	if err := client.CallJSON("SchedulerRPC.Members", struct{}{}, &members); err != nil {
 		return nil, fmt.Errorf("failed to get cluster members: %w", err)
 	}
 
@@ -59,7 +59,7 @@ func (u *UnifiedController) FetchStatus(ctx context.Context) (_ []tui.AgentStatu
 
 	// Section 2: Jobs
 	var jobs []supervisor.JobInfo
-	if err := client.Call("SchedulerRPC.ListJobs", struct{}{}, &jobs); err != nil {
+	if err := client.CallJSON("SchedulerRPC.ListJobs", struct{}{}, &jobs); err != nil {
 		return nil, fmt.Errorf("failed to get jobs: %w", err)
 	}
 
@@ -73,7 +73,7 @@ func (u *UnifiedController) FetchStatus(ctx context.Context) (_ []tui.AgentStatu
 
 	// Section 3: Local GAPI Agents (via embedded core)
 	var localAgents []supervisor.LocalAgentInfo
-	if err := client.Call("SchedulerRPC.ListLocalAgents", struct{}{}, &localAgents); err != nil {
+	if err := client.CallJSON("SchedulerRPC.ListLocalAgents", struct{}{}, &localAgents); err != nil {
 		// Log warning but continue - local agents may not be enabled
 		slog.Default().LogAttrs(ctx, slog.LevelWarn, "could not fetch local agents", logattr.Err(err))
 	} else {
@@ -88,7 +88,7 @@ func (u *UnifiedController) FetchStatus(ctx context.Context) (_ []tui.AgentStatu
 
 	// Section 2.5: Global Agents (Specs)
 	var globalSpecs []*goblinv1.AgentSpec
-	if err := client.Call("SchedulerRPC.ListGlobalAgents", struct{}{}, &globalSpecs); err != nil {
+	if err := client.CallJSON("SchedulerRPC.ListGlobalAgents", struct{}{}, &globalSpecs); err != nil {
 		slog.Default().LogAttrs(ctx, slog.LevelWarn, "failed to list global agents", logattr.Err(err))
 	} else {
 		for _, spec := range globalSpecs {
@@ -154,7 +154,7 @@ func (u *UnifiedController) GetLogs(ctx context.Context, id string) (<-chan stri
 		// 1. Dump Initial State (Context only)
 		var members []supervisor.MemberInfo // Reusing struct from supervisor if available or defining local
 		// Note: MemberInfo is in supervisor/scheduler_rpc.go
-		if err := client.Call("SchedulerRPC.Members", struct{}{}, &members); err == nil {
+		if err := client.CallJSON("SchedulerRPC.Members", struct{}{}, &members); err == nil {
 			for _, m := range members {
 				role := "follower"
 				if m.Leader {
@@ -165,7 +165,7 @@ func (u *UnifiedController) GetLogs(ctx context.Context, id string) (<-chan stri
 		}
 
 		var jobs []supervisor.JobInfo
-		if err := client.Call("SchedulerRPC.ListJobs", struct{}{}, &jobs); err == nil {
+		if err := client.CallJSON("SchedulerRPC.ListJobs", struct{}{}, &jobs); err == nil {
 			for _, j := range jobs {
 				ch <- fmt.Sprintf("[JOB] %s: %s (on %s)", j.JobID, j.Status, j.AssignedNode)
 			}
@@ -191,7 +191,7 @@ func (u *UnifiedController) GetLogs(ctx context.Context, id string) (<-chan stri
 				req := supervisor.GetEventsRequest{Cursor: lastCursor}
 				var events []supervisor.LogEvent
 
-				if err := client.Call("SchedulerRPC.GetEvents", &req, &events); err != nil {
+				if err := client.CallJSON("SchedulerRPC.GetEvents", &req, &events); err != nil {
 					ch <- fmt.Sprintf("[ERROR] Failed to fetch events: %v", err)
 				} else {
 					for _, event := range events {

@@ -63,7 +63,7 @@ const (
 // scheduler's RPCClient; declared here so this package does not import
 // the scheduler and create a cycle.
 type Caller interface {
-	Call(serviceMethod string, args interface{}, reply interface{}) error
+	CallJSON(serviceMethod string, args interface{}, reply interface{}) error
 	Close() error
 }
 
@@ -97,7 +97,7 @@ func (r *RPCNodes) call(ctx context.Context, nodeID, method string, req interfac
 	defer func() { _ = client.Close() }()
 
 	var resp string
-	if err := client.Call(method, req, &resp); err != nil {
+	if err := client.CallJSON(method, req, &resp); err != nil {
 		return fmt.Errorf("%s on node %s: %w", method, nodeID, err)
 	}
 	return nil

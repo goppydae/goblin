@@ -264,7 +264,7 @@ func (s *Scheduler) startAgentOnNode(ctx context.Context, nodeID string, inst *g
 
 	slog.Default().LogAttrs(ctx, slog.LevelInfo, "calling start agent instance", logattr.NodeID(nodeID), logattr.Addr(addr))
 	var resp string
-	if err := client.Call("NodeRPC.StartAgentInstance", &payload, &resp); err != nil {
+	if err := client.CallJSON("NodeRPC.StartAgentInstance", &payload, &resp); err != nil {
 		return fmt.Errorf("rpc call failed: %w", err)
 	}
 
@@ -302,7 +302,7 @@ func (s *Scheduler) stopAgentOnNode(ctx context.Context, nodeID, instanceID stri
 
 	slog.Default().LogAttrs(ctx, slog.LevelInfo, "calling stop agent instance", logattr.NodeID(nodeID), logattr.Addr(addr))
 	var resp string
-	if err := client.Call("NodeRPC.StopAgentInstance", &payload, &resp); err != nil {
+	if err := client.CallJSON("NodeRPC.StopAgentInstance", &payload, &resp); err != nil {
 		return fmt.Errorf("rpc call failed: %w", err)
 	}
 
@@ -335,7 +335,7 @@ func (s *Scheduler) SignalOnNode(ctx context.Context, nodeID, instanceID string,
 		Signum     int32
 	}{InstanceID: instanceID, Signum: signum}
 	var resp string
-	if err := client.Call("NodeRPC.SignalAgentInstance", &payload, &resp); err != nil {
+	if err := client.CallJSON("NodeRPC.SignalAgentInstance", &payload, &resp); err != nil {
 		return fmt.Errorf("rpc call failed: %w", err)
 	}
 	slog.Default().LogAttrs(ctx, slog.LevelInfo, "signal rpc succeeded", logattr.Response(resp))

@@ -137,7 +137,7 @@ var runCmd = &cobra.Command{
 
 		// Call SchedulerRPC.SubmitJob
 		var resp string
-		if err := client.Call("SchedulerRPC.SubmitJob", job, &resp); err != nil {
+		if err := client.CallJSON("SchedulerRPC.SubmitJob", job, &resp); err != nil {
 			return fmt.Errorf("job submission failed: %w", err)
 		}
 
@@ -162,7 +162,7 @@ var drainCmd = &cobra.Command{
 
 		// Call SchedulerRPC.DrainNode
 		var migratedJobs []string
-		if err := client.Call("SchedulerRPC.DrainNode", &nodeID, &migratedJobs); err != nil {
+		if err := client.CallJSON("SchedulerRPC.DrainNode", &nodeID, &migratedJobs); err != nil {
 			return fmt.Errorf("drain failed: %w", err)
 		}
 
@@ -204,7 +204,7 @@ instance is running nowhere, and the error says so explicitly.`,
 		defer closeClient(client, &err)
 
 		var resp string
-		if err := client.Call("SchedulerRPC.MigrateInstance", req, &resp); err != nil {
+		if err := client.CallJSON("SchedulerRPC.MigrateInstance", req, &resp); err != nil {
 			// The coordinator's outcomes are materially different for an
 			// operator, so they are surfaced rather than flattened into
 			// one "migration failed".
@@ -235,7 +235,7 @@ var migrateCmd = &cobra.Command{
 
 		// Call SchedulerRPC.MigrateJob
 		var resp string
-		if err := client.Call("SchedulerRPC.MigrateJob", req, &resp); err != nil {
+		if err := client.CallJSON("SchedulerRPC.MigrateJob", req, &resp); err != nil {
 			return fmt.Errorf("migration failed: %w", err)
 		}
 
@@ -272,7 +272,7 @@ var publishCmd = &cobra.Command{
 			Payload: payload,
 		}
 		var resp string
-		if err := client.Call("SchedulerRPC.PublishEvent", req, &resp); err != nil {
+		if err := client.CallJSON("SchedulerRPC.PublishEvent", req, &resp); err != nil {
 			return err
 		}
 
@@ -294,7 +294,7 @@ var statusCmd = &cobra.Command{
 
 		// Call SchedulerRPC.Members
 		var members []supervisor.MemberInfo
-		if err := client.Call("SchedulerRPC.Members", struct{}{}, &members); err != nil {
+		if err := client.CallJSON("SchedulerRPC.Members", struct{}{}, &members); err != nil {
 			return fmt.Errorf("failed to get members: %w", err)
 		}
 

@@ -49,8 +49,10 @@ func NewQUICRPCClient(addr string, tlsConfig *tls.Config) (*QUICRPCClient, error
 	return &QUICRPCClient{conn: conn}, nil
 }
 
-// Call makes an RPC call and returns the response
-func (c *QUICRPCClient) Call(method string, request interface{}, response interface{}) (err error) {
+// CallJSON is the pre-GOBLIN-DIV-036 untyped path. It JSON-marshals into
+// a protobuf envelope, so buf breaking cannot see the payload. Every
+// method migrates to Call; this is deleted when the last one does.
+func (c *QUICRPCClient) CallJSON(method string, request interface{}, response interface{}) (err error) {
 	// Marshal request payload
 	payload, err := json.Marshal(request)
 	if err != nil {
