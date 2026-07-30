@@ -2,6 +2,9 @@ syntax = "proto3";
 
 package goblin.v1;
 
+import "goblin/v1/scheduler.proto";
+import "google/protobuf/timestamp.proto";
+
 option go_package = "github.com/goppydae/goblin/proto;goblinv1";
 
 // ScaleAgentRequest changes the desired replica count for one spec.
@@ -18,4 +21,102 @@ message ScaleAgentRequest {
 message ScaleAgentResponse {
   bytes spec_uuid = 1; // 16-byte UUIDv7 of the scaled spec
   int32 replicas = 2;  // replica count now recorded
+}
+
+// ListJobsRequest is empty so fields can be added later without a
+// signature change (e.g. a status filter).
+message ListJobsRequest {}
+
+// JobInfo is the RPC-facing view of a scheduled job; assembled from the
+// job assignment and spec keys at request time rather than stored as
+// its own record.
+message JobInfo {
+  string job_id = 1;
+  string assigned_node = 2;
+  string agent_type = 3;
+  string status = 4;
+}
+
+message ListJobsResponse {
+  repeated JobInfo jobs = 1;
+}
+
+// MembersRequest is empty so fields can be added later without a
+// signature change.
+message MembersRequest {}
+
+// MemberInfo is the RPC-facing view of a Serf cluster member.
+message MemberInfo {
+  string name = 1;
+  string addr = 2;
+  string status = 3;
+  map<string, string> tags = 4;
+  bool leader = 5;
+}
+
+message MembersResponse {
+  repeated MemberInfo members = 1;
+}
+
+// ListGlobalAgentsRequest is empty so fields can be added later without
+// a signature change (e.g. a name filter).
+message ListGlobalAgentsRequest {}
+
+message ListGlobalAgentsResponse {
+  repeated AgentSpec agents = 1;
+}
+
+// ListLocalAgentsRequest is empty so fields can be added later without
+// a signature change.
+message ListLocalAgentsRequest {}
+
+// LocalAgentInfo is the RPC-facing view of an agent managed by the
+// local GAPI agent manager (not a scheduled global agent instance).
+message LocalAgentInfo {
+  string id = 1;
+  string type = 2;
+  string state = 3;
+  string language = 4;
+  int64 uptime_ns = 5;
+}
+
+message ListLocalAgentsResponse {
+  repeated LocalAgentInfo agents = 1;
+}
+
+// GetGlobalAgentRequest identifies one spec. agent_id accepts either
+// the spec UUID or the operator-facing name.
+message GetGlobalAgentRequest {
+  string agent_id = 1;
+}
+
+message GetGlobalAgentResponse {
+  AgentSpec spec = 1;
+}
+
+// GetEventsRequest asks for events with index greater than cursor.
+message GetEventsRequest {
+  uint64 cursor = 1;
+}
+
+// LogEvent is one entry in the in-memory supervisor event log.
+message LogEvent {
+  uint64 index = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  string message = 3;
+}
+
+message GetEventsResponse {
+  repeated LogEvent events = 1;
+}
+
+// ListAgentInstancesRequest filters instance listing; empty spec_id
+// returns every instance. spec_id accepts either the canonical spec
+// UUID or the operator-facing name.
+message ListAgentInstancesRequest {
+  string spec_id = 1;
+}
+
+message ListAgentInstancesResponse {
+  repeated AgentInstance instances = 1;
 }

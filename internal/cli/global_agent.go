@@ -71,14 +71,14 @@ var globalAgentListCmd = &cobra.Command{
 		}
 		defer closeClient(client, &err)
 
-		var specs []*goblinv1.AgentSpec
-		if err := client.CallJSON("SchedulerRPC.ListGlobalAgents", struct{}{}, &specs); err != nil {
+		var resp goblinv1.ListGlobalAgentsResponse
+		if err := client.Call("SchedulerRPC.ListGlobalAgents", &goblinv1.ListGlobalAgentsRequest{}, &resp); err != nil {
 			return err
 		}
 
 		fmt.Println("NAME\t\tUUID\t\t\t\t\tTYPE\t\tREPLICAS\tSTRATEGY")
 		fmt.Println("----\t\t----\t\t\t\t\t----\t\t--------\t--------")
-		for _, s := range specs {
+		for _, s := range resp.GetAgents() {
 			fmt.Printf("%s\t%s\t%s\t%d\t\t%s\n", s.Name, ident.String(s.SpecUuid), s.Type, s.Replicas, s.Strategy)
 		}
 		return nil
@@ -97,15 +97,16 @@ var globalAgentGetCmd = &cobra.Command{
 		defer closeClient(client, &err)
 
 		id := args[0]
-		var spec goblinv1.AgentSpec
-		if err := client.CallJSON("SchedulerRPC.GetGlobalAgent", id, &spec); err != nil {
+		req := &goblinv1.GetGlobalAgentRequest{AgentId: id}
+		var resp goblinv1.GetGlobalAgentResponse
+		if err := client.Call("SchedulerRPC.GetGlobalAgent", req, &resp); err != nil {
 			return err
 		}
 
 		// Print JSON or YAML
 		enc := yaml.NewEncoder(os.Stdout)
 		enc.SetIndent(2)
-		return enc.Encode(&spec)
+		return enc.Encode(resp.GetSpec())
 	},
 }
 
@@ -171,18 +172,18 @@ var globalAgentInstancesCmd = &cobra.Command{
 		}
 		defer closeClient(client, &err)
 
-		req := supervisor.ListAgentInstancesRequest{}
+		req := &goblinv1.ListAgentInstancesRequest{}
 		if len(args) == 1 {
-			req.SpecID = args[0]
+			req.SpecId = args[0]
 		}
-		var instances []*goblinv1.AgentInstance
-		if err := client.CallJSON("SchedulerRPC.ListAgentInstances", &req, &instances); err != nil {
+		var resp goblinv1.ListAgentInstancesResponse
+		if err := client.Call("SchedulerRPC.ListAgentInstances", req, &resp); err != nil {
 			return err
 		}
 
 		fmt.Println("INSTANCE\t\t\t\t\tSPEC\t\t\t\t\tNODE\t\tSTATE")
 		fmt.Println("--------\t\t\t\t\t----\t\t\t\t\t----\t\t-----")
-		for _, inst := range instances {
+		for _, inst := range resp.GetInstances() {
 			fmt.Printf("%s\t%s\t%s\t%s\n", ident.String(inst.InstanceUuid), ident.String(inst.SpecUuid), inst.NodeId, stateLabel(inst.State))
 		}
 		return nil

@@ -12,6 +12,7 @@ import (
 	gapicli "github.com/goppydae/gapi/pkg/cli"
 	"github.com/goppydae/goblin/internal/supervisor"
 	"github.com/goppydae/goblin/internal/version"
+	goblinv1 "github.com/goppydae/goblin/proto"
 )
 
 var RootCmd = &cobra.Command{
@@ -293,25 +294,25 @@ var statusCmd = &cobra.Command{
 		defer closeClient(client, &err)
 
 		// Call SchedulerRPC.Members
-		var members []supervisor.MemberInfo
-		if err := client.CallJSON("SchedulerRPC.Members", struct{}{}, &members); err != nil {
+		var resp goblinv1.MembersResponse
+		if err := client.Call("SchedulerRPC.Members", &goblinv1.MembersRequest{}, &resp); err != nil {
 			return fmt.Errorf("failed to get members: %w", err)
 		}
 
 		fmt.Printf("[OK] Connected to %s (QUIC)\n", apiAddr)
-		fmt.Printf("Cluster Members: %d\n", len(members))
+		fmt.Printf("Cluster Members: %d\n", len(resp.GetMembers()))
 		fmt.Println("NAME\t\tADDRESS\t\t\tSTATUS\t\tROLE\t\tTAGS")
 		fmt.Println("----\t\t-------\t\t\t------\t\t----\t\t----")
-		for _, m := range members {
+		for _, m := range resp.GetMembers() {
 			tags := ""
-			for k, v := range m.Tags {
+			for k, v := range m.GetTags() {
 				tags += fmt.Sprintf("%s=%s ", k, v)
 			}
 			role := "follower"
-			if m.Leader {
+			if m.GetLeader() {
 				role = "LEADER"
 			}
-			fmt.Printf("%s\t%s\t\t%s\t%s\t\t%s\n", m.Name, m.Addr, m.Status, role, tags)
+			fmt.Printf("%s\t%s\t\t%s\t%s\t\t%s\n", m.GetName(), m.GetAddr(), m.GetStatus(), role, tags)
 		}
 		return nil
 	},
