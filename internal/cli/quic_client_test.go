@@ -14,7 +14,6 @@ import (
 	"github.com/goppydae/goblin/internal/supervisor"
 	goblinv1 "github.com/goppydae/goblin/proto"
 	"github.com/quic-go/quic-go"
-	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 // newTestRPCServer starts a real QUIC listener speaking the goblin-rpc
@@ -118,7 +117,7 @@ func TestQUICRPCClient_Call_SurfacesTypedError(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			var req, resp emptypb.Empty
+			var req, resp goblinv1.MembersRequest
 			callErr := client.Call(tc.method, &req, &resp)
 			if callErr == nil {
 				t.Fatalf("Call(%s) succeeded, want error", tc.method)
