@@ -11,12 +11,33 @@ message RPCRequest {
   bytes payload = 3;     // Protobuf-encoded request
 }
 
-// RPC Response message
+// RPCResponse carries the reply. success is the discriminator; when it
+// is false, error_detail is populated and payload is empty.
 message RPCResponse {
+  reserved 4;
+  reserved "error";
+
   uint32 request_id = 1;
   bool success = 2;
-  bytes payload = 3;     // Protobuf-encoded response or error message
-  string error = 4;      // Error message if success=false
+  bytes payload = 3;      // protobuf-encoded response
+  RPCError error_detail = 5;
+}
+
+// RPCErrorCode classifies a failure so callers branch on the code.
+// Message text is for humans and is never matched on.
+enum RPCErrorCode {
+  RPC_ERROR_CODE_UNSPECIFIED = 0;
+  RPC_ERROR_CODE_INVALID_REQUEST = 1;
+  RPC_ERROR_CODE_NOT_FOUND = 2;
+  RPC_ERROR_CODE_PERMISSION_DENIED = 3;
+  RPC_ERROR_CODE_UNAVAILABLE = 4;
+  RPC_ERROR_CODE_INTERNAL = 5;
+}
+
+// RPCError is the typed failure carried by RPCResponse.
+message RPCError {
+  RPCErrorCode code = 1;
+  string message = 2;
 }
 
 // Stream type enum

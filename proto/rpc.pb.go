@@ -21,6 +21,66 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// RPCErrorCode classifies a failure so callers branch on the code.
+// Message text is for humans and is never matched on.
+type RPCErrorCode int32
+
+const (
+	RPCErrorCode_RPC_ERROR_CODE_UNSPECIFIED       RPCErrorCode = 0
+	RPCErrorCode_RPC_ERROR_CODE_INVALID_REQUEST   RPCErrorCode = 1
+	RPCErrorCode_RPC_ERROR_CODE_NOT_FOUND         RPCErrorCode = 2
+	RPCErrorCode_RPC_ERROR_CODE_PERMISSION_DENIED RPCErrorCode = 3
+	RPCErrorCode_RPC_ERROR_CODE_UNAVAILABLE       RPCErrorCode = 4
+	RPCErrorCode_RPC_ERROR_CODE_INTERNAL          RPCErrorCode = 5
+)
+
+// Enum value maps for RPCErrorCode.
+var (
+	RPCErrorCode_name = map[int32]string{
+		0: "RPC_ERROR_CODE_UNSPECIFIED",
+		1: "RPC_ERROR_CODE_INVALID_REQUEST",
+		2: "RPC_ERROR_CODE_NOT_FOUND",
+		3: "RPC_ERROR_CODE_PERMISSION_DENIED",
+		4: "RPC_ERROR_CODE_UNAVAILABLE",
+		5: "RPC_ERROR_CODE_INTERNAL",
+	}
+	RPCErrorCode_value = map[string]int32{
+		"RPC_ERROR_CODE_UNSPECIFIED":       0,
+		"RPC_ERROR_CODE_INVALID_REQUEST":   1,
+		"RPC_ERROR_CODE_NOT_FOUND":         2,
+		"RPC_ERROR_CODE_PERMISSION_DENIED": 3,
+		"RPC_ERROR_CODE_UNAVAILABLE":       4,
+		"RPC_ERROR_CODE_INTERNAL":          5,
+	}
+)
+
+func (x RPCErrorCode) Enum() *RPCErrorCode {
+	p := new(RPCErrorCode)
+	*p = x
+	return p
+}
+
+func (x RPCErrorCode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (RPCErrorCode) Descriptor() protoreflect.EnumDescriptor {
+	return file_goblin_v1_rpc_proto_enumTypes[0].Descriptor()
+}
+
+func (RPCErrorCode) Type() protoreflect.EnumType {
+	return &file_goblin_v1_rpc_proto_enumTypes[0]
+}
+
+func (x RPCErrorCode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use RPCErrorCode.Descriptor instead.
+func (RPCErrorCode) EnumDescriptor() ([]byte, []int) {
+	return file_goblin_v1_rpc_proto_rawDescGZIP(), []int{0}
+}
+
 // Stream type enum
 type StreamType int32
 
@@ -58,11 +118,11 @@ func (x StreamType) String() string {
 }
 
 func (StreamType) Descriptor() protoreflect.EnumDescriptor {
-	return file_goblin_v1_rpc_proto_enumTypes[0].Descriptor()
+	return file_goblin_v1_rpc_proto_enumTypes[1].Descriptor()
 }
 
 func (StreamType) Type() protoreflect.EnumType {
-	return &file_goblin_v1_rpc_proto_enumTypes[0]
+	return &file_goblin_v1_rpc_proto_enumTypes[1]
 }
 
 func (x StreamType) Number() protoreflect.EnumNumber {
@@ -71,7 +131,7 @@ func (x StreamType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use StreamType.Descriptor instead.
 func (StreamType) EnumDescriptor() ([]byte, []int) {
-	return file_goblin_v1_rpc_proto_rawDescGZIP(), []int{0}
+	return file_goblin_v1_rpc_proto_rawDescGZIP(), []int{1}
 }
 
 // RPC Request message
@@ -135,13 +195,14 @@ func (x *RPCRequest) GetPayload() []byte {
 	return nil
 }
 
-// RPC Response message
+// RPCResponse carries the reply. success is the discriminator; when it
+// is false, error_detail is populated and payload is empty.
 type RPCResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RequestId     uint32                 `protobuf:"varint,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	Success       bool                   `protobuf:"varint,2,opt,name=success,proto3" json:"success,omitempty"`
-	Payload       []byte                 `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"` // Protobuf-encoded response or error message
-	Error         string                 `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`     // Error message if success=false
+	Payload       []byte                 `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"` // protobuf-encoded response
+	ErrorDetail   *RPCError              `protobuf:"bytes,5,opt,name=error_detail,json=errorDetail,proto3" json:"error_detail,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -197,9 +258,62 @@ func (x *RPCResponse) GetPayload() []byte {
 	return nil
 }
 
-func (x *RPCResponse) GetError() string {
+func (x *RPCResponse) GetErrorDetail() *RPCError {
 	if x != nil {
-		return x.Error
+		return x.ErrorDetail
+	}
+	return nil
+}
+
+// RPCError is the typed failure carried by RPCResponse.
+type RPCError struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Code          RPCErrorCode           `protobuf:"varint,1,opt,name=code,proto3,enum=goblin.v1.RPCErrorCode" json:"code,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RPCError) Reset() {
+	*x = RPCError{}
+	mi := &file_goblin_v1_rpc_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RPCError) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RPCError) ProtoMessage() {}
+
+func (x *RPCError) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_rpc_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RPCError.ProtoReflect.Descriptor instead.
+func (*RPCError) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_rpc_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *RPCError) GetCode() RPCErrorCode {
+	if x != nil {
+		return x.Code
+	}
+	return RPCErrorCode_RPC_ERROR_CODE_UNSPECIFIED
+}
+
+func (x *RPCError) GetMessage() string {
+	if x != nil {
+		return x.Message
 	}
 	return ""
 }
@@ -214,13 +328,23 @@ const file_goblin_v1_rpc_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\rR\trequestId\x12\x16\n" +
 	"\x06method\x18\x02 \x01(\tR\x06method\x12\x18\n" +
-	"\apayload\x18\x03 \x01(\fR\apayload\"v\n" +
+	"\apayload\x18\x03 \x01(\fR\apayload\"\xa5\x01\n" +
 	"\vRPCResponse\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\rR\trequestId\x12\x18\n" +
 	"\asuccess\x18\x02 \x01(\bR\asuccess\x12\x18\n" +
-	"\apayload\x18\x03 \x01(\fR\apayload\x12\x14\n" +
-	"\x05error\x18\x04 \x01(\tR\x05error*\x82\x01\n" +
+	"\apayload\x18\x03 \x01(\fR\apayload\x126\n" +
+	"\ferror_detail\x18\x05 \x01(\v2\x13.goblin.v1.RPCErrorR\verrorDetailJ\x04\b\x04\x10\x05R\x05error\"Q\n" +
+	"\bRPCError\x12+\n" +
+	"\x04code\x18\x01 \x01(\x0e2\x17.goblin.v1.RPCErrorCodeR\x04code\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage*\xd3\x01\n" +
+	"\fRPCErrorCode\x12\x1e\n" +
+	"\x1aRPC_ERROR_CODE_UNSPECIFIED\x10\x00\x12\"\n" +
+	"\x1eRPC_ERROR_CODE_INVALID_REQUEST\x10\x01\x12\x1c\n" +
+	"\x18RPC_ERROR_CODE_NOT_FOUND\x10\x02\x12$\n" +
+	" RPC_ERROR_CODE_PERMISSION_DENIED\x10\x03\x12\x1e\n" +
+	"\x1aRPC_ERROR_CODE_UNAVAILABLE\x10\x04\x12\x1b\n" +
+	"\x17RPC_ERROR_CODE_INTERNAL\x10\x05*\x82\x01\n" +
 	"\n" +
 	"StreamType\x12\x1b\n" +
 	"\x17STREAM_TYPE_UNSPECIFIED\x10\x00\x12\x1b\n" +
@@ -240,19 +364,23 @@ func file_goblin_v1_rpc_proto_rawDescGZIP() []byte {
 	return file_goblin_v1_rpc_proto_rawDescData
 }
 
-var file_goblin_v1_rpc_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_goblin_v1_rpc_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_goblin_v1_rpc_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_goblin_v1_rpc_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_goblin_v1_rpc_proto_goTypes = []any{
-	(StreamType)(0),     // 0: goblin.v1.StreamType
-	(*RPCRequest)(nil),  // 1: goblin.v1.RPCRequest
-	(*RPCResponse)(nil), // 2: goblin.v1.RPCResponse
+	(RPCErrorCode)(0),   // 0: goblin.v1.RPCErrorCode
+	(StreamType)(0),     // 1: goblin.v1.StreamType
+	(*RPCRequest)(nil),  // 2: goblin.v1.RPCRequest
+	(*RPCResponse)(nil), // 3: goblin.v1.RPCResponse
+	(*RPCError)(nil),    // 4: goblin.v1.RPCError
 }
 var file_goblin_v1_rpc_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	4, // 0: goblin.v1.RPCResponse.error_detail:type_name -> goblin.v1.RPCError
+	0, // 1: goblin.v1.RPCError.code:type_name -> goblin.v1.RPCErrorCode
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_goblin_v1_rpc_proto_init() }
@@ -265,8 +393,8 @@ func file_goblin_v1_rpc_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_goblin_v1_rpc_proto_rawDesc), len(file_goblin_v1_rpc_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   2,
+			NumEnums:      2,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
