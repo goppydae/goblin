@@ -201,12 +201,32 @@ func Clean() error {
 	return nil
 }
 
+// protoBreakingBaseline is the tree buf breaking compares against.
+//
+// ".git#ref=HEAD" is right for a developer comparing an edited working
+// tree against the last commit, and inert wherever the working tree IS
+// the commit: a fresh CI checkout would compare the schema against
+// itself and the gate could not fail. CI names its own baseline (the
+// pull request's merge base) through the environment.
+//
+// The variable is read here rather than left to magelib's equivalent
+// override because magelib resolves from vendor/ under GOWORK=off, which
+// is how CI builds - so a magelib change is not live in CI until the
+// module is re-tagged and re-vendored. This function goes away when that
+// happens (MAGELIB-DIV-002).
+func protoBreakingBaseline() string {
+	if against := os.Getenv("PROTO_BREAKING_AGAINST"); against != "" {
+		return against
+	}
+	return ".git#ref=HEAD"
+}
+
 // Proto generates protobuf code through the buf gate (generate, lint,
-// breaking against HEAD). Generated code lands directly in proto/
-// (buf.gen.yaml module opt strips the module prefix from go_package).
+// breaking). Generated code lands directly in proto/ (buf.gen.yaml
+// module opt strips the module prefix from go_package).
 func Proto() error {
 	mg.Deps(checkHermetic)
-	if err := magelib.BufGenerate(".git#ref=HEAD"); err != nil {
+	if err := magelib.BufGenerate(protoBreakingBaseline()); err != nil {
 		return err
 	}
 	fmt.Println("Protobuf generation complete (buf generate + lint + breaking)")
