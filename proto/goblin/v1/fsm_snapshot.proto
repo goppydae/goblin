@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package goblin.v1;
+
+option go_package = "github.com/goppydae/goblin/proto;goblinv1";
+
+// FSM snapshot (GOBLIN-DIV-040, successor to GOBLIN-DIV-036 piece 3).
+// core/consensus/fsm.go Persist/Restore used to speak JSON with a
+// hand-rolled SchemaVersion and a legacy bare-map fallback - a private
+// versioning scheme doing badly what protobuf does natively, and
+// inter-process because the leader ships this to joining nodes over
+// Raft. This is a schema reset, not a dual-read upgrade path: a JSON
+// snapshot on disk is refused outright (see fsm.go Restore), and there
+// is no field here for a legacy encoding to occupy.
+
+// FSMNamespaceState is one namespace's key/value state plus the CAS
+// version counters for the same keys. Kept as two parallel maps rather
+// than one map of a Value+Version message so the wire shape matches the
+// FSM's own in-memory layout (state map, versions map) with no
+// per-entry wrapper message.
+message FSMNamespaceState {
+  map<string, bytes> values = 1;
+  map<string, uint64> versions = 2;
+}
+
+// FSMSnapshot is the entire Raft FSM state as shipped to a joining node
+// or written to the local snapshot store.
+message FSMSnapshot {
+  // Namespace name -> that namespace's state.
+  map<string, FSMNamespaceState> namespaces = 1;
+
+  // Instance UUID (canonical string form) -> pre-marshalled
+  // goblin.v1.AgentInstance bytes. Stored as bytes rather than a nested
+  // AgentInstance field because the FSM already carries these
+  // proto-marshalled in memory at snapshot time; re-parsing and
+  // re-embedding would cost a decode/re-encode round trip for no
+  // change in the data.
+  map<string, bytes> instances = 2;
+
+  // Every instance UUID ever terminated. Append-only forever (operator
+  // decision 2026-07-28): a tombstoned UUID is never reused.
+  repeated string tombstones = 3;
+
+  // Instance UUID (canonical string form) -> pre-marshalled
+  // goblin.v1.MigrationRecord bytes for in-flight migrations. Same
+  // rationale as instances: already proto bytes in memory, carried
+  // through unchanged.
+  map<string, bytes> migrations = 4;
+}

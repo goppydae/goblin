@@ -1,7 +1,6 @@
 package consensus
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -133,40 +132,26 @@ func (f *FSM) write(namespace, key string, value []byte) {
 	f.versions[namespace][key]++
 }
 
-// snapshotPayload is the versioned snapshot encoding. SchemaVersion
-// distinguishes it from legacy snapshots, which were a bare JSON state
-// map. Version 2 adds the instance table and tombstone set; instance
-// records are proto-marshaled (JSON base64 in the envelope).
-type snapshotPayload struct {
-	SchemaVersion int                          `json:"schema_version"`
-	State         map[string]map[string][]byte `json:"state"`
-	Versions      map[string]map[string]uint64 `json:"versions"`
-	Instances     map[string][]byte            `json:"instances,omitempty"`
-	Tombstones    []string                     `json:"tombstones,omitempty"`
-	Migrations    map[string][]byte            `json:"migrations,omitempty"`
-}
-
 // Snapshot returns a snapshot of the FSM state
 func (f *FSM) Snapshot() (raft.FSMSnapshot, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
-	state := make(map[string]map[string][]byte, len(f.state))
+	namespaces := make(map[string]*goblinv1.FSMNamespaceState, len(f.state))
 	for ns, kv := range f.state {
-		state[ns] = make(map[string][]byte, len(kv))
+		values := make(map[string][]byte, len(kv))
 		for k, v := range kv {
 			val := make([]byte, len(v))
 			copy(val, v)
-			state[ns][k] = val
+			values[k] = val
 		}
-	}
-	versions := make(map[string]map[string]uint64, len(f.versions))
-	for ns, vs := range f.versions {
-		versions[ns] = make(map[string]uint64, len(vs))
-		for k, v := range vs {
-			versions[ns][k] = v
+		versions := make(map[string]uint64, len(f.versions[ns]))
+		for k, v := range f.versions[ns] {
+			versions[k] = v
 		}
+		namespaces[ns] = &goblinv1.FSMNamespaceState{Values: values, Versions: versions}
 	}
+
 	instances := make(map[string][]byte, len(f.instances))
 	for id, inst := range f.instances {
 		raw, err := proto.Marshal(inst)
@@ -188,19 +173,19 @@ func (f *FSM) Snapshot() (raft.FSMSnapshot, error) {
 		migrations[id] = raw
 	}
 
-	return &fsmSnapshot{payload: snapshotPayload{
-		SchemaVersion: 2,
-		State:         state,
-		Versions:      versions,
-		Instances:     instances,
-		Tombstones:    tombstones,
-		Migrations:    migrations,
+	return &fsmSnapshot{payload: &goblinv1.FSMSnapshot{
+		Namespaces: namespaces,
+		Instances:  instances,
+		Tombstones: tombstones,
+		Migrations: migrations,
 	}}, nil
 }
 
-// Restore restores the FSM from a snapshot. Both the versioned encoding and
-// the legacy bare-state-map encoding are accepted; legacy keys restore at
-// version 1 (they exist, so CAS create-if-absent semantics must not fire).
+// Restore restores the FSM from a snapshot. Only the proto encoding is
+// accepted (GOBLIN-DIV-040 schema reset): a snapshot written by the old
+// JSON encoder is refused outright rather than dual-read, mirroring the
+// CommandType-0 rejection above for the same reason - a compatibility
+// path nothing forces anyone to remove never gets removed.
 func (f *FSM) Restore(rc io.ReadCloser) (err error) {
 	defer func() {
 		if cerr := rc.Close(); cerr != nil && err == nil {
@@ -213,48 +198,41 @@ func (f *FSM) Restore(rc io.ReadCloser) (err error) {
 		return err
 	}
 
-	var payload snapshotPayload
-	if err := json.Unmarshal(raw, &payload); err != nil || payload.SchemaVersion == 0 {
-		// Legacy snapshot: bare state map.
-		var state map[string]map[string][]byte
-		if err := json.Unmarshal(raw, &state); err != nil {
-			return err
-		}
-		payload = snapshotPayload{State: state, Versions: make(map[string]map[string]uint64)}
-		for ns, kv := range state {
-			payload.Versions[ns] = make(map[string]uint64, len(kv))
-			for k := range kv {
-				payload.Versions[ns][k] = 1
-			}
-		}
-	}
-	if payload.State == nil {
-		payload.State = make(map[string]map[string][]byte)
-	}
-	if payload.Versions == nil {
-		payload.Versions = make(map[string]map[string]uint64)
+	if looksLikeJSON(raw) {
+		return fmt.Errorf("snapshot appears to be a pre-schema-reset snapshot (JSON, not protobuf): " +
+			"wipe the data dir and rejoin")
 	}
 
-	// Instance table (schema v2; absent in v1 and legacy snapshots).
-	instances := make(map[string]*goblinv1.AgentInstance, len(payload.Instances))
-	for id, raw := range payload.Instances {
+	var payload goblinv1.FSMSnapshot
+	if err := proto.Unmarshal(raw, &payload); err != nil {
+		return fmt.Errorf("restore: unmarshal snapshot: %w", err)
+	}
+
+	state := make(map[string]map[string][]byte, len(payload.GetNamespaces()))
+	versions := make(map[string]map[string]uint64, len(payload.GetNamespaces()))
+	for ns, nsState := range payload.GetNamespaces() {
+		state[ns] = nsState.GetValues()
+		versions[ns] = nsState.GetVersions()
+	}
+
+	instances := make(map[string]*goblinv1.AgentInstance, len(payload.GetInstances()))
+	for id, raw := range payload.GetInstances() {
 		var inst goblinv1.AgentInstance
 		if err := proto.Unmarshal(raw, &inst); err != nil {
 			return fmt.Errorf("restore: unmarshal instance %s: %w", id, err)
 		}
 		instances[id] = &inst
 	}
-	tombstones := make(map[string]struct{}, len(payload.Tombstones))
-	for _, id := range payload.Tombstones {
+	tombstones := make(map[string]struct{}, len(payload.GetTombstones()))
+	for _, id := range payload.GetTombstones() {
 		tombstones[id] = struct{}{}
 	}
 
-	// In-flight migrations (absent in snapshots written before
-	// GOBLIN-DIV-018). Restoring them is what keeps the concurrency
+	// In-flight migrations. Restoring them is what keeps the concurrency
 	// arbitration honest across a restart or a replica that caught up
 	// from a snapshot rather than replaying the log.
-	migrations := make(map[string]*goblinv1.MigrationRecord, len(payload.Migrations))
-	for id, raw := range payload.Migrations {
+	migrations := make(map[string]*goblinv1.MigrationRecord, len(payload.GetMigrations()))
+	for id, raw := range payload.GetMigrations() {
 		var rec goblinv1.MigrationRecord
 		if err := proto.Unmarshal(raw, &rec); err != nil {
 			return fmt.Errorf("restore: unmarshal migration %s: %w", id, err)
@@ -265,12 +243,30 @@ func (f *FSM) Restore(rc io.ReadCloser) (err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.state = payload.State
-	f.versions = payload.Versions
+	f.state = state
+	f.versions = versions
 	f.instances = instances
 	f.tombstones = tombstones
 	f.migrations = migrations
 	return nil
+}
+
+// looksLikeJSON reports whether raw's first non-whitespace byte opens a
+// JSON object - the shape every pre-schema-reset snapshot has (the old
+// encoder always wrote a top-level object). A proto-marshalled
+// FSMSnapshot never starts with '{': the wire format's field tags are
+// low-value bytes, and '{' (0x7b) as a field-1 varint tag would demand
+// a wire type this schema does not use for field 1.
+func looksLikeJSON(raw []byte) bool {
+	for _, b := range raw {
+		switch b {
+		case ' ', '\t', '\n', '\r':
+			continue
+		default:
+			return b == '{'
+		}
+	}
+	return false
 }
 
 // Get retrieves a value from the FSM state
@@ -322,12 +318,19 @@ func (f *FSM) Scan(namespace, prefix string) map[string][]byte {
 
 // fsmSnapshot implements raft.FSMSnapshot
 type fsmSnapshot struct {
-	payload snapshotPayload
+	payload *goblinv1.FSMSnapshot
 }
 
 // Persist writes the snapshot to the sink
 func (s *fsmSnapshot) Persist(sink raft.SnapshotSink) error {
-	if err := json.NewEncoder(sink).Encode(s.payload); err != nil {
+	raw, err := proto.Marshal(s.payload)
+	if err != nil {
+		if cerr := sink.Cancel(); cerr != nil {
+			return fmt.Errorf("%w (also failed to cancel sink: %w)", err, cerr)
+		}
+		return err
+	}
+	if _, err := sink.Write(raw); err != nil {
 		if cerr := sink.Cancel(); cerr != nil {
 			return fmt.Errorf("%w (also failed to cancel sink: %w)", err, cerr)
 		}
