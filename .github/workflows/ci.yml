@@ -123,14 +123,27 @@ jobs:
       # A green result on a push proves the job ran, not that it can
       # fail. Only a pull request retyping a field proves that
       # (MAGELIB-DIV-002).
+      #
+      # An operator-approved wire break (pre-1.0 schema reset) cannot
+      # pass a comparison against its own merge base by design. The
+      # 'schema-reset' label is the CI face of PROTO_BREAKING_SKIP: the
+      # operator applies it by hand to the one PR carrying the break,
+      # the skip is loud in the run log, and buf lint plus codegen still
+      # run. The label does not exist on pushes, so the main-branch gate
+      # can never be skipped this way.
       - name: Schema Gate (buf lint, buf breaking)
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          SCHEMA_RESET: ${{ contains(github.event.pull_request.labels.*.name, 'schema-reset') && '1' || '' }}
         run: |
           if [ -n "$BASE_SHA" ]; then
             export PROTO_BREAKING_AGAINST=".git#ref=$BASE_SHA"
           else
             export PROTO_BREAKING_AGAINST=".git#ref=HEAD~1"
+          fi
+          if [ -n "$SCHEMA_RESET" ]; then
+            echo "::warning::schema-reset label present: buf breaking SKIPPED for this operator-approved wire break"
+            export PROTO_BREAKING_SKIP=1
           fi
           nix develop -c mage proto
 
