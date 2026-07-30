@@ -23,6 +23,11 @@ enum CommandType {
   // instance stays RUNNING throughout and only its locator moves.
   COMMAND_TYPE_MIGRATE_BEGIN = 7;  // (payload: migrate_begin)
   COMMAND_TYPE_MIGRATE_COMMIT = 8; // (payload: migrate_commit)
+  // Operator key registry (GOBLIN-DIV-015 piece 1). SEED installs the
+  // configured root-of-trust keys into an empty registry; CHANGE is a
+  // signed add or remove authorized by an already-registered key.
+  COMMAND_TYPE_OPERATOR_KEY_SEED = 9;   // (payload: operator_key_seed)
+  COMMAND_TYPE_OPERATOR_KEY_CHANGE = 10; // (payload: operator_key_change)
 }
 
 // LogEntry represents a command in the Raft log. KV commands use the
@@ -41,6 +46,8 @@ message LogEntry {
     SignalRequest signal = 8;
     MigrateBegin migrate_begin = 9;
     MigrateCommit migrate_commit = 10;
+    OperatorKeySeed operator_key_seed = 11;
+    OperatorKeyChange operator_key_change = 12;
   }
 }
 
@@ -128,4 +135,62 @@ message SignalRequest {
   int32 signum = 2;
   bytes token_id = 3; // authorizing capability token id
   uint64 rights = 4;  // rights asserted; checked against the bitmap
+}
+
+// OperatorKeyOp names the mutation an OperatorKeyChangePayload requests.
+// UNSPECIFIED is rejected rather than defaulted: a change whose op did
+// not decode must not silently become an add.
+enum OperatorKeyOp {
+  OPERATOR_KEY_OP_UNSPECIFIED = 0;
+  OPERATOR_KEY_OP_ADD = 1;
+  OPERATOR_KEY_OP_REMOVE = 2;
+}
+
+// OperatorKey is one authorized operator identity.
+//
+// key_id is DERIVED, never asserted: it must equal the lowercase hex
+// SHA-256 of public_key, and the FSM refuses a record where it does
+// not. Deriving the id from the key removes the class of bug where the
+// id names one key and the bytes are another.
+message OperatorKey {
+  string key_id = 1;    // hex(sha256(public_key))
+  bytes public_key = 2; // raw 32-byte Ed25519 public key
+  string comment = 3;   // operator-facing label; not authenticated
+}
+
+// OperatorKeySeed installs the configured root-of-trust keys.
+//
+// It carries no signature because there is nothing yet to sign against:
+// it is authorized by the registry being empty, which is replicated FSM
+// state and therefore a deterministic check. Re-seeding an identical
+// set is a no-op so a node restart does not fail; seeding a DIFFERENT
+// set into a non-empty registry is refused, which is how config drift
+// between nodes surfaces instead of silently widening the trust root.
+message OperatorKeySeed {
+  repeated OperatorKey keys = 1;
+}
+
+// OperatorKeyChangePayload is the signed content of a registry change.
+//
+// prev_serial is the replay guard and it is deliberately a counter, not
+// an expiry: the FSM must decide identically on every replica, and a
+// wall-clock comparison inside Apply is not deterministic. A signed
+// change is valid at exactly one registry serial.
+message OperatorKeyChangePayload {
+  OperatorKeyOp op = 1;
+  // For ADD, the full record. For REMOVE, only key_id is read; any
+  // public_key present is ignored rather than checked, since the
+  // registry already holds the authoritative bytes.
+  OperatorKey key = 2;
+  uint64 prev_serial = 3;
+  string authorizing_key_id = 4;
+}
+
+// OperatorKeyChange wraps the signed payload. As with CapabilityToken,
+// the signature covers the literal payload bytes - protobuf
+// serialization is not canonical, so the FSM verifies the bytes that
+// arrived in the log and never re-serializes before checking.
+message OperatorKeyChange {
+  bytes payload = 1;   // serialized OperatorKeyChangePayload
+  bytes signature = 2; // Ed25519 over payload bytes
 }

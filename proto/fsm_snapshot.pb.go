@@ -98,9 +98,19 @@ type FSMSnapshot struct {
 	// goblin.v1.MigrationRecord bytes for in-flight migrations. Same
 	// rationale as instances: already proto bytes in memory, carried
 	// through unchanged.
-	Migrations    map[string][]byte `protobuf:"bytes,4,rep,name=migrations,proto3" json:"migrations,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Migrations map[string][]byte `protobuf:"bytes,4,rep,name=migrations,proto3" json:"migrations,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Operator key id -> pre-marshalled goblin.v1.OperatorKey bytes. Same
+	// rationale as instances and migrations: already proto bytes in
+	// memory at snapshot time, carried through without a decode/encode
+	// round trip.
+	OperatorKeys map[string][]byte `protobuf:"bytes,5,rep,name=operator_keys,json=operatorKeys,proto3" json:"operator_keys,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// The registry's monotone serial. It rides the snapshot because it is
+	// the replay guard for signed changes: a leader restored from a
+	// snapshot that forgot the serial would accept a change already
+	// applied.
+	OperatorRegistrySerial uint64 `protobuf:"varint,6,opt,name=operator_registry_serial,json=operatorRegistrySerial,proto3" json:"operator_registry_serial,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *FSMSnapshot) Reset() {
@@ -161,6 +171,20 @@ func (x *FSMSnapshot) GetMigrations() map[string][]byte {
 	return nil
 }
 
+func (x *FSMSnapshot) GetOperatorKeys() map[string][]byte {
+	if x != nil {
+		return x.OperatorKeys
+	}
+	return nil
+}
+
+func (x *FSMSnapshot) GetOperatorRegistrySerial() uint64 {
+	if x != nil {
+		return x.OperatorRegistrySerial
+	}
+	return 0
+}
+
 var File_goblin_v1_fsm_snapshot_proto protoreflect.FileDescriptor
 
 const file_goblin_v1_fsm_snapshot_proto_rawDesc = "" +
@@ -174,7 +198,7 @@ const file_goblin_v1_fsm_snapshot_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\x1a;\n" +
 	"\rVersionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\"\xdc\x03\n" +
+	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\"\xa6\x05\n" +
 	"\vFSMSnapshot\x12F\n" +
 	"\n" +
 	"namespaces\x18\x01 \x03(\v2&.goblin.v1.FSMSnapshot.NamespacesEntryR\n" +
@@ -185,7 +209,9 @@ const file_goblin_v1_fsm_snapshot_proto_rawDesc = "" +
 	"tombstones\x12F\n" +
 	"\n" +
 	"migrations\x18\x04 \x03(\v2&.goblin.v1.FSMSnapshot.MigrationsEntryR\n" +
-	"migrations\x1a[\n" +
+	"migrations\x12M\n" +
+	"\roperator_keys\x18\x05 \x03(\v2(.goblin.v1.FSMSnapshot.OperatorKeysEntryR\foperatorKeys\x128\n" +
+	"\x18operator_registry_serial\x18\x06 \x01(\x04R\x16operatorRegistrySerial\x1a[\n" +
 	"\x0fNamespacesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x122\n" +
 	"\x05value\x18\x02 \x01(\v2\x1c.goblin.v1.FSMNamespaceStateR\x05value:\x028\x01\x1a<\n" +
@@ -193,6 +219,9 @@ const file_goblin_v1_fsm_snapshot_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\x1a=\n" +
 	"\x0fMigrationsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\x1a?\n" +
+	"\x11OperatorKeysEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01B+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
 
@@ -208,7 +237,7 @@ func file_goblin_v1_fsm_snapshot_proto_rawDescGZIP() []byte {
 	return file_goblin_v1_fsm_snapshot_proto_rawDescData
 }
 
-var file_goblin_v1_fsm_snapshot_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_goblin_v1_fsm_snapshot_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_goblin_v1_fsm_snapshot_proto_goTypes = []any{
 	(*FSMNamespaceState)(nil), // 0: goblin.v1.FSMNamespaceState
 	(*FSMSnapshot)(nil),       // 1: goblin.v1.FSMSnapshot
@@ -217,6 +246,7 @@ var file_goblin_v1_fsm_snapshot_proto_goTypes = []any{
 	nil,                       // 4: goblin.v1.FSMSnapshot.NamespacesEntry
 	nil,                       // 5: goblin.v1.FSMSnapshot.InstancesEntry
 	nil,                       // 6: goblin.v1.FSMSnapshot.MigrationsEntry
+	nil,                       // 7: goblin.v1.FSMSnapshot.OperatorKeysEntry
 }
 var file_goblin_v1_fsm_snapshot_proto_depIdxs = []int32{
 	2, // 0: goblin.v1.FSMNamespaceState.values:type_name -> goblin.v1.FSMNamespaceState.ValuesEntry
@@ -224,12 +254,13 @@ var file_goblin_v1_fsm_snapshot_proto_depIdxs = []int32{
 	4, // 2: goblin.v1.FSMSnapshot.namespaces:type_name -> goblin.v1.FSMSnapshot.NamespacesEntry
 	5, // 3: goblin.v1.FSMSnapshot.instances:type_name -> goblin.v1.FSMSnapshot.InstancesEntry
 	6, // 4: goblin.v1.FSMSnapshot.migrations:type_name -> goblin.v1.FSMSnapshot.MigrationsEntry
-	0, // 5: goblin.v1.FSMSnapshot.NamespacesEntry.value:type_name -> goblin.v1.FSMNamespaceState
-	6, // [6:6] is the sub-list for method output_type
-	6, // [6:6] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	7, // 5: goblin.v1.FSMSnapshot.operator_keys:type_name -> goblin.v1.FSMSnapshot.OperatorKeysEntry
+	0, // 6: goblin.v1.FSMSnapshot.NamespacesEntry.value:type_name -> goblin.v1.FSMNamespaceState
+	7, // [7:7] is the sub-list for method output_type
+	7, // [7:7] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_goblin_v1_fsm_snapshot_proto_init() }
@@ -243,7 +274,7 @@ func file_goblin_v1_fsm_snapshot_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_goblin_v1_fsm_snapshot_proto_rawDesc), len(file_goblin_v1_fsm_snapshot_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
