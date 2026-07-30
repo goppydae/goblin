@@ -89,10 +89,12 @@ jobs:
     # GOBLIN-DIV-035. The gates existed and no job invoked them, so lint,
     # gosec and schema regressions merged green. This job is the caller.
     #
-    # It deliberately needs nothing but this repository. Run 30535030239
-    # failed at a sibling checkout on a token scope after 49s, before a
-    # single gate executed, taking three gates that need no sibling tree
-    # down with it. Anything needing a sibling now lives in shell-doctor.
+    # This job needs nothing but this repository, and 'mage lint' is not
+    # in it despite an earlier commit claiming otherwise: magelib.Lint
+    # resolves the shared golangci-lint config from ../magelib (lint.go
+    # SharedLintConfig, since neither code repo carries its own
+    # .golangci.yml), so lint needs the sibling tree and lives in
+    # sibling-gates. Run 30536124119 failed here proving it.
     name: Ecosystem Gates
     runs-on: ubuntu-latest
     env:
@@ -109,9 +111,6 @@ jobs:
         uses: cachix/install-nix-action@v24
         with:
           nix_path: nixpkgs=channel:nixos-unstable
-
-      - name: Lint Gate (gofmt, golangci-lint, gosec)
-        run: nix develop -c mage lint
 
       # The Proto target's own baseline is ".git#ref=HEAD", which is
       # correct for a developer comparing an edited tree against the last
@@ -142,17 +141,21 @@ jobs:
       - name: Assert Committed Codegen Is Current
         run: git diff --exit-code
 
-  shell-doctor:
-    # The half of GOBLIN-DIV-035 that needs the sibling trees: 'mage
-    # doctor' reads them for workspace shape, 'mage envcheck' evaluates
-    # all three dev shells to compare tool inventories. This is therefore
-    # the only job needing CI_PAT read access to every repository in the
-    # silo, and it is split out so that credential fails here alone.
+  sibling-gates:
+    # The half of GOBLIN-DIV-035 that needs the sibling trees:
+    #   lint     - magelib.Lint reads ../magelib/.golangci.yml, the shared
+    #              config both code repos consume instead of carrying one
+    #   doctor   - reads the sibling directories for workspace shape
+    #   envcheck - evaluates all three dev shells to compare inventories
+    #
+    # This is therefore the only job needing CI_PAT read access to every
+    # repository in the silo, and it is split out so a credential problem
+    # fails here alone rather than taking the schema gate with it.
     #
     # Sibling checkouts are for the checks, not module resolution: GOWORK
     # stays off, so the build still resolves through vendor/ exactly as
     # the lone-clone contract requires.
-    name: Shell Doctor
+    name: Sibling Gates
     runs-on: ubuntu-latest
     env:
       GOWORK: "off"
@@ -193,6 +196,12 @@ jobs:
       - name: Detect Tool Skew Across Sibling Shells
         working-directory: goblin
         run: nix develop -c mage envcheck
+
+      # Needs ../magelib for the shared golangci-lint config, which is why
+      # it is here and not in ecosystem-gates.
+      - name: Lint Gate (gofmt, golangci-lint, gosec)
+        working-directory: goblin
+        run: nix develop -c mage lint
 
   cluster-e2e:
     # The 3-node e2e sits behind the 'cluster' build tag, so 'mage test'
