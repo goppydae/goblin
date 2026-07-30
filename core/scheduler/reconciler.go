@@ -242,33 +242,22 @@ func (s *Scheduler) startAgentOnNode(ctx context.Context, nodeID string, inst *g
 		}
 	}()
 
-	// 3. Call NodeRPC
-	// We need to define StartAgentRequest within scheduler or import it from supervisor?
-	// Problem: StartAgentRequest is in supervisor/node_rpc.go -> import cycle if we import supervisor.
-	// We should define the request struct in a shared place or use map/standard types.
-	// But CLI/Server use the struct.
-	// Solution: Use Anonymous struct or map since our generic client supports it,
-	// OR define local struct matching the wire format.
-
-	// Better: Move connection structs to `goblin/proto` or a shared `pkg/api`?
-	// Phase 3.4/5 goal isn't huge refactor.
-	// Let's use anonymous struct matching target.
-
-	payload := struct {
-		InstanceID string
-		Spec       *goblinv1.AgentSpec
-	}{
-		InstanceID: ident.String(inst.InstanceUuid),
+	// 3. Call NodeRPC. The Node* messages live in goblin/proto
+	// (proto/goblin/v1/node_rpc.proto) precisely so this package can
+	// reach them without importing internal/supervisor, which would be
+	// an import cycle.
+	req := &goblinv1.NodeStartAgentInstanceRequest{
+		InstanceId: ident.String(inst.InstanceUuid),
 		Spec:       spec,
 	}
 
 	slog.Default().LogAttrs(ctx, slog.LevelInfo, "calling start agent instance", logattr.NodeID(nodeID), logattr.Addr(addr))
-	var resp string
-	if err := client.CallJSON("NodeRPC.StartAgentInstance", &payload, &resp); err != nil {
+	var resp goblinv1.NodeStartAgentInstanceResponse
+	if err := client.Call("NodeRPC.StartAgentInstance", req, &resp); err != nil {
 		return fmt.Errorf("rpc call failed: %w", err)
 	}
 
-	slog.Default().LogAttrs(ctx, slog.LevelInfo, "start agent rpc succeeded", logattr.Response(resp))
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "start agent rpc succeeded", logattr.Response(resp.GetInstanceId()))
 
 	// Record the transition to RUNNING through the FSM
 	inst.State = goblinv1.InstanceState_INSTANCE_STATE_RUNNING
@@ -294,19 +283,15 @@ func (s *Scheduler) stopAgentOnNode(ctx context.Context, nodeID, instanceID stri
 		}
 	}()
 
-	payload := struct {
-		InstanceID string
-	}{
-		InstanceID: instanceID,
-	}
+	req := &goblinv1.NodeStopAgentInstanceRequest{InstanceId: instanceID}
 
 	slog.Default().LogAttrs(ctx, slog.LevelInfo, "calling stop agent instance", logattr.NodeID(nodeID), logattr.Addr(addr))
-	var resp string
-	if err := client.CallJSON("NodeRPC.StopAgentInstance", &payload, &resp); err != nil {
+	var resp goblinv1.NodeStopAgentInstanceResponse
+	if err := client.Call("NodeRPC.StopAgentInstance", req, &resp); err != nil {
 		return fmt.Errorf("rpc call failed: %w", err)
 	}
 
-	slog.Default().LogAttrs(ctx, slog.LevelInfo, "stop agent rpc succeeded", logattr.Response(resp))
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "stop agent rpc succeeded", logattr.Response(resp.GetInstanceId()))
 	return nil
 }
 
@@ -330,15 +315,12 @@ func (s *Scheduler) SignalOnNode(ctx context.Context, nodeID, instanceID string,
 		}
 	}()
 
-	payload := struct {
-		InstanceID string
-		Signum     int32
-	}{InstanceID: instanceID, Signum: signum}
-	var resp string
-	if err := client.CallJSON("NodeRPC.SignalAgentInstance", &payload, &resp); err != nil {
+	req := &goblinv1.NodeSignalAgentInstanceRequest{InstanceId: instanceID, Signum: signum}
+	var resp goblinv1.NodeSignalAgentInstanceResponse
+	if err := client.Call("NodeRPC.SignalAgentInstance", req, &resp); err != nil {
 		return fmt.Errorf("rpc call failed: %w", err)
 	}
-	slog.Default().LogAttrs(ctx, slog.LevelInfo, "signal rpc succeeded", logattr.Response(resp))
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "signal rpc succeeded", logattr.Response(resp.GetInstanceId()))
 	return nil
 }
 

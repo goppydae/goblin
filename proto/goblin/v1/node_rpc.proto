@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+package goblin.v1;
+
+import "goblin/v1/scheduler.proto";
+
+option go_package = "github.com/goppydae/goblin/proto;goblinv1";
+
+// NodeRPC payloads (GOBLIN-DIV-036, batch D). Every message here is
+// prefixed "Node" even where the unprefixed name would read more
+// naturally (e.g. NodeSignalAgentInstanceRequest) because goblin.v1 is
+// one namespace across files, and SchedulerRPC already claims
+// SignalAgentInstanceRequest (proto/goblin/v1/scheduler_rpc.proto) for
+// the leader-facing verb of the same name. A uniform prefix beats a
+// mixed scheme where only the colliding names carry one.
+
+// NodeStartAgentInstanceRequest instantiates and starts a spec's agent
+// type under instance_id. spec is required: the node has no other way
+// to learn which agent type to instantiate.
+message NodeStartAgentInstanceRequest {
+  string instance_id = 1;
+  AgentSpec spec = 2;
+}
+
+// NodeStartAgentInstanceResponse reports the instance that was started
+// rather than a formatted sentence.
+message NodeStartAgentInstanceResponse {
+  string instance_id = 1;
+}
+
+// NodeStopAgentInstanceRequest stops and deregisters an instance.
+message NodeStopAgentInstanceRequest {
+  string instance_id = 1;
+}
+
+// NodeStopAgentInstanceResponse reports the instance that was stopped.
+// already_stopped distinguishes a real stop from the no-op case where
+// the instance was already gone - both succeed, but a caller may care
+// which happened.
+message NodeStopAgentInstanceResponse {
+  string instance_id = 1;
+  bool already_stopped = 2;
+}
+
+// NodeSignalAgentInstanceRequest delivers an authorized signal to an
+// instance on this node. instance_id is the canonical UUID string, as
+// goblinctl prints it - not the raw bytes spec_uuid/instance_uuid use
+// elsewhere in this schema, matching SchedulerRPC's
+// SignalAgentInstanceRequest.
+message NodeSignalAgentInstanceRequest {
+  string instance_id = 1;
+  int32 signum = 2;
+}
+
+// NodeSignalAgentInstanceResponse reports the delivered signal rather
+// than a formatted sentence.
+message NodeSignalAgentInstanceResponse {
+  string instance_id = 1;
+  int32 signum = 2;
+}
+
+// NodeCheckpointAgentInstanceRequest asks a node to dump one instance
+// it is running (GOBLIN-DIV-031). instance_id travels for diagnostics
+// only - the checkpoint store is keyed by {instance_uuid, epoch}.
+message NodeCheckpointAgentInstanceRequest {
+  string instance_id = 1;
+  bytes instance_uuid = 2;
+  uint64 epoch = 3;
+}
+
+// NodeCheckpointAgentInstanceResponse reports the local image directory
+// the dump landed in rather than a formatted sentence.
+message NodeCheckpointAgentInstanceResponse {
+  string image_dir = 1;
+}
+
+// NodeRestoreAgentInstanceRequest asks a node to restore an instance
+// from an image already present in its own store. spec is required:
+// a fresh registration (the destination side of a migration) has no
+// other way to learn the agent type to instantiate.
+message NodeRestoreAgentInstanceRequest {
+  string instance_id = 1;
+  bytes instance_uuid = 2;
+  uint64 epoch = 3;
+  AgentSpec spec = 4;
+}
+
+// NodeRestoreAgentInstanceResponse reports the instance that was
+// restored rather than a formatted sentence.
+message NodeRestoreAgentInstanceResponse {
+  string instance_id = 1;
+}
+
+// NodePullCheckpointRequest asks a node to fetch an image from a peer.
+// This is sent to the DESTINATION, which does the dialing - the
+// coordinator runs on the leader, which is frequently neither end of
+// the transfer, and routing bytes through it would put a
+// multi-gigabyte stream on the node running consensus.
+message NodePullCheckpointRequest {
+  string instance_id = 1;
+  bytes instance_uuid = 2;
+  uint64 epoch = 3;
+  string source_addr = 4;
+  bytes token = 5;
+}
+
+// NodePullCheckpointResponse reports the local image directory the
+// pull landed in rather than a formatted sentence.
+message NodePullCheckpointResponse {
+  string image_dir = 1;
+}

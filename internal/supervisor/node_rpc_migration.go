@@ -13,6 +13,7 @@ import (
 
 	"github.com/goppydae/goblin/core/migration"
 	"github.com/goppydae/goblin/internal/logattr"
+	goblinv1 "github.com/goppydae/goblin/proto"
 )
 
 // Node-local halves of a migration (GOBLIN-DIV-018).
@@ -23,15 +24,6 @@ import (
 // and neither moves the instance's Raft record. All they change is
 // where the process runs, which the heartbeat publishes as a locator.
 
-// Request types are shared with the callers in core/migration rather
-// than redeclared here, so a field added on one side cannot silently
-// go unread on the other.
-type (
-	CheckpointAgentRequest = migration.CheckpointRPCRequest
-	RestoreAgentRequest    = migration.RestoreRPCRequest
-	PullCheckpointRequest  = migration.PullRPCRequest
-)
-
 // CheckpointAgentInstance dumps a running instance into this node's
 // image store, leaving it stopped.
 //
@@ -39,17 +31,18 @@ type (
 // migration, and a source that kept running past the state its image
 // captured would have diverged from it before the destination even
 // started restoring.
-func (n *NodeRPC) CheckpointAgentInstance(req *CheckpointAgentRequest, resp *string) error {
+func (n *NodeRPC) CheckpointAgentInstance(req *goblinv1.NodeCheckpointAgentInstanceRequest, resp *goblinv1.NodeCheckpointAgentInstanceResponse) error {
 	if n.agentMgr == nil {
 		return fmt.Errorf("agent manager not initialized on this node")
 	}
 	if n.images == nil {
 		return fmt.Errorf("checkpoint store not configured on this node")
 	}
+	instanceID := req.GetInstanceId()
 
-	a := n.agentMgr.Get(req.InstanceID)
+	a := n.agentMgr.Get(instanceID)
 	if a == nil {
-		return fmt.Errorf("instance %s is not running on this node", req.InstanceID)
+		return fmt.Errorf("instance %s is not running on this node", instanceID)
 	}
 	ckpt, ok := a.(lifecycle.Checkpointer)
 	if !ok {
@@ -57,7 +50,7 @@ func (n *NodeRPC) CheckpointAgentInstance(req *CheckpointAgentRequest, resp *str
 		// an in-process runner has nothing for CRIU to dump. The
 		// orchestrator should have asserted this at admission, so
 		// reaching here means the assertion was skipped.
-		return fmt.Errorf("instance %s runs an agent type that cannot be checkpointed", req.InstanceID)
+		return fmt.Errorf("instance %s runs an agent type that cannot be checkpointed", instanceID)
 	}
 
 	// Capture the pid before the dump: afterwards the runner has no
@@ -69,12 +62,12 @@ func (n *NodeRPC) CheckpointAgentInstance(req *CheckpointAgentRequest, resp *str
 		}
 	}
 
-	dir, err := n.images.Create(req.InstanceUUID, req.Epoch)
+	dir, err := n.images.Create(req.GetInstanceUuid(), req.GetEpoch())
 	if err != nil {
-		return fmt.Errorf("checkpoint instance %s: %w", req.InstanceID, err)
+		return fmt.Errorf("checkpoint instance %s: %w", instanceID, err)
 	}
 	if err := ckpt.Checkpoint(context.Background(), dir); err != nil {
-		return fmt.Errorf("checkpoint instance %s: %w", req.InstanceID, err)
+		return fmt.Errorf("checkpoint instance %s: %w", instanceID, err)
 	}
 
 	// Do not return until the PID is actually free (GOBLIN-DIV-031).
@@ -92,19 +85,19 @@ func (n *NodeRPC) CheckpointAgentInstance(req *CheckpointAgentRequest, resp *str
 	// has not happened.
 	if dumpedPid > 0 {
 		if err := waitForPidRelease(dumpedPid, pidReleaseTimeout); err != nil {
-			return fmt.Errorf("checkpoint instance %s: %w", req.InstanceID, err)
+			return fmt.Errorf("checkpoint instance %s: %w", instanceID, err)
 		}
 	}
 
 	// The process is stopped; its locator is no longer valid here. Zero
 	// the identity so this node stops publishing a pid that a signal
 	// could still be routed to.
-	n.tracker.SetIdentity(req.InstanceID, 0, 0)
-	n.tracker.Set(req.InstanceID, "checkpointed")
+	n.tracker.SetIdentity(instanceID, 0, 0)
+	n.tracker.Set(instanceID, "checkpointed")
 
 	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "instance checkpointed",
-		logattr.InstanceID(req.InstanceID), slog.String("dir", dir), slog.Uint64("epoch", req.Epoch))
-	*resp = dir
+		logattr.InstanceID(instanceID), slog.String("dir", dir), slog.Uint64("epoch", req.GetEpoch()))
+	resp.ImageDir = dir
 	return nil
 }
 
@@ -116,20 +109,28 @@ func (n *NodeRPC) CheckpointAgentInstance(req *CheckpointAgentRequest, resp *str
 // pid namespace inode and a new start epoch, and publishing them
 // through the ordinary heartbeat is the locator move. The instance UUID
 // does not change - that is the entire migration semantic.
-func (n *NodeRPC) RestoreAgentInstance(req *RestoreAgentRequest, resp *string) error {
+func (n *NodeRPC) RestoreAgentInstance(req *goblinv1.NodeRestoreAgentInstanceRequest, resp *goblinv1.NodeRestoreAgentInstanceResponse) error {
 	if n.agentMgr == nil {
 		return fmt.Errorf("agent manager not initialized on this node")
 	}
 	if n.images == nil {
 		return fmt.Errorf("checkpoint store not configured on this node")
 	}
-	if req.Spec == nil {
-		return fmt.Errorf("restore request for %s carries no spec", req.InstanceID)
+	instanceID := req.GetInstanceId()
+	spec := req.GetSpec()
+	// This method's own structural validation stays a plain error
+	// (unlike StartAgentInstance's ErrInvalidRequest guard): the typed
+	// classification for a decoded-but-empty spec is applied at the
+	// quic_handlers.go dispatch layer, which is the boundary that can
+	// see ErrInvalidRequest without core/migration's callers of this
+	// same message needing to import internal/supervisor.
+	if spec == nil {
+		return fmt.Errorf("restore request for %s carries no spec", instanceID)
 	}
 
-	dir, err := n.images.Dir(req.InstanceUUID, req.Epoch)
+	dir, err := n.images.Dir(req.GetInstanceUuid(), req.GetEpoch())
 	if err != nil {
-		return fmt.Errorf("restore instance %s: %w", req.InstanceID, err)
+		return fmt.Errorf("restore instance %s: %w", instanceID, err)
 	}
 
 	// Reuse an existing registration rather than instantiating over it.
@@ -142,39 +143,39 @@ func (n *NodeRPC) RestoreAgentInstance(req *RestoreAgentRequest, resp *string) e
 	//
 	// A fresh registration is only correct on the destination, which has
 	// never seen this instance.
-	a := n.agentMgr.Get(req.InstanceID)
+	a := n.agentMgr.Get(instanceID)
 	fresh := a == nil
 	if fresh {
 		var err error
-		a, err = n.agentMgr.Instantiate(req.InstanceID, req.Spec.Type)
+		a, err = n.agentMgr.Instantiate(instanceID, spec.GetType())
 		if err != nil {
-			return fmt.Errorf("instantiate %q as %s: %w", req.Spec.Type, req.InstanceID, err)
+			return fmt.Errorf("instantiate %q as %s: %w", spec.GetType(), instanceID, err)
 		}
 	}
 
 	ckpt, ok := a.(lifecycle.Checkpointer)
 	if !ok {
 		if fresh {
-			n.agentMgr.Deregister(req.InstanceID)
+			n.agentMgr.Deregister(instanceID)
 		}
-		return fmt.Errorf("agent type %q cannot be restored from a checkpoint", req.Spec.Type)
+		return fmt.Errorf("agent type %q cannot be restored from a checkpoint", spec.GetType())
 	}
 	if err := ckpt.Restore(context.Background(), dir); err != nil {
 		// Only tear down a registration this call created. Deregistering
 		// one that predates us would strip the source of an instance it
 		// is about to keep running.
 		if fresh {
-			n.agentMgr.Deregister(req.InstanceID)
+			n.agentMgr.Deregister(instanceID)
 		}
-		return fmt.Errorf("restore instance %s: %w", req.InstanceID, err)
+		return fmt.Errorf("restore instance %s: %w", instanceID, err)
 	}
 
-	n.tracker.Set(req.InstanceID, "running")
-	n.captureIdentity(req.InstanceID, a)
+	n.tracker.Set(instanceID, "running")
+	n.captureIdentity(instanceID, a)
 
 	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "instance restored",
-		logattr.InstanceID(req.InstanceID), slog.String("dir", dir), slog.Uint64("epoch", req.Epoch))
-	*resp = fmt.Sprintf("instance %s restored on node", req.InstanceID)
+		logattr.InstanceID(instanceID), slog.String("dir", dir), slog.Uint64("epoch", req.GetEpoch()))
+	resp.InstanceId = instanceID
 	return nil
 }
 
@@ -211,27 +212,29 @@ func (n *NodeRPC) captureIdentity(instanceID string, a any) {
 // frequently neither end of the transfer, and routing a multi-gigabyte
 // image through the node running consensus is exactly what the separate
 // goblin-ckpt ALPN exists to avoid.
-func (n *NodeRPC) PullCheckpoint(req *PullCheckpointRequest, resp *string) error {
+func (n *NodeRPC) PullCheckpoint(req *goblinv1.NodePullCheckpointRequest, resp *goblinv1.NodePullCheckpointResponse) error {
 	if n.images == nil {
 		return fmt.Errorf("checkpoint store not configured on this node")
 	}
 	if n.ckptTLS == nil {
 		return fmt.Errorf("checkpoint transport TLS not configured on this node")
 	}
-	if req.SourceAddr == "" {
-		return fmt.Errorf("pull request for %s names no source address", req.InstanceID)
+	instanceID := req.GetInstanceId()
+	sourceAddr := req.GetSourceAddr()
+	if sourceAddr == "" {
+		return fmt.Errorf("pull request for %s names no source address", instanceID)
 	}
 
-	dir, err := migration.DialAndFetch(context.Background(), req.SourceAddr, n.ckptTLS,
-		n.images, req.InstanceUUID, req.Epoch, req.Token)
+	dir, err := migration.DialAndFetch(context.Background(), sourceAddr, n.ckptTLS,
+		n.images, req.GetInstanceUuid(), req.GetEpoch(), req.GetToken())
 	if err != nil {
-		return fmt.Errorf("pulling image for %s from %s: %w", req.InstanceID, req.SourceAddr, err)
+		return fmt.Errorf("pulling image for %s from %s: %w", instanceID, sourceAddr, err)
 	}
 
 	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "checkpoint image pulled",
-		logattr.InstanceID(req.InstanceID), slog.String("source", req.SourceAddr),
-		slog.String("dir", dir), slog.Uint64("epoch", req.Epoch))
-	*resp = dir
+		logattr.InstanceID(instanceID), slog.String("source", sourceAddr),
+		slog.String("dir", dir), slog.Uint64("epoch", req.GetEpoch()))
+	resp.ImageDir = dir
 	return nil
 }
 
