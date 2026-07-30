@@ -202,9 +202,9 @@ migration is reported as rolled back. If the rollback also fails the
 instance is running nowhere, and the error says so explicitly.`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) (err error) {
-		req := map[string]string{
-			"InstanceID": args[0],
-			"ToNode":     args[1],
+		req := &goblinv1.MigrateInstanceRequest{
+			InstanceId: args[0],
+			ToNode:     args[1],
 		}
 
 		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
@@ -213,15 +213,15 @@ instance is running nowhere, and the error says so explicitly.`,
 		}
 		defer closeClient(client, &err)
 
-		var resp string
-		if err := client.CallJSON("SchedulerRPC.MigrateInstance", req, &resp); err != nil {
+		var resp goblinv1.MigrateInstanceResponse
+		if err := client.Call("SchedulerRPC.MigrateInstance", req, &resp); err != nil {
 			// The coordinator's outcomes are materially different for an
 			// operator, so they are surfaced rather than flattened into
 			// one "migration failed".
 			return fmt.Errorf("live migration failed: %w", err)
 		}
 
-		fmt.Println(resp)
+		fmt.Printf("instance %s migrated from %s to %s\n", resp.GetInstanceId(), resp.GetFromNode(), resp.GetToNode())
 		return nil
 	},
 }
@@ -231,9 +231,9 @@ var migrateCmd = &cobra.Command{
 	Short: "Migrate a job to another node",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) (err error) {
-		req := map[string]string{
-			"JobID":  args[0],
-			"ToNode": args[1],
+		req := &goblinv1.MigrateJobRequest{
+			JobId:  args[0],
+			ToNode: args[1],
 		}
 
 		// Connect to QUIC RPC
@@ -244,12 +244,12 @@ var migrateCmd = &cobra.Command{
 		defer closeClient(client, &err)
 
 		// Call SchedulerRPC.MigrateJob
-		var resp string
-		if err := client.CallJSON("SchedulerRPC.MigrateJob", req, &resp); err != nil {
+		var resp goblinv1.MigrateJobResponse
+		if err := client.Call("SchedulerRPC.MigrateJob", req, &resp); err != nil {
 			return fmt.Errorf("migration failed: %w", err)
 		}
 
-		fmt.Println(resp)
+		fmt.Printf("job %s migrated to %s\n", resp.GetJobId(), resp.GetToNode())
 		return nil
 	},
 }

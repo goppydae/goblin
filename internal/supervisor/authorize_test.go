@@ -42,8 +42,8 @@ func mutatingVerbs() map[string]func(*SchedulerRPC) error {
 			return s.DrainNode(&goblinv1.DrainNodeRequest{NodeId: node}, &out)
 		},
 		"MigrateJob": func(s *SchedulerRPC) error {
-			var out string
-			return s.MigrateJob(&MigrateRequest{JobID: "j1", ToNode: "node-2"}, &out)
+			var out goblinv1.MigrateJobResponse
+			return s.MigrateJob(&goblinv1.MigrateJobRequest{JobId: "j1", ToNode: "node-2"}, &out)
 		},
 		"ScaleAgent": func(s *SchedulerRPC) error {
 			var out goblinv1.ScaleAgentResponse

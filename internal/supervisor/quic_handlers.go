@@ -9,8 +9,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Note: MigrateRequest, JobInfo, MemberInfo are defined in scheduler_rpc.go
-
 // RegisterSchedulerHandlers registers all scheduler RPC methods with the QUIC server
 func RegisterSchedulerHandlers(server *QUICRPCServer, rpc *SchedulerRPC) {
 	// SubmitJob handler
@@ -39,34 +37,33 @@ func RegisterSchedulerHandlers(server *QUICRPCServer, rpc *SchedulerRPC) {
 		return proto.Marshal(&resp)
 	})
 
-	// MigrateJob handler
+	// MigrateInstance handler.
 	// Live instance migration (GOBLIN-DIV-031). Distinct from
 	// MigrateJob below, which reassigns work rather than moving a
 	// running process.
 	server.RegisterHandler("SchedulerRPC.MigrateInstance", func(payload []byte) ([]byte, error) {
-		var req MigrateInstanceRequest
-		if err := json.Unmarshal(payload, &req); err != nil {
-			return nil, fmt.Errorf("invalid request: %w", err)
+		var req goblinv1.MigrateInstanceRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 		}
-		var resp string
+		var resp goblinv1.MigrateInstanceResponse
 		if err := rpc.MigrateInstance(&req, &resp); err != nil {
 			return nil, err
 		}
-		return json.Marshal(resp)
+		return proto.Marshal(&resp)
 	})
 
+	// MigrateJob handler.
 	server.RegisterHandler("SchedulerRPC.MigrateJob", func(payload []byte) ([]byte, error) {
-		var req MigrateRequest
-		if err := json.Unmarshal(payload, &req); err != nil {
-			return nil, fmt.Errorf("invalid request: %w", err)
+		var req goblinv1.MigrateJobRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 		}
-
-		var resp string
+		var resp goblinv1.MigrateJobResponse
 		if err := rpc.MigrateJob(&req, &resp); err != nil {
 			return nil, err
 		}
-
-		return json.Marshal(resp)
+		return proto.Marshal(&resp)
 	})
 
 	// ListJobs handler
@@ -109,15 +106,15 @@ func RegisterSchedulerHandlers(server *QUICRPCServer, rpc *SchedulerRPC) {
 	})
 
 	server.RegisterHandler("SchedulerRPC.SignalAgentInstance", func(payload []byte) ([]byte, error) {
-		var req SignalAgentInstanceRequest
-		if err := json.Unmarshal(payload, &req); err != nil {
-			return nil, fmt.Errorf("invalid request: %w", err)
+		var req goblinv1.SignalAgentInstanceRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 		}
-		var resp string
+		var resp goblinv1.SignalAgentInstanceResponse
 		if err := rpc.SignalAgentInstance(&req, &resp); err != nil {
 			return nil, err
 		}
-		return json.Marshal(resp)
+		return proto.Marshal(&resp)
 	})
 
 	// ListAgentInstances handler

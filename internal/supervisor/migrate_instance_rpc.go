@@ -8,6 +8,7 @@ import (
 	"github.com/goppydae/goblin/core/capability"
 	"github.com/goppydae/goblin/core/migration"
 	"github.com/goppydae/goblin/internal/ident"
+	goblinv1 "github.com/goppydae/goblin/proto"
 )
 
 // Live instance migration (GOBLIN-DIV-031).
@@ -20,14 +21,6 @@ import (
 // both hand an instance to a different node; they are not otherwise
 // interchangeable.
 
-// MigrateInstanceRequest asks the leader to live-migrate one instance.
-type MigrateInstanceRequest struct {
-	// InstanceID is the canonical UUID string, as goblinctl prints it.
-	InstanceID string
-	// ToNode is the destination node id.
-	ToNode string
-}
-
 // migrationEpoch derives the checkpoint epoch for a new attempt.
 //
 // Wall-clock milliseconds rather than a counter: the epoch only has to
@@ -39,7 +32,7 @@ func migrationEpoch(now time.Time) uint64 {
 }
 
 // MigrateInstance live-migrates a running instance to another node.
-func (s *SchedulerRPC) MigrateInstance(req *MigrateInstanceRequest, resp *string) error {
+func (s *SchedulerRPC) MigrateInstance(req *goblinv1.MigrateInstanceRequest, resp *goblinv1.MigrateInstanceResponse) error {
 	if s.consensus == nil {
 		return fmt.Errorf("consensus not initialized on this node")
 	}
@@ -47,9 +40,12 @@ func (s *SchedulerRPC) MigrateInstance(req *MigrateInstanceRequest, resp *string
 		return fmt.Errorf("scheduler not initialized on this node")
 	}
 
-	uuid, err := ident.Parse(req.InstanceID)
+	instanceID := req.GetInstanceId()
+	toNode := req.GetToNode()
+
+	uuid, err := ident.Parse(instanceID)
 	if err != nil {
-		return fmt.Errorf("instance id %q: %w", req.InstanceID, err)
+		return fmt.Errorf("instance id %q: %w", instanceID, err)
 	}
 
 	// Authorize against the INSTANCE, not the node or the job: a token
@@ -59,22 +55,22 @@ func (s *SchedulerRPC) MigrateInstance(req *MigrateInstanceRequest, resp *string
 		return err
 	}
 
-	inst, ok := s.consensus.GetInstance(req.InstanceID)
+	inst, ok := s.consensus.GetInstance(instanceID)
 	if !ok {
-		return fmt.Errorf("instance %s is not known to the cluster", req.InstanceID)
+		return fmt.Errorf("instance %s is not known to the cluster", instanceID)
 	}
 	if inst.GetNodeId() == "" {
-		return fmt.Errorf("instance %s has no current node", req.InstanceID)
+		return fmt.Errorf("instance %s has no current node", instanceID)
 	}
-	if inst.GetNodeId() == req.ToNode {
-		return fmt.Errorf("instance %s already runs on %s", req.InstanceID, req.ToNode)
+	if inst.GetNodeId() == toNode {
+		return fmt.Errorf("instance %s already runs on %s", instanceID, toNode)
 	}
 
 	// The destination must be able to instantiate the same agent type,
 	// so the spec travels with the restore request.
 	spec, err := s.scheduler.GetAgent(context.Background(), ident.String(inst.GetSpecUuid()))
 	if err != nil {
-		return fmt.Errorf("resolving spec for instance %s: %w", req.InstanceID, err)
+		return fmt.Errorf("resolving spec for instance %s: %w", instanceID, err)
 	}
 
 	coord := s.migrationCoordinator()
@@ -82,11 +78,12 @@ func (s *SchedulerRPC) MigrateInstance(req *MigrateInstanceRequest, resp *string
 		return fmt.Errorf("migration is not configured on this node")
 	}
 
+	sourceNode := inst.GetNodeId()
 	err = coord.Migrate(context.Background(), migration.Request{
-		InstanceID:   req.InstanceID,
+		InstanceID:   instanceID,
 		InstanceUUID: uuid,
-		SourceNode:   inst.GetNodeId(),
-		TargetNode:   req.ToNode,
+		SourceNode:   sourceNode,
+		TargetNode:   toNode,
 		Epoch:        migrationEpoch(time.Now()),
 		Rights:       payload.GetRights(),
 		Token:        token,
@@ -100,8 +97,9 @@ func (s *SchedulerRPC) MigrateInstance(req *MigrateInstanceRequest, resp *string
 		return err
 	}
 
-	*resp = fmt.Sprintf("instance %s migrated from %s to %s",
-		req.InstanceID, inst.GetNodeId(), req.ToNode)
+	resp.InstanceId = instanceID
+	resp.FromNode = sourceNode
+	resp.ToNode = toNode
 	return nil
 }
 

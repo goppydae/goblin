@@ -17,7 +17,6 @@ import (
 	gapitransport "github.com/goppydae/gapi/core/transport"
 	"github.com/goppydae/goblin/internal/cli"
 	"github.com/goppydae/goblin/internal/ident"
-	"github.com/goppydae/goblin/internal/supervisor"
 	goblinv1 "github.com/goppydae/goblin/proto"
 	"github.com/quic-go/quic-go"
 )
@@ -358,9 +357,9 @@ func (c *testCluster) trySignal(node *clusterNode, instanceID string, signum int
 			c.t.Logf("close signal client: %v", cerr)
 		}
 	}()
-	req := supervisor.SignalAgentInstanceRequest{InstanceID: instanceID, Signum: signum}
-	var resp string
-	return cl.CallJSON("SchedulerRPC.SignalAgentInstance", &req, &resp)
+	req := &goblinv1.SignalAgentInstanceRequest{InstanceId: instanceID, Signum: signum}
+	var resp goblinv1.SignalAgentInstanceResponse
+	return cl.Call("SchedulerRPC.SignalAgentInstance", req, &resp)
 }
 
 // dialALPNAddr probes one ALPN plane of a node's single control-plane

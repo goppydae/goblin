@@ -199,3 +199,52 @@ message PublishEventRequest {
 message PublishEventResponse {
   string topic = 1;
 }
+
+// MigrateJobRequest reassigns a job to another node. Distinct from
+// MigrateInstanceRequest: this stops work in one place and starts it
+// in another, and the process does not survive the move.
+message MigrateJobRequest {
+  string job_id = 1;
+  string to_node = 2;
+}
+
+// MigrateJobResponse reports the applied placement rather than a
+// formatted sentence.
+message MigrateJobResponse {
+  string job_id = 1;
+  string to_node = 2;
+}
+
+// MigrateInstanceRequest asks the leader to live-migrate one running
+// instance to another node (GOBLIN-DIV-031). instance_id is the
+// canonical UUID string, as goblinctl prints it - not the raw bytes
+// spec_uuid/instance_uuid use elsewhere in this schema, since this is
+// the field the CLI already passes as a string.
+message MigrateInstanceRequest {
+  string instance_id = 1;
+  string to_node = 2;
+}
+
+// MigrateInstanceResponse reports the instance's move rather than a
+// formatted sentence.
+message MigrateInstanceResponse {
+  string instance_id = 1;
+  string from_node = 2;
+  string to_node = 3;
+}
+
+// SignalAgentInstanceRequest asks the leader to signal an instance
+// (GOBLIN-DIV-017, DDR-10). instance_id is the canonical UUID string,
+// matching MigrateInstanceRequest.
+message SignalAgentInstanceRequest {
+  string instance_id = 1;
+  int32 signum = 2;
+}
+
+// SignalAgentInstanceResponse reports the authorized delivery rather
+// than a formatted sentence.
+message SignalAgentInstanceResponse {
+  int32 signum = 1;
+  string instance_id = 2;
+  string node_id = 3;
+}
