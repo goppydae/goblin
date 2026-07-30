@@ -129,8 +129,12 @@ func (s *Scheduler) createInstance(ctx context.Context, spec *goblinv1.AgentSpec
 
 	// 4. Trigger Start on Node (Async to avoid blocking Reconciler loop).
 	// The reconciler-loop ctx (not Background) so in-flight starts abort
-	// at shutdown instead of outliving the supervisor.
+	// at shutdown instead of outliving the supervisor, and counted on
+	// s.dispatches so RunReconciler can join them rather than trusting
+	// cancellation to have been noticed (AwaitDispatches).
+	s.dispatches.Add(1)
 	go func() {
+		defer s.dispatches.Done()
 		if err := s.startAgentOnNode(ctx, nodeID, instance, spec); err != nil {
 			slog.Default().LogAttrs(ctx, slog.LevelError, "failed to start agent on node", logattr.InstanceID(ident.String(instance.InstanceUuid)), logattr.NodeID(nodeID), logattr.Err(err))
 			// A dispatch failure must not leave a pending ghost: mark
@@ -350,6 +354,28 @@ func (s *Scheduler) getNodeAddress(ctx context.Context, nodeID string) (string, 
 	return "", fmt.Errorf("node %s not found", nodeID)
 }
 
+// dispatchDrainTimeout bounds how long RunReconciler waits for in-flight
+// agent dispatches once its context is cancelled. A dispatch whose ctx is
+// already cancelled fails fast, so the normal drain is immediate; the
+// bound exists for a start parked in an RPC that ignores cancellation, so
+// shutdown cannot hang on one unresponsive node.
+const dispatchDrainTimeout = 10 * time.Second
+
+// drainDispatches joins the dispatch goroutines this loop started.
+//
+// ctx is already cancelled here, so the drain carries its own deadline
+// detached from it - waiting on a cancelled context would return at once
+// and defeat the join.
+func (s *Scheduler) drainDispatches(ctx context.Context) {
+	drainCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dispatchDrainTimeout)
+	defer cancel()
+	if err := s.AwaitDispatches(drainCtx); err != nil {
+		slog.Default().LogAttrs(ctx, slog.LevelWarn, "agent dispatches outlived the reconciler drain deadline", logattr.Err(err))
+		return
+	}
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "reconciler stopped, dispatches drained")
+}
+
 // RunReconciler starts the periodic reconciliation loop
 func (s *Scheduler) RunReconciler(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
@@ -359,6 +385,7 @@ func (s *Scheduler) RunReconciler(ctx context.Context, interval time.Duration) {
 	for {
 		select {
 		case <-ctx.Done():
+			s.drainDispatches(ctx)
 			return
 		case <-ticker.C:
 		case <-s.reconcileKick:

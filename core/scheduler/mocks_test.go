@@ -169,3 +169,45 @@ func NewMockCluster(members []serf.Member) *MockCluster {
 func (m *MockCluster) Members() []serf.Member {
 	return m.members
 }
+
+// MockRPCClient implements RPCClient for tests that need agent dispatch
+// to succeed. Every Call reports success; the assertions are on the
+// instance state the scheduler records afterwards, not on the wire
+// payload, which is the untyped JSON GOBLIN-DIV-036 tracks.
+type MockRPCClient struct{}
+
+func (MockRPCClient) Call(serviceMethod string, args, reply interface{}) error { return nil }
+
+func (MockRPCClient) Close() error { return nil }
+
+// NewMockClientFactory returns a ClientFactory whose clients always
+// succeed. Passing nil for a Scheduler's factory is NOT the same thing:
+// startAgentOnNode rejects a nil factory outright, so every dispatch
+// fails and the instance is terminated. Tests that mean to exercise the
+// happy path must inject this.
+func NewMockClientFactory() ClientFactory {
+	return func(addr string) (RPCClient, error) { return MockRPCClient{}, nil }
+}
+
+// BlockingRPCClient parks inside Call until released, so a test can hold
+// a dispatch in flight and observe whether the reconciler waits for it.
+type BlockingRPCClient struct {
+	entered chan<- struct{}
+	release <-chan struct{}
+}
+
+func (c BlockingRPCClient) Call(serviceMethod string, args, reply interface{}) error {
+	c.entered <- struct{}{}
+	<-c.release
+	return nil
+}
+
+func (c BlockingRPCClient) Close() error { return nil }
+
+// NewBlockingClientFactory returns a factory whose clients report on
+// entered when a dispatch begins and stay parked until release closes.
+func NewBlockingClientFactory(entered chan<- struct{}, release <-chan struct{}) ClientFactory {
+	return func(addr string) (RPCClient, error) {
+		return BlockingRPCClient{entered: entered, release: release}, nil
+	}
+}

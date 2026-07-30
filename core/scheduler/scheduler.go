@@ -75,6 +75,12 @@ type Scheduler struct {
 	locators map[string]Locator
 	// reconcileKick requests an immediate reconcile pass (buffered 1).
 	reconcileKick chan struct{}
+	// dispatches counts in-flight agent-start goroutines so the reconcile
+	// loop can join them instead of abandoning starts mid-flight. Every
+	// Add happens on the reconciler goroutine (ReconcileAgents has one
+	// non-test caller, RunReconciler), so Add is ordered before the drain
+	// Wait and the WaitGroup cannot be reused across a Wait.
+	dispatches sync.WaitGroup
 }
 
 // NewScheduler creates a new Scheduler instance. isLeader is the leadership
@@ -95,6 +101,33 @@ func NewScheduler(store KVStore, c Cluster, bus eventbus.EventBus, isLeader func
 	}
 	s.placement = NewPlacementEngine()
 	return s
+}
+
+// AwaitDispatches blocks until every agent dispatch started by
+// reconciliation has finished, or ctx expires.
+//
+// Dispatch runs on its own goroutine so a slow node cannot stall a
+// reconcile pass (createInstance). That left the goroutines unobservable:
+// RunReconciler returned while starts were still in flight, and a caller
+// had no way to know an instance's state had settled. This is the join
+// point. Callers that cancelled the loop ctx must pass a fresh context,
+// since a cancelled one makes this return immediately.
+//
+// On ctx expiry the internal waiter goroutine remains until the
+// outstanding dispatches finish on their own; it is bounded by them, not
+// leaked indefinitely.
+func (s *Scheduler) AwaitDispatches(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		s.dispatches.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("await agent dispatches: %w", ctx.Err())
+	}
 }
 
 // leading reports whether this node may run reconciliation writes.
