@@ -40,31 +40,40 @@ const (
 	// instance stays RUNNING throughout and only its locator moves.
 	CommandType_COMMAND_TYPE_MIGRATE_BEGIN  CommandType = 7 // (payload: migrate_begin)
 	CommandType_COMMAND_TYPE_MIGRATE_COMMIT CommandType = 8 // (payload: migrate_commit)
+	// Operator key registry (GOBLIN-DIV-015 piece 1). SEED installs the
+	// configured root-of-trust keys into an empty registry; CHANGE is a
+	// signed add or remove authorized by an already-registered key.
+	CommandType_COMMAND_TYPE_OPERATOR_KEY_SEED   CommandType = 9  // (payload: operator_key_seed)
+	CommandType_COMMAND_TYPE_OPERATOR_KEY_CHANGE CommandType = 10 // (payload: operator_key_change)
 )
 
 // Enum value maps for CommandType.
 var (
 	CommandType_name = map[int32]string{
-		0: "COMMAND_TYPE_UNSPECIFIED",
-		1: "COMMAND_TYPE_SET",
-		2: "COMMAND_TYPE_DELETE",
-		3: "COMMAND_TYPE_CAS",
-		4: "COMMAND_TYPE_ADMIT",
-		5: "COMMAND_TYPE_TRANSITION",
-		6: "COMMAND_TYPE_SIGNAL",
-		7: "COMMAND_TYPE_MIGRATE_BEGIN",
-		8: "COMMAND_TYPE_MIGRATE_COMMIT",
+		0:  "COMMAND_TYPE_UNSPECIFIED",
+		1:  "COMMAND_TYPE_SET",
+		2:  "COMMAND_TYPE_DELETE",
+		3:  "COMMAND_TYPE_CAS",
+		4:  "COMMAND_TYPE_ADMIT",
+		5:  "COMMAND_TYPE_TRANSITION",
+		6:  "COMMAND_TYPE_SIGNAL",
+		7:  "COMMAND_TYPE_MIGRATE_BEGIN",
+		8:  "COMMAND_TYPE_MIGRATE_COMMIT",
+		9:  "COMMAND_TYPE_OPERATOR_KEY_SEED",
+		10: "COMMAND_TYPE_OPERATOR_KEY_CHANGE",
 	}
 	CommandType_value = map[string]int32{
-		"COMMAND_TYPE_UNSPECIFIED":    0,
-		"COMMAND_TYPE_SET":            1,
-		"COMMAND_TYPE_DELETE":         2,
-		"COMMAND_TYPE_CAS":            3,
-		"COMMAND_TYPE_ADMIT":          4,
-		"COMMAND_TYPE_TRANSITION":     5,
-		"COMMAND_TYPE_SIGNAL":         6,
-		"COMMAND_TYPE_MIGRATE_BEGIN":  7,
-		"COMMAND_TYPE_MIGRATE_COMMIT": 8,
+		"COMMAND_TYPE_UNSPECIFIED":         0,
+		"COMMAND_TYPE_SET":                 1,
+		"COMMAND_TYPE_DELETE":              2,
+		"COMMAND_TYPE_CAS":                 3,
+		"COMMAND_TYPE_ADMIT":               4,
+		"COMMAND_TYPE_TRANSITION":          5,
+		"COMMAND_TYPE_SIGNAL":              6,
+		"COMMAND_TYPE_MIGRATE_BEGIN":       7,
+		"COMMAND_TYPE_MIGRATE_COMMIT":      8,
+		"COMMAND_TYPE_OPERATOR_KEY_SEED":   9,
+		"COMMAND_TYPE_OPERATOR_KEY_CHANGE": 10,
 	}
 )
 
@@ -147,6 +156,58 @@ func (MigrateOutcome) EnumDescriptor() ([]byte, []int) {
 	return file_goblin_v1_raft_proto_rawDescGZIP(), []int{1}
 }
 
+// OperatorKeyOp names the mutation an OperatorKeyChangePayload requests.
+// UNSPECIFIED is rejected rather than defaulted: a change whose op did
+// not decode must not silently become an add.
+type OperatorKeyOp int32
+
+const (
+	OperatorKeyOp_OPERATOR_KEY_OP_UNSPECIFIED OperatorKeyOp = 0
+	OperatorKeyOp_OPERATOR_KEY_OP_ADD         OperatorKeyOp = 1
+	OperatorKeyOp_OPERATOR_KEY_OP_REMOVE      OperatorKeyOp = 2
+)
+
+// Enum value maps for OperatorKeyOp.
+var (
+	OperatorKeyOp_name = map[int32]string{
+		0: "OPERATOR_KEY_OP_UNSPECIFIED",
+		1: "OPERATOR_KEY_OP_ADD",
+		2: "OPERATOR_KEY_OP_REMOVE",
+	}
+	OperatorKeyOp_value = map[string]int32{
+		"OPERATOR_KEY_OP_UNSPECIFIED": 0,
+		"OPERATOR_KEY_OP_ADD":         1,
+		"OPERATOR_KEY_OP_REMOVE":      2,
+	}
+)
+
+func (x OperatorKeyOp) Enum() *OperatorKeyOp {
+	p := new(OperatorKeyOp)
+	*p = x
+	return p
+}
+
+func (x OperatorKeyOp) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (OperatorKeyOp) Descriptor() protoreflect.EnumDescriptor {
+	return file_goblin_v1_raft_proto_enumTypes[2].Descriptor()
+}
+
+func (OperatorKeyOp) Type() protoreflect.EnumType {
+	return &file_goblin_v1_raft_proto_enumTypes[2]
+}
+
+func (x OperatorKeyOp) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use OperatorKeyOp.Descriptor instead.
+func (OperatorKeyOp) EnumDescriptor() ([]byte, []int) {
+	return file_goblin_v1_raft_proto_rawDescGZIP(), []int{2}
+}
+
 // LogEntry represents a command in the Raft log. KV commands use the
 // flat namespace/key/value fields; instance-lifecycle commands carry
 // their payload in the oneof.
@@ -164,6 +225,8 @@ type LogEntry struct {
 	//	*LogEntry_Signal
 	//	*LogEntry_MigrateBegin
 	//	*LogEntry_MigrateCommit
+	//	*LogEntry_OperatorKeySeed
+	//	*LogEntry_OperatorKeyChange
 	Payload       isLogEntry_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -286,6 +349,24 @@ func (x *LogEntry) GetMigrateCommit() *MigrateCommit {
 	return nil
 }
 
+func (x *LogEntry) GetOperatorKeySeed() *OperatorKeySeed {
+	if x != nil {
+		if x, ok := x.Payload.(*LogEntry_OperatorKeySeed); ok {
+			return x.OperatorKeySeed
+		}
+	}
+	return nil
+}
+
+func (x *LogEntry) GetOperatorKeyChange() *OperatorKeyChange {
+	if x != nil {
+		if x, ok := x.Payload.(*LogEntry_OperatorKeyChange); ok {
+			return x.OperatorKeyChange
+		}
+	}
+	return nil
+}
+
 type isLogEntry_Payload interface {
 	isLogEntry_Payload()
 }
@@ -310,6 +391,14 @@ type LogEntry_MigrateCommit struct {
 	MigrateCommit *MigrateCommit `protobuf:"bytes,10,opt,name=migrate_commit,json=migrateCommit,proto3,oneof"`
 }
 
+type LogEntry_OperatorKeySeed struct {
+	OperatorKeySeed *OperatorKeySeed `protobuf:"bytes,11,opt,name=operator_key_seed,json=operatorKeySeed,proto3,oneof"`
+}
+
+type LogEntry_OperatorKeyChange struct {
+	OperatorKeyChange *OperatorKeyChange `protobuf:"bytes,12,opt,name=operator_key_change,json=operatorKeyChange,proto3,oneof"`
+}
+
 func (*LogEntry_Admit) isLogEntry_Payload() {}
 
 func (*LogEntry_Transition) isLogEntry_Payload() {}
@@ -319,6 +408,10 @@ func (*LogEntry_Signal) isLogEntry_Payload() {}
 func (*LogEntry_MigrateBegin) isLogEntry_Payload() {}
 
 func (*LogEntry_MigrateCommit) isLogEntry_Payload() {}
+
+func (*LogEntry_OperatorKeySeed) isLogEntry_Payload() {}
+
+func (*LogEntry_OperatorKeyChange) isLogEntry_Payload() {}
 
 // MigrateBegin records the intent to move one instance to another node
 // (research section 4.4, DDR-3/DDR-4).
@@ -742,11 +835,262 @@ func (x *SignalRequest) GetRights() uint64 {
 	return 0
 }
 
+// OperatorKey is one authorized operator identity.
+//
+// key_id is DERIVED, never asserted: it must equal the lowercase hex
+// SHA-256 of public_key, and the FSM refuses a record where it does
+// not. Deriving the id from the key removes the class of bug where the
+// id names one key and the bytes are another.
+type OperatorKey struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	KeyId         string                 `protobuf:"bytes,1,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`             // hex(sha256(public_key))
+	PublicKey     []byte                 `protobuf:"bytes,2,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"` // raw 32-byte Ed25519 public key
+	Comment       string                 `protobuf:"bytes,3,opt,name=comment,proto3" json:"comment,omitempty"`                      // operator-facing label; not authenticated
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OperatorKey) Reset() {
+	*x = OperatorKey{}
+	mi := &file_goblin_v1_raft_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OperatorKey) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OperatorKey) ProtoMessage() {}
+
+func (x *OperatorKey) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_raft_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OperatorKey.ProtoReflect.Descriptor instead.
+func (*OperatorKey) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_raft_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *OperatorKey) GetKeyId() string {
+	if x != nil {
+		return x.KeyId
+	}
+	return ""
+}
+
+func (x *OperatorKey) GetPublicKey() []byte {
+	if x != nil {
+		return x.PublicKey
+	}
+	return nil
+}
+
+func (x *OperatorKey) GetComment() string {
+	if x != nil {
+		return x.Comment
+	}
+	return ""
+}
+
+// OperatorKeySeed installs the configured root-of-trust keys.
+//
+// It carries no signature because there is nothing yet to sign against:
+// it is authorized by the registry being empty, which is replicated FSM
+// state and therefore a deterministic check. Re-seeding an identical
+// set is a no-op so a node restart does not fail; seeding a DIFFERENT
+// set into a non-empty registry is refused, which is how config drift
+// between nodes surfaces instead of silently widening the trust root.
+type OperatorKeySeed struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Keys          []*OperatorKey         `protobuf:"bytes,1,rep,name=keys,proto3" json:"keys,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OperatorKeySeed) Reset() {
+	*x = OperatorKeySeed{}
+	mi := &file_goblin_v1_raft_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OperatorKeySeed) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OperatorKeySeed) ProtoMessage() {}
+
+func (x *OperatorKeySeed) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_raft_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OperatorKeySeed.ProtoReflect.Descriptor instead.
+func (*OperatorKeySeed) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_raft_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *OperatorKeySeed) GetKeys() []*OperatorKey {
+	if x != nil {
+		return x.Keys
+	}
+	return nil
+}
+
+// OperatorKeyChangePayload is the signed content of a registry change.
+//
+// prev_serial is the replay guard and it is deliberately a counter, not
+// an expiry: the FSM must decide identically on every replica, and a
+// wall-clock comparison inside Apply is not deterministic. A signed
+// change is valid at exactly one registry serial.
+type OperatorKeyChangePayload struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Op    OperatorKeyOp          `protobuf:"varint,1,opt,name=op,proto3,enum=goblin.v1.OperatorKeyOp" json:"op,omitempty"`
+	// For ADD, the full record. For REMOVE, only key_id is read; any
+	// public_key present is ignored rather than checked, since the
+	// registry already holds the authoritative bytes.
+	Key              *OperatorKey `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	PrevSerial       uint64       `protobuf:"varint,3,opt,name=prev_serial,json=prevSerial,proto3" json:"prev_serial,omitempty"`
+	AuthorizingKeyId string       `protobuf:"bytes,4,opt,name=authorizing_key_id,json=authorizingKeyId,proto3" json:"authorizing_key_id,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *OperatorKeyChangePayload) Reset() {
+	*x = OperatorKeyChangePayload{}
+	mi := &file_goblin_v1_raft_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OperatorKeyChangePayload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OperatorKeyChangePayload) ProtoMessage() {}
+
+func (x *OperatorKeyChangePayload) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_raft_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OperatorKeyChangePayload.ProtoReflect.Descriptor instead.
+func (*OperatorKeyChangePayload) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_raft_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *OperatorKeyChangePayload) GetOp() OperatorKeyOp {
+	if x != nil {
+		return x.Op
+	}
+	return OperatorKeyOp_OPERATOR_KEY_OP_UNSPECIFIED
+}
+
+func (x *OperatorKeyChangePayload) GetKey() *OperatorKey {
+	if x != nil {
+		return x.Key
+	}
+	return nil
+}
+
+func (x *OperatorKeyChangePayload) GetPrevSerial() uint64 {
+	if x != nil {
+		return x.PrevSerial
+	}
+	return 0
+}
+
+func (x *OperatorKeyChangePayload) GetAuthorizingKeyId() string {
+	if x != nil {
+		return x.AuthorizingKeyId
+	}
+	return ""
+}
+
+// OperatorKeyChange wraps the signed payload. As with CapabilityToken,
+// the signature covers the literal payload bytes - protobuf
+// serialization is not canonical, so the FSM verifies the bytes that
+// arrived in the log and never re-serializes before checking.
+type OperatorKeyChange struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Payload       []byte                 `protobuf:"bytes,1,opt,name=payload,proto3" json:"payload,omitempty"`     // serialized OperatorKeyChangePayload
+	Signature     []byte                 `protobuf:"bytes,2,opt,name=signature,proto3" json:"signature,omitempty"` // Ed25519 over payload bytes
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OperatorKeyChange) Reset() {
+	*x = OperatorKeyChange{}
+	mi := &file_goblin_v1_raft_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OperatorKeyChange) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OperatorKeyChange) ProtoMessage() {}
+
+func (x *OperatorKeyChange) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_raft_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OperatorKeyChange.ProtoReflect.Descriptor instead.
+func (*OperatorKeyChange) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_raft_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *OperatorKeyChange) GetPayload() []byte {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+func (x *OperatorKeyChange) GetSignature() []byte {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
 var File_goblin_v1_raft_proto protoreflect.FileDescriptor
 
 const file_goblin_v1_raft_proto_rawDesc = "" +
 	"\n" +
-	"\x14goblin/v1/raft.proto\x12\tgoblin.v1\x1a\x19goblin/v1/scheduler.proto\"\xcf\x03\n" +
+	"\x14goblin/v1/raft.proto\x12\tgoblin.v1\x1a\x19goblin/v1/scheduler.proto\"\xe9\x04\n" +
 	"\bLogEntry\x12*\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x16.goblin.v1.CommandTypeR\x04type\x12\x1c\n" +
 	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12\x10\n" +
@@ -761,7 +1105,9 @@ const file_goblin_v1_raft_proto_rawDesc = "" +
 	"\x06signal\x18\b \x01(\v2\x18.goblin.v1.SignalRequestH\x00R\x06signal\x12>\n" +
 	"\rmigrate_begin\x18\t \x01(\v2\x17.goblin.v1.MigrateBeginH\x00R\fmigrateBegin\x12A\n" +
 	"\x0emigrate_commit\x18\n" +
-	" \x01(\v2\x18.goblin.v1.MigrateCommitH\x00R\rmigrateCommitB\t\n" +
+	" \x01(\v2\x18.goblin.v1.MigrateCommitH\x00R\rmigrateCommit\x12H\n" +
+	"\x11operator_key_seed\x18\v \x01(\v2\x1a.goblin.v1.OperatorKeySeedH\x00R\x0foperatorKeySeed\x12N\n" +
+	"\x13operator_key_change\x18\f \x01(\v2\x1c.goblin.v1.OperatorKeyChangeH\x00R\x11operatorKeyChangeB\t\n" +
 	"\apayload\"\x9c\x01\n" +
 	"\fMigrateBegin\x12#\n" +
 	"\rinstance_uuid\x18\x01 \x01(\fR\finstanceUuid\x12$\n" +
@@ -790,7 +1136,23 @@ const file_goblin_v1_raft_proto_rawDesc = "" +
 	"\rinstance_uuid\x18\x01 \x01(\fR\finstanceUuid\x12\x16\n" +
 	"\x06signum\x18\x02 \x01(\x05R\x06signum\x12\x19\n" +
 	"\btoken_id\x18\x03 \x01(\fR\atokenId\x12\x16\n" +
-	"\x06rights\x18\x04 \x01(\x04R\x06rights*\xff\x01\n" +
+	"\x06rights\x18\x04 \x01(\x04R\x06rights\"]\n" +
+	"\vOperatorKey\x12\x15\n" +
+	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12\x1d\n" +
+	"\n" +
+	"public_key\x18\x02 \x01(\fR\tpublicKey\x12\x18\n" +
+	"\acomment\x18\x03 \x01(\tR\acomment\"=\n" +
+	"\x0fOperatorKeySeed\x12*\n" +
+	"\x04keys\x18\x01 \x03(\v2\x16.goblin.v1.OperatorKeyR\x04keys\"\xbd\x01\n" +
+	"\x18OperatorKeyChangePayload\x12(\n" +
+	"\x02op\x18\x01 \x01(\x0e2\x18.goblin.v1.OperatorKeyOpR\x02op\x12(\n" +
+	"\x03key\x18\x02 \x01(\v2\x16.goblin.v1.OperatorKeyR\x03key\x12\x1f\n" +
+	"\vprev_serial\x18\x03 \x01(\x04R\n" +
+	"prevSerial\x12,\n" +
+	"\x12authorizing_key_id\x18\x04 \x01(\tR\x10authorizingKeyId\"K\n" +
+	"\x11OperatorKeyChange\x12\x18\n" +
+	"\apayload\x18\x01 \x01(\fR\apayload\x12\x1c\n" +
+	"\tsignature\x18\x02 \x01(\fR\tsignature*\xc9\x02\n" +
 	"\vCommandType\x12\x1c\n" +
 	"\x18COMMAND_TYPE_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10COMMAND_TYPE_SET\x10\x01\x12\x17\n" +
@@ -800,11 +1162,18 @@ const file_goblin_v1_raft_proto_rawDesc = "" +
 	"\x17COMMAND_TYPE_TRANSITION\x10\x05\x12\x17\n" +
 	"\x13COMMAND_TYPE_SIGNAL\x10\x06\x12\x1e\n" +
 	"\x1aCOMMAND_TYPE_MIGRATE_BEGIN\x10\a\x12\x1f\n" +
-	"\x1bCOMMAND_TYPE_MIGRATE_COMMIT\x10\b*m\n" +
+	"\x1bCOMMAND_TYPE_MIGRATE_COMMIT\x10\b\x12\"\n" +
+	"\x1eCOMMAND_TYPE_OPERATOR_KEY_SEED\x10\t\x12$\n" +
+	" COMMAND_TYPE_OPERATOR_KEY_CHANGE\x10\n" +
+	"*m\n" +
 	"\x0eMigrateOutcome\x12\x1f\n" +
 	"\x1bMIGRATE_OUTCOME_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19MIGRATE_OUTCOME_COMPLETED\x10\x01\x12\x1b\n" +
-	"\x17MIGRATE_OUTCOME_ABORTED\x10\x02B+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
+	"\x17MIGRATE_OUTCOME_ABORTED\x10\x02*e\n" +
+	"\rOperatorKeyOp\x12\x1f\n" +
+	"\x1bOPERATOR_KEY_OP_UNSPECIFIED\x10\x00\x12\x17\n" +
+	"\x13OPERATOR_KEY_OP_ADD\x10\x01\x12\x1a\n" +
+	"\x16OPERATOR_KEY_OP_REMOVE\x10\x02B+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
 
 var (
 	file_goblin_v1_raft_proto_rawDescOnce sync.Once
@@ -818,34 +1187,44 @@ func file_goblin_v1_raft_proto_rawDescGZIP() []byte {
 	return file_goblin_v1_raft_proto_rawDescData
 }
 
-var file_goblin_v1_raft_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_goblin_v1_raft_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_goblin_v1_raft_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_goblin_v1_raft_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_goblin_v1_raft_proto_goTypes = []any{
-	(CommandType)(0),           // 0: goblin.v1.CommandType
-	(MigrateOutcome)(0),        // 1: goblin.v1.MigrateOutcome
-	(*LogEntry)(nil),           // 2: goblin.v1.LogEntry
-	(*MigrateBegin)(nil),       // 3: goblin.v1.MigrateBegin
-	(*MigrateCommit)(nil),      // 4: goblin.v1.MigrateCommit
-	(*MigrationRecord)(nil),    // 5: goblin.v1.MigrationRecord
-	(*ApplyAdmit)(nil),         // 6: goblin.v1.ApplyAdmit
-	(*InstanceTransition)(nil), // 7: goblin.v1.InstanceTransition
-	(*SignalRequest)(nil),      // 8: goblin.v1.SignalRequest
-	(InstanceState)(0),         // 9: goblin.v1.InstanceState
+	(CommandType)(0),                 // 0: goblin.v1.CommandType
+	(MigrateOutcome)(0),              // 1: goblin.v1.MigrateOutcome
+	(OperatorKeyOp)(0),               // 2: goblin.v1.OperatorKeyOp
+	(*LogEntry)(nil),                 // 3: goblin.v1.LogEntry
+	(*MigrateBegin)(nil),             // 4: goblin.v1.MigrateBegin
+	(*MigrateCommit)(nil),            // 5: goblin.v1.MigrateCommit
+	(*MigrationRecord)(nil),          // 6: goblin.v1.MigrationRecord
+	(*ApplyAdmit)(nil),               // 7: goblin.v1.ApplyAdmit
+	(*InstanceTransition)(nil),       // 8: goblin.v1.InstanceTransition
+	(*SignalRequest)(nil),            // 9: goblin.v1.SignalRequest
+	(*OperatorKey)(nil),              // 10: goblin.v1.OperatorKey
+	(*OperatorKeySeed)(nil),          // 11: goblin.v1.OperatorKeySeed
+	(*OperatorKeyChangePayload)(nil), // 12: goblin.v1.OperatorKeyChangePayload
+	(*OperatorKeyChange)(nil),        // 13: goblin.v1.OperatorKeyChange
+	(InstanceState)(0),               // 14: goblin.v1.InstanceState
 }
 var file_goblin_v1_raft_proto_depIdxs = []int32{
-	0, // 0: goblin.v1.LogEntry.type:type_name -> goblin.v1.CommandType
-	6, // 1: goblin.v1.LogEntry.admit:type_name -> goblin.v1.ApplyAdmit
-	7, // 2: goblin.v1.LogEntry.transition:type_name -> goblin.v1.InstanceTransition
-	8, // 3: goblin.v1.LogEntry.signal:type_name -> goblin.v1.SignalRequest
-	3, // 4: goblin.v1.LogEntry.migrate_begin:type_name -> goblin.v1.MigrateBegin
-	4, // 5: goblin.v1.LogEntry.migrate_commit:type_name -> goblin.v1.MigrateCommit
-	1, // 6: goblin.v1.MigrateCommit.outcome:type_name -> goblin.v1.MigrateOutcome
-	9, // 7: goblin.v1.InstanceTransition.to:type_name -> goblin.v1.InstanceState
-	8, // [8:8] is the sub-list for method output_type
-	8, // [8:8] is the sub-list for method input_type
-	8, // [8:8] is the sub-list for extension type_name
-	8, // [8:8] is the sub-list for extension extendee
-	0, // [0:8] is the sub-list for field type_name
+	0,  // 0: goblin.v1.LogEntry.type:type_name -> goblin.v1.CommandType
+	7,  // 1: goblin.v1.LogEntry.admit:type_name -> goblin.v1.ApplyAdmit
+	8,  // 2: goblin.v1.LogEntry.transition:type_name -> goblin.v1.InstanceTransition
+	9,  // 3: goblin.v1.LogEntry.signal:type_name -> goblin.v1.SignalRequest
+	4,  // 4: goblin.v1.LogEntry.migrate_begin:type_name -> goblin.v1.MigrateBegin
+	5,  // 5: goblin.v1.LogEntry.migrate_commit:type_name -> goblin.v1.MigrateCommit
+	11, // 6: goblin.v1.LogEntry.operator_key_seed:type_name -> goblin.v1.OperatorKeySeed
+	13, // 7: goblin.v1.LogEntry.operator_key_change:type_name -> goblin.v1.OperatorKeyChange
+	1,  // 8: goblin.v1.MigrateCommit.outcome:type_name -> goblin.v1.MigrateOutcome
+	14, // 9: goblin.v1.InstanceTransition.to:type_name -> goblin.v1.InstanceState
+	10, // 10: goblin.v1.OperatorKeySeed.keys:type_name -> goblin.v1.OperatorKey
+	2,  // 11: goblin.v1.OperatorKeyChangePayload.op:type_name -> goblin.v1.OperatorKeyOp
+	10, // 12: goblin.v1.OperatorKeyChangePayload.key:type_name -> goblin.v1.OperatorKey
+	13, // [13:13] is the sub-list for method output_type
+	13, // [13:13] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_goblin_v1_raft_proto_init() }
@@ -860,14 +1239,16 @@ func file_goblin_v1_raft_proto_init() {
 		(*LogEntry_Signal)(nil),
 		(*LogEntry_MigrateBegin)(nil),
 		(*LogEntry_MigrateCommit)(nil),
+		(*LogEntry_OperatorKeySeed)(nil),
+		(*LogEntry_OperatorKeyChange)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_goblin_v1_raft_proto_rawDesc), len(file_goblin_v1_raft_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   7,
+			NumEnums:      3,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

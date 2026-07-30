@@ -46,4 +46,16 @@ message FSMSnapshot {
   // rationale as instances: already proto bytes in memory, carried
   // through unchanged.
   map<string, bytes> migrations = 4;
+
+  // Operator key id -> pre-marshalled goblin.v1.OperatorKey bytes. Same
+  // rationale as instances and migrations: already proto bytes in
+  // memory at snapshot time, carried through without a decode/encode
+  // round trip.
+  map<string, bytes> operator_keys = 5;
+
+  // The registry's monotone serial. It rides the snapshot because it is
+  // the replay guard for signed changes: a leader restored from a
+  // snapshot that forgot the serial would accept a change already
+  // applied.
+  uint64 operator_registry_serial = 6;
 }
