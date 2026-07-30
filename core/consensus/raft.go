@@ -3,12 +3,14 @@ package consensus
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
 	goblinv1 "github.com/goppydae/goblin/proto"
+	hclog "github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/raft"
 )
 
@@ -28,7 +30,15 @@ type Consensus struct {
 // every node bootstrapping its own single-node cluster yields N
 // independent rafts that gossip but never share state - the failure
 // mode the 2b e2e exposed.
-func NewConsensus(nodeID, dataDir string, stream raft.StreamLayer, bootstrap bool) (*Consensus, error) {
+//
+// snapshotThreshold, snapshotInterval, and trailingLogs tune Raft's
+// snapshot-compaction behavior (raft.Config.SnapshotThreshold /
+// SnapshotInterval / TrailingLogs); zero keeps raft.DefaultConfig's
+// value for that field (GOBLIN-DIV-040: operators need these to bound
+// trailing-log size and replay-on-join cost, not just the library
+// defaults tuned for a generic workload).
+func NewConsensus(nodeID, dataDir string, stream raft.StreamLayer, bootstrap bool,
+	snapshotThreshold uint64, snapshotInterval time.Duration, trailingLogs uint64) (*Consensus, error) {
 	// Create data directory
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create data dir: %w", err)
@@ -40,7 +50,25 @@ func NewConsensus(nodeID, dataDir string, stream raft.StreamLayer, bootstrap boo
 	config.HeartbeatTimeout = 1 * time.Second
 	config.ElectionTimeout = 1 * time.Second
 	config.CommitTimeout = 50 * time.Millisecond
-	config.LogOutput = io.Discard
+	// logCapture discards raft's internal log like io.Discard did, but
+	// remembers the last ERROR-level line: raft.NewRaft's own error on a
+	// failed FSM.Restore is the generic "failed to load any existing
+	// snapshots" (vendor/.../raft/api.go restoreSnapshot) - the FSM's
+	// specific, operator-facing refusal (e.g. the pre-schema-reset
+	// snapshot message, GOBLIN-DIV-040) only ever reaches raft's logger,
+	// never the returned error. Without capturing it here, that message
+	// never reaches the operator.
+	logCapture := &raftLogCapture{}
+	config.LogOutput = logCapture
+	if snapshotThreshold > 0 {
+		config.SnapshotThreshold = snapshotThreshold
+	}
+	if snapshotInterval > 0 {
+		config.SnapshotInterval = snapshotInterval
+	}
+	if trailingLogs > 0 {
+		config.TrailingLogs = trailingLogs
+	}
 
 	// Create FSM
 	fsm := NewFSM()
@@ -70,6 +98,9 @@ func NewConsensus(nodeID, dataDir string, stream raft.StreamLayer, bootstrap boo
 	// Create Raft
 	r, err := raft.NewRaft(config, fsm, logStore, stableStore, snapshotStore, raftTransport)
 	if err != nil {
+		if last := logCapture.lastError(); last != "" {
+			return nil, fmt.Errorf("failed to create raft: %w (%s)", err, last)
+		}
 		return nil, fmt.Errorf("failed to create raft: %w", err)
 	}
 
@@ -204,4 +235,47 @@ func (c *Consensus) IsTombstoned(instanceID string) bool {
 // Stats returns Raft statistics
 func (c *Consensus) Stats() map[string]string {
 	return c.raft.Stats()
+}
+
+// raftLogCapture is an hclog.LevelWriter used as raft's LogOutput. It
+// discards every line - raft's internal log is noise goblind does not
+// want on stdout/stderr - except it remembers the most recent
+// ERROR-level line. hclog's writer flushes one full formatted line per
+// Write/LevelWrite call (vendor/.../go-hclog/writer.go Flush), so
+// lastError() always holds a complete message, not a partial one.
+//
+// This exists because raft.NewRaft's own error on a failed synchronous
+// FSM.Restore is generic (restoreSnapshot's "failed to load any
+// existing snapshots"): the FSM's specific reason - e.g. GOBLIN-DIV-040's
+// pre-schema-reset-snapshot refusal - is only ever logged, never
+// returned. NewConsensus folds the captured line back into the error it
+// returns so the operator-facing message actually reaches the operator.
+type raftLogCapture struct {
+	mu   sync.Mutex
+	last string
+}
+
+// Write implements io.Writer for callers that bypass LevelWrite (hclog
+// always prefers LevelWrite when the output implements it, but the
+// interface requires Write too).
+func (c *raftLogCapture) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
+// LevelWrite implements hclog.LevelWriter.
+func (c *raftLogCapture) LevelWrite(level hclog.Level, p []byte) (int, error) {
+	if level == hclog.Error {
+		c.mu.Lock()
+		c.last = strings.TrimSpace(string(p))
+		c.mu.Unlock()
+	}
+	return len(p), nil
+}
+
+// lastError returns the most recent ERROR-level line raft logged, or ""
+// if none has been logged yet.
+func (c *raftLogCapture) lastError() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.last
 }

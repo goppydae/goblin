@@ -62,7 +62,21 @@ type Config struct {
 	AdvertiseAddr string
 	AdvertisePort int
 	RaftDir       string
-	JoinAddr      string
+	// RaftSnapshotThreshold overrides how many outstanding Raft log
+	// entries trigger a compaction snapshot (raft.DefaultConfig: 8192).
+	// 0 keeps the Raft default; operators tune it down on write-heavy
+	// clusters to bound the trailing log's disk footprint and how much a
+	// late-joining node must replay before it is caught up.
+	RaftSnapshotThreshold uint64
+	// RaftSnapshotInterval overrides how often Raft checks whether a
+	// compaction snapshot is due (raft.DefaultConfig: 120s). 0 keeps the
+	// Raft default.
+	RaftSnapshotInterval time.Duration
+	// RaftTrailingLogs overrides how many log entries Raft retains after
+	// a snapshot for fast follower replay instead of a full snapshot
+	// transfer (raft.DefaultConfig: 10240). 0 keeps the Raft default.
+	RaftTrailingLogs uint64
+	JoinAddr         string
 	// BootstrapExpect is the number of seed nodes that must be visible
 	// through gossip before the cluster seeds itself. Every seed is
 	// configured with the same number and they elect one bootstrapper
@@ -369,7 +383,8 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 	// at construction time - the engine comes up unseeded and is
 	// bootstrapped once gossip shows the whole seed set.
 	seedAlone := s.cfg.JoinAddr == "" && s.cfg.BootstrapExpect < 2
-	consensus, err := consensus.NewConsensus(nodeID, s.cfg.RaftDir, raftStream, seedAlone)
+	consensus, err := consensus.NewConsensus(nodeID, s.cfg.RaftDir, raftStream, seedAlone,
+		s.cfg.RaftSnapshotThreshold, s.cfg.RaftSnapshotInterval, s.cfg.RaftTrailingLogs)
 	if err != nil {
 		return fmt.Errorf("failed to create consensus: %w", err)
 	}
