@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/goppydae/goblin/core/migration"
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
@@ -15,14 +17,18 @@ import (
 // a remote machine, which is the worst place to find it.
 type recordingCaller struct {
 	method string
-	args   interface{}
+	args   proto.Message
 	err    error
 	closed bool
 }
 
 func (c *recordingCaller) CallJSON(method string, args, _ interface{}) error {
+	return errors.New("recordingCaller: CallJSON not used by the typed migration RPCs")
+}
+
+func (c *recordingCaller) Call(method string, req, _ proto.Message) error {
 	c.method = method
-	c.args = args
+	c.args = req
 	return c.err
 }
 
@@ -47,11 +53,11 @@ func TestCheckpointUsesRegisteredMethodName(t *testing.T) {
 	if caller.method != migration.MethodCheckpoint {
 		t.Errorf("method = %q, want %q", caller.method, migration.MethodCheckpoint)
 	}
-	req, ok := caller.args.(*migration.CheckpointRPCRequest)
+	req, ok := caller.args.(*goblinv1.NodeCheckpointAgentInstanceRequest)
 	if !ok {
-		t.Fatalf("args = %T, want *CheckpointRPCRequest", caller.args)
+		t.Fatalf("args = %T, want *goblinv1.NodeCheckpointAgentInstanceRequest", caller.args)
 	}
-	if req.InstanceID != "inst-1" || req.Epoch != 3 {
+	if req.GetInstanceId() != "inst-1" || req.GetEpoch() != 3 {
 		t.Errorf("request = %+v, want inst-1 at epoch 3", req)
 	}
 	if !caller.closed {
@@ -73,8 +79,8 @@ func TestRestoreCarriesTheSpec(t *testing.T) {
 	if caller.method != migration.MethodRestore {
 		t.Errorf("method = %q, want %q", caller.method, migration.MethodRestore)
 	}
-	req := caller.args.(*migration.RestoreRPCRequest)
-	if req.Spec.GetType() != "worker" {
+	req := caller.args.(*goblinv1.NodeRestoreAgentInstanceRequest)
+	if req.GetSpec().GetType() != "worker" {
 		// Without the spec the destination cannot instantiate the agent
 		// type it is about to restore into.
 		t.Error("restore request dropped the spec")
@@ -108,9 +114,9 @@ func TestPullTargetsDestinationWithSourceAddress(t *testing.T) {
 	if caller.method != migration.MethodPull {
 		t.Errorf("method = %q, want %q", caller.method, migration.MethodPull)
 	}
-	req := caller.args.(*migration.PullRPCRequest)
-	if req.SourceAddr != "10.0.0.1:7946" {
-		t.Errorf("SourceAddr = %q, want the source node's address", req.SourceAddr)
+	req := caller.args.(*goblinv1.NodePullCheckpointRequest)
+	if req.GetSourceAddr() != "10.0.0.1:7946" {
+		t.Errorf("SourceAddr = %q, want the source node's address", req.GetSourceAddr())
 	}
 	if len(dialed) == 0 || dialed[len(dialed)-1] != "10.0.0.2:7946" {
 		t.Errorf("dialed %v, want the request sent to the destination", dialed)

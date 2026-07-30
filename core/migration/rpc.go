@@ -7,49 +7,26 @@ import (
 	"time"
 
 	"github.com/quic-go/quic-go"
+	"google.golang.org/protobuf/proto"
 
 	goblintransport "github.com/goppydae/goblin/core/transport"
 	"github.com/goppydae/goblin/internal/ident"
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
 
-// Wire types and production clients for migration (GOBLIN-DIV-031).
+// Production clients for migration (GOBLIN-DIV-031).
 //
-// The request structs live here rather than in the supervisor so that
-// the caller and the handler share one definition. The reconciler's
-// StartAgentInstance call does the opposite - an anonymous struct
+// The request/response messages (NodeCheckpointAgentInstanceRequest,
+// NodeRestoreAgentInstanceRequest, NodePullCheckpointRequest and their
+// responses) live in proto/goblin/v1/node_rpc.proto rather than as Go
+// structs here (GOBLIN-DIV-036, batch D): the caller (this file) and
+// the handler (internal/supervisor) both import goblinv1, so the
+// shared-definition property the previous hand-written structs existed
+// for is now buf's job, not this package's. The reconciler's
+// StartAgentInstance call used to do the opposite - an anonymous struct
 // matched by hand against a type in another package - and its own
-// comments record how uncomfortable that is.
-
-// CheckpointRPCRequest asks a node to dump one instance it is running.
-type CheckpointRPCRequest struct {
-	InstanceID   string
-	InstanceUUID []byte
-	Epoch        uint64
-}
-
-// RestoreRPCRequest asks a node to restore an instance from an image
-// already present in its own store.
-type RestoreRPCRequest struct {
-	InstanceID   string
-	InstanceUUID []byte
-	Epoch        uint64
-	Spec         *goblinv1.AgentSpec
-}
-
-// PullRPCRequest asks a node to fetch an image from a peer.
-//
-// The DESTINATION receives this and does the dialing: the coordinator
-// runs on the leader, which is frequently neither end of the transfer,
-// and routing bytes through it would put a multi-gigabyte stream on the
-// node running consensus.
-type PullRPCRequest struct {
-	InstanceID   string
-	InstanceUUID []byte
-	Epoch        uint64
-	SourceAddr   string
-	Token        []byte
-}
+// comments recorded how uncomfortable that was; it converts to the
+// same messages in core/scheduler/reconciler.go.
 
 // RPC method names. Constants because a typo in a method string fails
 // at runtime on a remote node, which is the worst place to discover it.
@@ -61,9 +38,16 @@ const (
 
 // Caller is the RPC surface the migration clients need. It mirrors the
 // scheduler's RPCClient; declared here so this package does not import
-// the scheduler and create a cycle.
+// the scheduler and create a cycle. Call takes proto.Message rather
+// than internal/supervisor's own types for the same reason: importing
+// internal/supervisor from core/migration would itself be a cycle
+// (internal/supervisor already imports core/migration), so the
+// dependency both sides can share without cycling is
+// google.golang.org/protobuf/proto plus the generated goblinv1
+// messages, not either domain package.
 type Caller interface {
 	CallJSON(serviceMethod string, args interface{}, reply interface{}) error
+	Call(method string, req, resp proto.Message) error
 	Close() error
 }
 
@@ -85,7 +69,7 @@ func NewRPCNodes(dial Dialer, resolve Resolver) *RPCNodes {
 	return &RPCNodes{dial: dial, resolve: resolve}
 }
 
-func (r *RPCNodes) call(ctx context.Context, nodeID, method string, req interface{}) error {
+func (r *RPCNodes) call(ctx context.Context, nodeID, method string, req, resp proto.Message) error {
 	addr, err := r.resolve(ctx, nodeID)
 	if err != nil {
 		return fmt.Errorf("resolving node %s: %w", nodeID, err)
@@ -96,8 +80,7 @@ func (r *RPCNodes) call(ctx context.Context, nodeID, method string, req interfac
 	}
 	defer func() { _ = client.Close() }()
 
-	var resp string
-	if err := client.CallJSON(method, req, &resp); err != nil {
+	if err := client.Call(method, req, resp); err != nil {
 		return fmt.Errorf("%s on node %s: %w", method, nodeID, err)
 	}
 	return nil
@@ -105,16 +88,20 @@ func (r *RPCNodes) call(ctx context.Context, nodeID, method string, req interfac
 
 // Checkpoint asks nodeID to dump the instance.
 func (r *RPCNodes) Checkpoint(ctx context.Context, nodeID, instanceID string, uuid []byte, epoch uint64) error {
-	return r.call(ctx, nodeID, MethodCheckpoint, &CheckpointRPCRequest{
-		InstanceID: instanceID, InstanceUUID: uuid, Epoch: epoch,
-	})
+	req := &goblinv1.NodeCheckpointAgentInstanceRequest{
+		InstanceId: instanceID, InstanceUuid: uuid, Epoch: epoch,
+	}
+	var resp goblinv1.NodeCheckpointAgentInstanceResponse
+	return r.call(ctx, nodeID, MethodCheckpoint, req, &resp)
 }
 
 // Restore asks nodeID to restore the instance from its local image.
 func (r *RPCNodes) Restore(ctx context.Context, nodeID, instanceID string, uuid []byte, epoch uint64, spec *goblinv1.AgentSpec) error {
-	return r.call(ctx, nodeID, MethodRestore, &RestoreRPCRequest{
-		InstanceID: instanceID, InstanceUUID: uuid, Epoch: epoch, Spec: spec,
-	})
+	req := &goblinv1.NodeRestoreAgentInstanceRequest{
+		InstanceId: instanceID, InstanceUuid: uuid, Epoch: epoch, Spec: spec,
+	}
+	var resp goblinv1.NodeRestoreAgentInstanceResponse
+	return r.call(ctx, nodeID, MethodRestore, req, &resp)
 }
 
 // RPCPuller tells the destination to pull an image from the source. It
@@ -133,17 +120,19 @@ func (p *RPCPuller) Pull(ctx context.Context, destNodeID, sourceNodeID string, u
 	if err != nil {
 		return fmt.Errorf("resolving source node %s: %w", sourceNodeID, err)
 	}
-	return p.nodes.call(ctx, destNodeID, MethodPull, &PullRPCRequest{
-		// InstanceID travels for diagnostics only - the transfer is
+	req := &goblinv1.NodePullCheckpointRequest{
+		// InstanceId travels for diagnostics only - the transfer is
 		// keyed by {uuid, epoch} - but omitting it produced log lines
 		// reading "pulling image for  from ..." during the two-node
 		// bring-up, which is precisely when they get read.
-		InstanceID:   ident.String(uuid),
-		InstanceUUID: uuid,
+		InstanceId:   ident.String(uuid),
+		InstanceUuid: uuid,
 		Epoch:        epoch,
 		SourceAddr:   sourceAddr,
 		Token:        token,
-	})
+	}
+	var resp goblinv1.NodePullCheckpointResponse
+	return p.nodes.call(ctx, destNodeID, MethodPull, req, &resp)
 }
 
 // DialAndFetch dials a peer's goblin-ckpt listener and pulls one image

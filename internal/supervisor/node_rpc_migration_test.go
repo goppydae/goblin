@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/goppydae/goblin/core/migration"
+	goblinv1 "github.com/goppydae/goblin/proto"
 )
 
 // fakePidAgent is the minimum captureIdentity consumes: something that
@@ -63,13 +64,14 @@ func TestCaptureIdentityIgnoresNotRunning(t *testing.T) {
 func TestMigrationRPCsRefuseWithoutStore(t *testing.T) {
 	n := &NodeRPC{tracker: newInstanceTracker()}
 
-	var resp string
-	err := n.CheckpointAgentInstance(&CheckpointAgentRequest{InstanceID: "inst-1"}, &resp)
+	var ckptResp goblinv1.NodeCheckpointAgentInstanceResponse
+	err := n.CheckpointAgentInstance(&goblinv1.NodeCheckpointAgentInstanceRequest{InstanceId: "inst-1"}, &ckptResp)
 	if err == nil {
 		t.Error("checkpoint accepted with no agent manager or store")
 	}
 
-	err = n.RestoreAgentInstance(&RestoreAgentRequest{InstanceID: "inst-1"}, &resp)
+	var restoreResp goblinv1.NodeRestoreAgentInstanceResponse
+	err = n.RestoreAgentInstance(&goblinv1.NodeRestoreAgentInstanceRequest{InstanceId: "inst-1"}, &restoreResp)
 	if err == nil {
 		t.Error("restore accepted with no agent manager or store")
 	}

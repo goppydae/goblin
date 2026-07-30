@@ -1,7 +1,6 @@
 package supervisor
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/goppydae/goblin/core/migration"
@@ -220,83 +219,90 @@ func RegisterSchedulerHandlers(server *QUICRPCServer, rpc *SchedulerRPC) {
 	})
 }
 
-// RegisterNodeHandlers registers node RPC methods
+// RegisterNodeHandlers registers node RPC methods.
 func RegisterNodeHandlers(server *QUICRPCServer, rpc *NodeRPC) {
 	server.RegisterHandler("NodeRPC.StartAgentInstance", func(payload []byte) ([]byte, error) {
-		var req StartAgentRequest
-		if err := json.Unmarshal(payload, &req); err != nil {
-			return nil, fmt.Errorf("invalid request: %w", err)
+		var req goblinv1.NodeStartAgentInstanceRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 		}
-		var resp string
+		var resp goblinv1.NodeStartAgentInstanceResponse
 		if err := rpc.StartAgentInstance(&req, &resp); err != nil {
 			return nil, err
 		}
-		return json.Marshal(resp)
+		return proto.Marshal(&resp)
 	})
 
 	server.RegisterHandler("NodeRPC.SignalAgentInstance", func(payload []byte) ([]byte, error) {
-		var req SignalAgentRequest
-		if err := json.Unmarshal(payload, &req); err != nil {
-			return nil, fmt.Errorf("invalid request: %w", err)
+		var req goblinv1.NodeSignalAgentInstanceRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 		}
-		var resp string
+		var resp goblinv1.NodeSignalAgentInstanceResponse
 		if err := rpc.SignalAgentInstance(&req, &resp); err != nil {
 			return nil, err
 		}
-		return json.Marshal(resp)
+		return proto.Marshal(&resp)
 	})
 
 	// Migration RPCs (GOBLIN-DIV-031). Names come from constants in
 	// core/migration so the caller and this registration cannot drift.
 	server.RegisterHandler(migration.MethodCheckpoint, func(payload []byte) ([]byte, error) {
-		var req CheckpointAgentRequest
-		if err := json.Unmarshal(payload, &req); err != nil {
-			return nil, fmt.Errorf("invalid request: %w", err)
+		var req goblinv1.NodeCheckpointAgentInstanceRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 		}
-		var resp string
+		var resp goblinv1.NodeCheckpointAgentInstanceResponse
 		if err := rpc.CheckpointAgentInstance(&req, &resp); err != nil {
 			return nil, err
 		}
-		return json.Marshal(resp)
+		return proto.Marshal(&resp)
 	})
 
 	server.RegisterHandler(migration.MethodRestore, func(payload []byte) ([]byte, error) {
-		var req RestoreAgentRequest
-		if err := json.Unmarshal(payload, &req); err != nil {
-			return nil, fmt.Errorf("invalid request: %w", err)
+		var req goblinv1.NodeRestoreAgentInstanceRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 		}
-		var resp string
+		// RestoreAgentInstance carries a nested Spec message (batch B's
+		// lesson): guarded here, at the decode boundary, rather than in
+		// the method itself. The method's own check
+		// (node_rpc_migration.go) stays a plain error for a direct
+		// caller; this classification is what a wire-decoded request
+		// gets, matching StartAgentInstance's ErrInvalidRequest but
+		// applied at the layer that can see both the message and the
+		// error, without core/migration's Caller needing to import it.
+		if req.GetSpec() == nil {
+			return nil, fmt.Errorf("%w: spec is required", ErrInvalidRequest)
+		}
+		var resp goblinv1.NodeRestoreAgentInstanceResponse
 		if err := rpc.RestoreAgentInstance(&req, &resp); err != nil {
 			return nil, err
 		}
-		return json.Marshal(resp)
+		return proto.Marshal(&resp)
 	})
 
 	server.RegisterHandler(migration.MethodPull, func(payload []byte) ([]byte, error) {
-		var req PullCheckpointRequest
-		if err := json.Unmarshal(payload, &req); err != nil {
-			return nil, fmt.Errorf("invalid request: %w", err)
+		var req goblinv1.NodePullCheckpointRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 		}
-		var resp string
+		var resp goblinv1.NodePullCheckpointResponse
 		if err := rpc.PullCheckpoint(&req, &resp); err != nil {
 			return nil, err
 		}
-		return json.Marshal(resp)
+		return proto.Marshal(&resp)
 	})
 
 	server.RegisterHandler("NodeRPC.StopAgentInstance", func(payload []byte) ([]byte, error) {
-		var req StopAgentRequest
-		if err := json.Unmarshal(payload, &req); err != nil {
-			return nil, fmt.Errorf("invalid request: %w", err)
+		var req goblinv1.NodeStopAgentInstanceRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 		}
-		var resp string
+		var resp goblinv1.NodeStopAgentInstanceResponse
 		if err := rpc.StopAgentInstance(&req, &resp); err != nil {
 			return nil, err
 		}
-		return json.Marshal(resp)
+		return proto.Marshal(&resp)
 	})
 }
-
-// Unused function removed - client-side logic will go in CLI
-var _ = proto.Marshal         // Keep proto import for consistency
-var _ = goblinv1.RPCRequest{} // Keep goblinv1 import for consistency
