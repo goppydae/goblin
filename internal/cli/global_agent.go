@@ -147,15 +147,15 @@ var globalAgentScaleCmd = &cobra.Command{
 		}
 		defer closeClient(client, &err)
 
-		req := supervisor.ScaleAgentRequest{
-			AgentID:  id,
+		req := &goblinv1.ScaleAgentRequest{
+			AgentId:  id,
 			Replicas: int32(replicas),
 		}
-		var resp string
-		if err := client.CallJSON("SchedulerRPC.ScaleAgent", &req, &resp); err != nil {
+		var resp goblinv1.ScaleAgentResponse
+		if err := client.Call("SchedulerRPC.ScaleAgent", req, &resp); err != nil {
 			return err
 		}
-		fmt.Println(resp)
+		fmt.Printf("agent %s scaled to %d replicas\n", id, resp.GetReplicas())
 		return nil
 	},
 }

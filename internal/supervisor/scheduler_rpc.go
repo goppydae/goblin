@@ -385,33 +385,22 @@ func (s *SchedulerRPC) GetGlobalAgent(agentID *string, resp *goblinv1.AgentSpec)
 	return nil
 }
 
-// ScaleAgentRequest defines the payload for scaling an agent
-type ScaleAgentRequest struct {
-	AgentID  string
-	Replicas int32
-}
-
-// ScaleAgent updates the replica count for an agent
-func (s *SchedulerRPC) ScaleAgent(req *ScaleAgentRequest, resp *string) error {
-	if _, err := s.authorize(capability.VerbAgentScale, specSubject(req.AgentID)); err != nil {
+// ScaleAgent updates the replica count for an agent.
+func (s *SchedulerRPC) ScaleAgent(req *goblinv1.ScaleAgentRequest, resp *goblinv1.ScaleAgentResponse) error {
+	if _, err := s.authorize(capability.VerbAgentScale, specSubject(req.GetAgentId())); err != nil {
 		return err
 	}
-	// 1. Get existing spec
-	spec, err := s.scheduler.GetAgent(context.Background(), req.AgentID)
+	spec, err := s.scheduler.GetAgent(context.Background(), req.GetAgentId())
 	if err != nil {
 		return fmt.Errorf("failed to get agent: %w", err)
 	}
-
-	// 2. Update replicas
-	spec.Replicas = req.Replicas
-
-	// 3. Update spec (Register overwrites)
+	spec.Replicas = req.GetReplicas()
 	if err := s.scheduler.RegisterAgent(context.Background(), spec); err != nil {
 		return fmt.Errorf("failed to update agent: %w", err)
 	}
-
 	s.scheduler.KickReconcile()
-	*resp = fmt.Sprintf("agent %s scaled to %d replicas", req.AgentID, req.Replicas)
+	resp.SpecUuid = spec.SpecUuid
+	resp.Replicas = spec.Replicas
 	return nil
 }
 

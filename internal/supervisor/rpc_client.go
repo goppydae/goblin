@@ -49,16 +49,10 @@ func NewQUICRPCClient(addr string, tlsConfig *tls.Config) (*QUICRPCClient, error
 	return &QUICRPCClient{conn: conn}, nil
 }
 
-// CallJSON is the pre-GOBLIN-DIV-036 untyped path. It JSON-marshals into
-// a protobuf envelope, so buf breaking cannot see the payload. Every
-// method migrates to Call; this is deleted when the last one does.
-func (c *QUICRPCClient) CallJSON(method string, request interface{}, response interface{}) (err error) {
-	// Marshal request payload
-	payload, err := json.Marshal(request)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
+// roundTrip sends a payload and receives a response, handling framing and
+// error decode from Task 1's typed RPCCallError. Both Call and CallJSON use
+// this for the envelope send-and-receive.
+func (c *QUICRPCClient) roundTrip(method string, payload []byte) (raw []byte, err error) {
 	// Create RPC request
 	reqID := c.requestID.Add(1)
 	rpcReq := &goblinv1.RPCRequest{
@@ -69,13 +63,13 @@ func (c *QUICRPCClient) CallJSON(method string, request interface{}, response in
 
 	reqData, err := proto.Marshal(rpcReq)
 	if err != nil {
-		return fmt.Errorf("failed to marshal RPC request: %w", err)
+		return nil, fmt.Errorf("failed to marshal RPC request: %w", err)
 	}
 
 	// Open new stream
 	stream, err := c.conn.OpenStreamSync(context.Background())
 	if err != nil {
-		return fmt.Errorf("failed to open stream: %w", err)
+		return nil, fmt.Errorf("failed to open stream: %w", err)
 	}
 	defer func() {
 		if cerr := stream.Close(); cerr != nil && err == nil {
@@ -85,68 +79,106 @@ func (c *QUICRPCClient) CallJSON(method string, request interface{}, response in
 
 	// Write stream type (RPC_REQUEST = 0)
 	if _, err := stream.Write([]byte{byte(goblinv1.StreamType_STREAM_TYPE_RPC_REQUEST)}); err != nil {
-		return fmt.Errorf("failed to write stream type: %w", err)
+		return nil, fmt.Errorf("failed to write stream type: %w", err)
 	}
 
 	// Write request length
 	reqLen := len(reqData)
 	if reqLen > math.MaxUint32 {
-		return fmt.Errorf("request too large to frame: %d bytes", reqLen)
+		return nil, fmt.Errorf("request too large to frame: %d bytes", reqLen)
 	}
 	var lenBuf [4]byte
 	binary.BigEndian.PutUint32(lenBuf[:], uint32(reqLen))
 	if _, err := stream.Write(lenBuf[:]); err != nil {
-		return fmt.Errorf("failed to write request length: %w", err)
+		return nil, fmt.Errorf("failed to write request length: %w", err)
 	}
 
 	// Write request data
 	if _, err := stream.Write(reqData); err != nil {
-		return fmt.Errorf("failed to write request: %w", err)
+		return nil, fmt.Errorf("failed to write request: %w", err)
 	}
 
 	// Read response stream type
 	var respType [1]byte
 	if _, err := io.ReadFull(stream, respType[:]); err != nil {
-		return fmt.Errorf("failed to read response type: %w", err)
+		return nil, fmt.Errorf("failed to read response type: %w", err)
 	}
 
 	if goblinv1.StreamType(respType[0]) != goblinv1.StreamType_STREAM_TYPE_RPC_RESPONSE {
-		return fmt.Errorf("invalid response stream type: %d", respType[0])
+		return nil, fmt.Errorf("invalid response stream type: %d", respType[0])
 	}
 
 	// Read response length
 	if _, err := io.ReadFull(stream, lenBuf[:]); err != nil {
-		return fmt.Errorf("failed to read response length: %w", err)
+		return nil, fmt.Errorf("failed to read response length: %w", err)
 	}
 	respLen := binary.BigEndian.Uint32(lenBuf[:])
 
 	// Read response data
 	respData := make([]byte, respLen)
 	if _, err := io.ReadFull(stream, respData); err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	// Unmarshal RPC response
 	var rpcResp goblinv1.RPCResponse
 	if err := proto.Unmarshal(respData, &rpcResp); err != nil {
-		return fmt.Errorf("failed to unmarshal response: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	// Check for RPC error
+	// Check for RPC error (typed error from Task 1)
 	if !rpcResp.Success {
-		return &RPCCallError{
+		err = &RPCCallError{
 			Code:    rpcResp.GetErrorDetail().GetCode(),
 			Message: rpcResp.GetErrorDetail().GetMessage(),
 		}
+		return
+	}
+
+	raw = rpcResp.Payload
+	return
+}
+
+// CallJSON is the pre-GOBLIN-DIV-036 untyped path. It JSON-marshals into
+// a protobuf envelope, so buf breaking cannot see the payload. Every
+// method migrates to Call; this is deleted when the last one does.
+func (c *QUICRPCClient) CallJSON(method string, request interface{}, response interface{}) (err error) {
+	// Marshal request payload
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	raw, err := c.roundTrip(method, payload)
+	if err != nil {
+		return err
 	}
 
 	// Unmarshal response payload
-	if response != nil && len(rpcResp.Payload) > 0 {
-		if err := json.Unmarshal(rpcResp.Payload, response); err != nil {
+	if response != nil && len(raw) > 0 {
+		if err := json.Unmarshal(raw, response); err != nil {
 			return fmt.Errorf("failed to unmarshal response payload: %w", err)
 		}
 	}
 
+	return nil
+}
+
+// Call sends a protobuf request and decodes a protobuf response. The
+// payload inside the envelope is a generated message, so buf breaking
+// covers every field that crosses the wire (GOBLIN-DIV-036).
+func (c *QUICRPCClient) Call(method string, req, resp proto.Message) error {
+	payload, err := proto.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("marshal request for %s: %w", method, err)
+	}
+	raw, err := c.roundTrip(method, payload)
+	if err != nil {
+		return err
+	}
+	if err := proto.Unmarshal(raw, resp); err != nil {
+		return fmt.Errorf("unmarshal response for %s: %w", method, err)
+	}
 	return nil
 }
 

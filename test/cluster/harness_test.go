@@ -246,7 +246,7 @@ func (c *testCluster) members(node *clusterNode) ([]supervisor.MemberInfo, error
 		}
 	}()
 	var members []supervisor.MemberInfo
-	if err := cl.Call("SchedulerRPC.Members", struct{}{}, &members); err != nil {
+	if err := cl.CallJSON("SchedulerRPC.Members", struct{}{}, &members); err != nil {
 		return nil, err
 	}
 	return members, nil
@@ -294,7 +294,7 @@ func (c *testCluster) instances(node *clusterNode, specID string) ([]*goblinv1.A
 	}()
 	req := supervisor.ListAgentInstancesRequest{SpecID: specID}
 	var out []*goblinv1.AgentInstance
-	if err := cl.Call("SchedulerRPC.ListAgentInstances", &req, &out); err != nil {
+	if err := cl.CallJSON("SchedulerRPC.ListAgentInstances", &req, &out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -360,7 +360,7 @@ func (c *testCluster) trySignal(node *clusterNode, instanceID string, signum int
 	}()
 	req := supervisor.SignalAgentInstanceRequest{InstanceID: instanceID, Signum: signum}
 	var resp string
-	return cl.Call("SchedulerRPC.SignalAgentInstance", &req, &resp)
+	return cl.CallJSON("SchedulerRPC.SignalAgentInstance", &req, &resp)
 }
 
 // dialALPNAddr probes one ALPN plane of a node's single control-plane

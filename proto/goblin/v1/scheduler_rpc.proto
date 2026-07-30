@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package goblin.v1;
+
+option go_package = "github.com/goppydae/goblin/proto;goblinv1";
+
+// ScaleAgentRequest changes the desired replica count for one spec.
+// agent_id accepts either the spec UUID or the operator-facing name,
+// matching what the CLI already passes.
+message ScaleAgentRequest {
+  string agent_id = 1;
+  int32 replicas = 2;
+}
+
+// ScaleAgentResponse reports applied state rather than a formatted
+// sentence. The previous response was a string built with fmt.Sprintf,
+// which a caller could only display, never assert on.
+message ScaleAgentResponse {
+  bytes spec_uuid = 1; // 16-byte UUIDv7 of the scaled spec
+  int32 replicas = 2;  // replica count now recorded
+}
