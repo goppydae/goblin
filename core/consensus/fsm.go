@@ -133,6 +133,9 @@ func (f *FSM) Apply(log *raft.Log) interface{} {
 	case goblinv1.CommandType_COMMAND_TYPE_OPERATOR_KEY_SEED:
 		return f.applyOperatorKeySeed(cmd.GetOperatorKeySeed())
 
+	case goblinv1.CommandType_COMMAND_TYPE_OPERATOR_KEY_CHANGE:
+		return f.applyOperatorKeyChange(cmd.GetOperatorKeyChange())
+
 	default:
 		return fmt.Errorf("unknown command type %v (namespace %s, key %s)",
 			cmd.Type, cmd.Namespace, cmd.Key)
@@ -274,6 +277,11 @@ func (f *FSM) Restore(rc io.ReadCloser) (err error) {
 	// as restoring the keys: it is the replay guard, and a leader that
 	// came back from a snapshot with serial 0 would accept a signed
 	// change it had already applied.
+	//
+	// Records are not re-validated here. The length check in
+	// capability.VerifyOperatorKeyChange before ed25519.Verify is what
+	// keeps a corrupt snapshot from panicking the FSM, so that check is
+	// load-bearing rather than paranoia.
 	operatorKeys := make(map[string]*goblinv1.OperatorKey, len(payload.GetOperatorKeys()))
 	for id, raw := range payload.GetOperatorKeys() {
 		var k goblinv1.OperatorKey

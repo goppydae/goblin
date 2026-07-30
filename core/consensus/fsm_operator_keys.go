@@ -22,11 +22,14 @@ import (
 // by the registry being EMPTY. That sounds like a hole - anyone can seed
 // an empty registry - and it is closed by two facts that hold together.
 // First, a cluster with an empty registry authorizes no mutation at all,
-// so there is nothing to steal by seeding one. Second, a registry that
-// has ever been non-empty can never become empty again: removing the
-// last key is refused. The seed is therefore reachable exactly once in a
-// cluster's life, at bootstrap, which is the only time it means
-// anything.
+// so there is nothing to steal by seeding one. Second, no log entry can
+// drive a non-empty registry back to empty: removing the last key is
+// refused. Restore is not a hole in that, even though it installs
+// whatever the snapshot holds - a snapshot is a prefix of the same log,
+// so the seed either lives in the snapshot or replays after it at its
+// original index, and a later attacker seed always meets a non-empty
+// registry. The seed is therefore reachable exactly once in a cluster's
+// life, at bootstrap, which is the only time it means anything.
 
 var (
 	// ErrOperatorRegistryEmpty means no operator key is registered.
@@ -40,6 +43,18 @@ var (
 	// over by merging them: quietly unioning the sets would widen the
 	// trust root without anyone deciding to.
 	ErrOperatorRegistrySeeded = errors.New("operator key registry already seeded with a different key set")
+
+	// ErrOperatorRegistryStale means a signed change named a registry
+	// serial that is no longer current. This is the replay guard: a
+	// change is valid at exactly one serial, so re-submitting a captured
+	// one fails once any other change has landed.
+	ErrOperatorRegistryStale = errors.New("operator key change: stale registry serial")
+
+	// ErrOperatorLastKey means a remove would empty the registry.
+	// Refusing keeps the operator from locking the cluster out of its
+	// own control plane, and is what guarantees the seed path stays
+	// reachable exactly once.
+	ErrOperatorLastKey = errors.New("operator key change: refusing to remove the last registered key")
 )
 
 // applyOperatorKeySeed installs the configured root-of-trust keys.
@@ -152,4 +167,75 @@ func (f *FSM) OperatorKeyCount() int {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	return len(f.operatorKeys)
+}
+
+// applyOperatorKeyChange applies one signed add or remove. Callers hold
+// f.mu.
+//
+// The order is: registry non-empty, signature verified against
+// REPLICATED key material, serial current, then the op. Nothing in the
+// payload is trusted before the signature passes, and the op itself is
+// inside the signature so an add cannot be flipped into a remove
+// without invalidating it.
+func (f *FSM) applyOperatorKeyChange(chg *goblinv1.OperatorKeyChange) interface{} {
+	if chg == nil {
+		return fmt.Errorf("OPERATOR_KEY_CHANGE command with no payload")
+	}
+	if len(f.operatorKeys) == 0 {
+		return fmt.Errorf("%w: cannot authorize a change", ErrOperatorRegistryEmpty)
+	}
+
+	payload, err := capability.VerifyOperatorKeyChange(chg,
+		capability.OperatorKeyResolver(f.resolveOperatorKey))
+	if err != nil {
+		return fmt.Errorf("OPERATOR_KEY_CHANGE rejected: %w", err)
+	}
+
+	if payload.GetPrevSerial() != f.operatorSerial {
+		return fmt.Errorf("%w: signed against %d, registry is at %d",
+			ErrOperatorRegistryStale, payload.GetPrevSerial(), f.operatorSerial)
+	}
+
+	switch payload.GetOp() {
+	case goblinv1.OperatorKeyOp_OPERATOR_KEY_OP_ADD:
+		k := payload.GetKey()
+		if verr := capability.ValidateOperatorKey(k); verr != nil {
+			return fmt.Errorf("OPERATOR_KEY_CHANGE add rejected: %w", verr)
+		}
+		// Re-adding an existing id is not an error but must not be a
+		// silent key swap: the id is derived from the bytes, so a
+		// matching id guarantees matching bytes and this is a true
+		// no-op. Bump nothing.
+		if _, exists := f.operatorKeys[k.GetKeyId()]; exists {
+			return nil
+		}
+		f.operatorKeys[k.GetKeyId()] = &goblinv1.OperatorKey{
+			KeyId:     k.GetKeyId(),
+			PublicKey: append([]byte(nil), k.GetPublicKey()...),
+			Comment:   k.GetComment(),
+		}
+		f.operatorSerial++
+		return nil
+
+	case goblinv1.OperatorKeyOp_OPERATOR_KEY_OP_REMOVE:
+		id := payload.GetKey().GetKeyId()
+		if id == "" {
+			return fmt.Errorf("OPERATOR_KEY_CHANGE remove names no key id")
+		}
+		if _, exists := f.operatorKeys[id]; !exists {
+			return fmt.Errorf("OPERATOR_KEY_CHANGE remove: key %s is not registered", id)
+		}
+		if len(f.operatorKeys) == 1 {
+			return fmt.Errorf("%w: %s", ErrOperatorLastKey, id)
+		}
+		delete(f.operatorKeys, id)
+		f.operatorSerial++
+		return nil
+
+	default:
+		// UNSPECIFIED lands here. Refusing to guess is the same rule
+		// MIGRATE_COMMIT applies to an unspecified outcome: a command
+		// that did not decode must not become a mutation by default.
+		return fmt.Errorf("OPERATOR_KEY_CHANGE has op %v; refusing to guess", payload.GetOp())
+	}
 }
