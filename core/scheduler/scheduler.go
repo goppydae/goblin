@@ -447,6 +447,7 @@ func (s *Scheduler) SubmitJob(ctx context.Context, job *Job) error {
 	if err := s.Assign(ctx, job.ID, nodeID); err != nil {
 		return fmt.Errorf("failed to assign job: %w", err)
 	}
+	job.AssignedNode = nodeID
 
 	slog.Default().LogAttrs(ctx, slog.LevelInfo, "job scheduled", logattr.JobID(job.ID), logattr.NodeID(nodeID))
 	if s.bus != nil {

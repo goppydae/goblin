@@ -38,8 +38,8 @@ func mutatingVerbs() map[string]func(*SchedulerRPC) error {
 	agent := "web"
 	return map[string]func(*SchedulerRPC) error{
 		"DrainNode": func(s *SchedulerRPC) error {
-			var out []string
-			return s.DrainNode(&node, &out)
+			var out goblinv1.DrainNodeResponse
+			return s.DrainNode(&goblinv1.DrainNodeRequest{NodeId: node}, &out)
 		},
 		"MigrateJob": func(s *SchedulerRPC) error {
 			var out string
@@ -49,13 +49,21 @@ func mutatingVerbs() map[string]func(*SchedulerRPC) error {
 			var out goblinv1.ScaleAgentResponse
 			return s.ScaleAgent(&goblinv1.ScaleAgentRequest{AgentId: agent, Replicas: 3}, &out)
 		},
+		"RegisterGlobalAgent": func(s *SchedulerRPC) error {
+			var out goblinv1.RegisterGlobalAgentResponse
+			return s.RegisterGlobalAgent(&goblinv1.RegisterGlobalAgentRequest{Spec: &goblinv1.AgentSpec{Name: agent}}, &out)
+		},
 		"DeleteGlobalAgent": func(s *SchedulerRPC) error {
-			var out string
-			return s.DeleteGlobalAgent(&agent, &out)
+			var out goblinv1.DeleteGlobalAgentResponse
+			return s.DeleteGlobalAgent(&goblinv1.DeleteGlobalAgentRequest{AgentId: agent}, &out)
+		},
+		"SubmitJob": func(s *SchedulerRPC) error {
+			var out goblinv1.SubmitJobResponse
+			return s.SubmitJob(&goblinv1.SubmitJobRequest{Job: &goblinv1.Job{Id: "j1"}}, &out)
 		},
 		"PublishEvent": func(s *SchedulerRPC) error {
-			var out string
-			return s.PublishEvent(&PublishRequest{Topic: "t", Payload: []byte("x")}, &out)
+			var out goblinv1.PublishEventResponse
+			return s.PublishEvent(&goblinv1.PublishEventRequest{Topic: "t", Payload: []byte("x")}, &out)
 		},
 	}
 }

@@ -7,12 +7,13 @@
 package goblinv1
 
 import (
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
+
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -1017,6 +1018,609 @@ func (x *ListAgentInstancesResponse) GetInstances() []*AgentInstance {
 	return nil
 }
 
+// RegisterGlobalAgentRequest registers or updates a global agent spec.
+// spec.spec_uuid is server-owned: RegisterAgent mints it from spec.name
+// when unset. A caller-supplied spec_uuid is rejected, not overwritten
+// (see goblin-typed-rpc-design.md, "Server-owned fields must be
+// rejected, not overwritten").
+type RegisterGlobalAgentRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Spec          *AgentSpec             `protobuf:"bytes,1,opt,name=spec,proto3" json:"spec,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegisterGlobalAgentRequest) Reset() {
+	*x = RegisterGlobalAgentRequest{}
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegisterGlobalAgentRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegisterGlobalAgentRequest) ProtoMessage() {}
+
+func (x *RegisterGlobalAgentRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegisterGlobalAgentRequest.ProtoReflect.Descriptor instead.
+func (*RegisterGlobalAgentRequest) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_scheduler_rpc_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *RegisterGlobalAgentRequest) GetSpec() *AgentSpec {
+	if x != nil {
+		return x.Spec
+	}
+	return nil
+}
+
+// RegisterGlobalAgentResponse reports the identity assigned to the
+// spec rather than a formatted sentence.
+type RegisterGlobalAgentResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SpecUuid      []byte                 `protobuf:"bytes,1,opt,name=spec_uuid,json=specUuid,proto3" json:"spec_uuid,omitempty"` // spec UUID minted (or confirmed) at registration
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegisterGlobalAgentResponse) Reset() {
+	*x = RegisterGlobalAgentResponse{}
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegisterGlobalAgentResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegisterGlobalAgentResponse) ProtoMessage() {}
+
+func (x *RegisterGlobalAgentResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegisterGlobalAgentResponse.ProtoReflect.Descriptor instead.
+func (*RegisterGlobalAgentResponse) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_scheduler_rpc_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *RegisterGlobalAgentResponse) GetSpecUuid() []byte {
+	if x != nil {
+		return x.SpecUuid
+	}
+	return nil
+}
+
+func (x *RegisterGlobalAgentResponse) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+// DeleteGlobalAgentRequest identifies the spec to delete. agent_id
+// accepts either the spec UUID or the operator-facing name.
+type DeleteGlobalAgentRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteGlobalAgentRequest) Reset() {
+	*x = DeleteGlobalAgentRequest{}
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteGlobalAgentRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteGlobalAgentRequest) ProtoMessage() {}
+
+func (x *DeleteGlobalAgentRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteGlobalAgentRequest.ProtoReflect.Descriptor instead.
+func (*DeleteGlobalAgentRequest) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_scheduler_rpc_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *DeleteGlobalAgentRequest) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+// DeleteGlobalAgentResponse reports the identity of the spec that was
+// deleted rather than a formatted sentence.
+type DeleteGlobalAgentResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SpecUuid      []byte                 `protobuf:"bytes,1,opt,name=spec_uuid,json=specUuid,proto3" json:"spec_uuid,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteGlobalAgentResponse) Reset() {
+	*x = DeleteGlobalAgentResponse{}
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteGlobalAgentResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteGlobalAgentResponse) ProtoMessage() {}
+
+func (x *DeleteGlobalAgentResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteGlobalAgentResponse.ProtoReflect.Descriptor instead.
+func (*DeleteGlobalAgentResponse) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_scheduler_rpc_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *DeleteGlobalAgentResponse) GetSpecUuid() []byte {
+	if x != nil {
+		return x.SpecUuid
+	}
+	return nil
+}
+
+func (x *DeleteGlobalAgentResponse) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+// Job is the RPC-facing view of a job submission - a faithful,
+// field-for-field translation of core/scheduler.Job. That type predates
+// protobuf and stays a plain Go struct (its storage encoding is JSON in
+// the KV store); this message is only the wire shape for SubmitJob.
+type Job struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	AgentId       string                 `protobuf:"bytes,2,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	AgentType     string                 `protobuf:"bytes,3,opt,name=agent_type,json=agentType,proto3" json:"agent_type,omitempty"`
+	AssignedNode  string                 `protobuf:"bytes,4,opt,name=assigned_node,json=assignedNode,proto3" json:"assigned_node,omitempty"`
+	Resources     *ResourceReq           `protobuf:"bytes,5,opt,name=resources,proto3" json:"resources,omitempty"`
+	Constraints   map[string]string      `protobuf:"bytes,6,rep,name=constraints,proto3" json:"constraints,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Requirements  map[string]string      `protobuf:"bytes,7,rep,name=requirements,proto3" json:"requirements,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	RestartPolicy string                 `protobuf:"bytes,8,opt,name=restart_policy,json=restartPolicy,proto3" json:"restart_policy,omitempty"` // "always", "on-failure", "never"
+	Env           map[string]string      `protobuf:"bytes,9,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Job) Reset() {
+	*x = Job{}
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Job) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Job) ProtoMessage() {}
+
+func (x *Job) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Job.ProtoReflect.Descriptor instead.
+func (*Job) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_scheduler_rpc_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *Job) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Job) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *Job) GetAgentType() string {
+	if x != nil {
+		return x.AgentType
+	}
+	return ""
+}
+
+func (x *Job) GetAssignedNode() string {
+	if x != nil {
+		return x.AssignedNode
+	}
+	return ""
+}
+
+func (x *Job) GetResources() *ResourceReq {
+	if x != nil {
+		return x.Resources
+	}
+	return nil
+}
+
+func (x *Job) GetConstraints() map[string]string {
+	if x != nil {
+		return x.Constraints
+	}
+	return nil
+}
+
+func (x *Job) GetRequirements() map[string]string {
+	if x != nil {
+		return x.Requirements
+	}
+	return nil
+}
+
+func (x *Job) GetRestartPolicy() string {
+	if x != nil {
+		return x.RestartPolicy
+	}
+	return ""
+}
+
+func (x *Job) GetEnv() map[string]string {
+	if x != nil {
+		return x.Env
+	}
+	return nil
+}
+
+type SubmitJobRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Job           *Job                   `protobuf:"bytes,1,opt,name=job,proto3" json:"job,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubmitJobRequest) Reset() {
+	*x = SubmitJobRequest{}
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitJobRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitJobRequest) ProtoMessage() {}
+
+func (x *SubmitJobRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitJobRequest.ProtoReflect.Descriptor instead.
+func (*SubmitJobRequest) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_scheduler_rpc_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *SubmitJobRequest) GetJob() *Job {
+	if x != nil {
+		return x.Job
+	}
+	return nil
+}
+
+// SubmitJobResponse reports where the job landed rather than a
+// formatted sentence.
+type SubmitJobResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	AssignedNode  string                 `protobuf:"bytes,2,opt,name=assigned_node,json=assignedNode,proto3" json:"assigned_node,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubmitJobResponse) Reset() {
+	*x = SubmitJobResponse{}
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitJobResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitJobResponse) ProtoMessage() {}
+
+func (x *SubmitJobResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitJobResponse.ProtoReflect.Descriptor instead.
+func (*SubmitJobResponse) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_scheduler_rpc_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *SubmitJobResponse) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+func (x *SubmitJobResponse) GetAssignedNode() string {
+	if x != nil {
+		return x.AssignedNode
+	}
+	return ""
+}
+
+// DrainNodeRequest names the node to evacuate.
+type DrainNodeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DrainNodeRequest) Reset() {
+	*x = DrainNodeRequest{}
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DrainNodeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DrainNodeRequest) ProtoMessage() {}
+
+func (x *DrainNodeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DrainNodeRequest.ProtoReflect.Descriptor instead.
+func (*DrainNodeRequest) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_scheduler_rpc_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *DrainNodeRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+type DrainNodeResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	MigratedJobIds []string               `protobuf:"bytes,1,rep,name=migrated_job_ids,json=migratedJobIds,proto3" json:"migrated_job_ids,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DrainNodeResponse) Reset() {
+	*x = DrainNodeResponse{}
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DrainNodeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DrainNodeResponse) ProtoMessage() {}
+
+func (x *DrainNodeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DrainNodeResponse.ProtoReflect.Descriptor instead.
+func (*DrainNodeResponse) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_scheduler_rpc_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *DrainNodeResponse) GetMigratedJobIds() []string {
+	if x != nil {
+		return x.MigratedJobIds
+	}
+	return nil
+}
+
+// PublishEventRequest forwards to membership (Serf) UserEvent. payload
+// stays opaque bytes here; typing the event envelope itself is a
+// separate piece of work (Serf events), not this one.
+type PublishEventRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Topic         string                 `protobuf:"bytes,1,opt,name=topic,proto3" json:"topic,omitempty"`
+	Payload       []byte                 `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PublishEventRequest) Reset() {
+	*x = PublishEventRequest{}
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PublishEventRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PublishEventRequest) ProtoMessage() {}
+
+func (x *PublishEventRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PublishEventRequest.ProtoReflect.Descriptor instead.
+func (*PublishEventRequest) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_scheduler_rpc_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *PublishEventRequest) GetTopic() string {
+	if x != nil {
+		return x.Topic
+	}
+	return ""
+}
+
+func (x *PublishEventRequest) GetPayload() []byte {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+// PublishEventResponse confirms the topic that was published rather
+// than a formatted sentence.
+type PublishEventResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Topic         string                 `protobuf:"bytes,1,opt,name=topic,proto3" json:"topic,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PublishEventResponse) Reset() {
+	*x = PublishEventResponse{}
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PublishEventResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PublishEventResponse) ProtoMessage() {}
+
+func (x *PublishEventResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PublishEventResponse.ProtoReflect.Descriptor instead.
+func (*PublishEventResponse) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_scheduler_rpc_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *PublishEventResponse) GetTopic() string {
+	if x != nil {
+		return x.Topic
+	}
+	return ""
+}
+
 var File_goblin_v1_scheduler_rpc_proto protoreflect.FileDescriptor
 
 const file_goblin_v1_scheduler_rpc_proto_rawDesc = "" +
@@ -1077,7 +1681,51 @@ const file_goblin_v1_scheduler_rpc_proto_rawDesc = "" +
 	"\x19ListAgentInstancesRequest\x12\x17\n" +
 	"\aspec_id\x18\x01 \x01(\tR\x06specId\"T\n" +
 	"\x1aListAgentInstancesResponse\x126\n" +
-	"\tinstances\x18\x01 \x03(\v2\x18.goblin.v1.AgentInstanceR\tinstancesB+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
+	"\tinstances\x18\x01 \x03(\v2\x18.goblin.v1.AgentInstanceR\tinstances\"F\n" +
+	"\x1aRegisterGlobalAgentRequest\x12(\n" +
+	"\x04spec\x18\x01 \x01(\v2\x14.goblin.v1.AgentSpecR\x04spec\"N\n" +
+	"\x1bRegisterGlobalAgentResponse\x12\x1b\n" +
+	"\tspec_uuid\x18\x01 \x01(\fR\bspecUuid\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"5\n" +
+	"\x18DeleteGlobalAgentRequest\x12\x19\n" +
+	"\bagent_id\x18\x01 \x01(\tR\aagentId\"L\n" +
+	"\x19DeleteGlobalAgentResponse\x12\x1b\n" +
+	"\tspec_uuid\x18\x01 \x01(\fR\bspecUuid\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\xbe\x04\n" +
+	"\x03Job\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
+	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x1d\n" +
+	"\n" +
+	"agent_type\x18\x03 \x01(\tR\tagentType\x12#\n" +
+	"\rassigned_node\x18\x04 \x01(\tR\fassignedNode\x124\n" +
+	"\tresources\x18\x05 \x01(\v2\x16.goblin.v1.ResourceReqR\tresources\x12A\n" +
+	"\vconstraints\x18\x06 \x03(\v2\x1f.goblin.v1.Job.ConstraintsEntryR\vconstraints\x12D\n" +
+	"\frequirements\x18\a \x03(\v2 .goblin.v1.Job.RequirementsEntryR\frequirements\x12%\n" +
+	"\x0erestart_policy\x18\b \x01(\tR\rrestartPolicy\x12)\n" +
+	"\x03env\x18\t \x03(\v2\x17.goblin.v1.Job.EnvEntryR\x03env\x1a>\n" +
+	"\x10ConstraintsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a?\n" +
+	"\x11RequirementsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a6\n" +
+	"\bEnvEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"4\n" +
+	"\x10SubmitJobRequest\x12 \n" +
+	"\x03job\x18\x01 \x01(\v2\x0e.goblin.v1.JobR\x03job\"O\n" +
+	"\x11SubmitJobResponse\x12\x15\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12#\n" +
+	"\rassigned_node\x18\x02 \x01(\tR\fassignedNode\"+\n" +
+	"\x10DrainNodeRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"=\n" +
+	"\x11DrainNodeResponse\x12(\n" +
+	"\x10migrated_job_ids\x18\x01 \x03(\tR\x0emigratedJobIds\"E\n" +
+	"\x13PublishEventRequest\x12\x14\n" +
+	"\x05topic\x18\x01 \x01(\tR\x05topic\x12\x18\n" +
+	"\apayload\x18\x02 \x01(\fR\apayload\",\n" +
+	"\x14PublishEventResponse\x12\x14\n" +
+	"\x05topic\x18\x01 \x01(\tR\x05topicB+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
 
 var (
 	file_goblin_v1_scheduler_rpc_proto_rawDescOnce sync.Once
@@ -1091,48 +1739,69 @@ func file_goblin_v1_scheduler_rpc_proto_rawDescGZIP() []byte {
 	return file_goblin_v1_scheduler_rpc_proto_rawDescData
 }
 
-var file_goblin_v1_scheduler_rpc_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_goblin_v1_scheduler_rpc_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
 var file_goblin_v1_scheduler_rpc_proto_goTypes = []any{
-	(*ScaleAgentRequest)(nil),          // 0: goblin.v1.ScaleAgentRequest
-	(*ScaleAgentResponse)(nil),         // 1: goblin.v1.ScaleAgentResponse
-	(*ListJobsRequest)(nil),            // 2: goblin.v1.ListJobsRequest
-	(*JobInfo)(nil),                    // 3: goblin.v1.JobInfo
-	(*ListJobsResponse)(nil),           // 4: goblin.v1.ListJobsResponse
-	(*MembersRequest)(nil),             // 5: goblin.v1.MembersRequest
-	(*MemberInfo)(nil),                 // 6: goblin.v1.MemberInfo
-	(*MembersResponse)(nil),            // 7: goblin.v1.MembersResponse
-	(*ListGlobalAgentsRequest)(nil),    // 8: goblin.v1.ListGlobalAgentsRequest
-	(*ListGlobalAgentsResponse)(nil),   // 9: goblin.v1.ListGlobalAgentsResponse
-	(*ListLocalAgentsRequest)(nil),     // 10: goblin.v1.ListLocalAgentsRequest
-	(*LocalAgentInfo)(nil),             // 11: goblin.v1.LocalAgentInfo
-	(*ListLocalAgentsResponse)(nil),    // 12: goblin.v1.ListLocalAgentsResponse
-	(*GetGlobalAgentRequest)(nil),      // 13: goblin.v1.GetGlobalAgentRequest
-	(*GetGlobalAgentResponse)(nil),     // 14: goblin.v1.GetGlobalAgentResponse
-	(*GetEventsRequest)(nil),           // 15: goblin.v1.GetEventsRequest
-	(*LogEvent)(nil),                   // 16: goblin.v1.LogEvent
-	(*GetEventsResponse)(nil),          // 17: goblin.v1.GetEventsResponse
-	(*ListAgentInstancesRequest)(nil),  // 18: goblin.v1.ListAgentInstancesRequest
-	(*ListAgentInstancesResponse)(nil), // 19: goblin.v1.ListAgentInstancesResponse
-	nil,                                // 20: goblin.v1.MemberInfo.TagsEntry
-	(*AgentSpec)(nil),                  // 21: goblin.v1.AgentSpec
-	(*timestamppb.Timestamp)(nil),      // 22: google.protobuf.Timestamp
-	(*AgentInstance)(nil),              // 23: goblin.v1.AgentInstance
+	(*ScaleAgentRequest)(nil),           // 0: goblin.v1.ScaleAgentRequest
+	(*ScaleAgentResponse)(nil),          // 1: goblin.v1.ScaleAgentResponse
+	(*ListJobsRequest)(nil),             // 2: goblin.v1.ListJobsRequest
+	(*JobInfo)(nil),                     // 3: goblin.v1.JobInfo
+	(*ListJobsResponse)(nil),            // 4: goblin.v1.ListJobsResponse
+	(*MembersRequest)(nil),              // 5: goblin.v1.MembersRequest
+	(*MemberInfo)(nil),                  // 6: goblin.v1.MemberInfo
+	(*MembersResponse)(nil),             // 7: goblin.v1.MembersResponse
+	(*ListGlobalAgentsRequest)(nil),     // 8: goblin.v1.ListGlobalAgentsRequest
+	(*ListGlobalAgentsResponse)(nil),    // 9: goblin.v1.ListGlobalAgentsResponse
+	(*ListLocalAgentsRequest)(nil),      // 10: goblin.v1.ListLocalAgentsRequest
+	(*LocalAgentInfo)(nil),              // 11: goblin.v1.LocalAgentInfo
+	(*ListLocalAgentsResponse)(nil),     // 12: goblin.v1.ListLocalAgentsResponse
+	(*GetGlobalAgentRequest)(nil),       // 13: goblin.v1.GetGlobalAgentRequest
+	(*GetGlobalAgentResponse)(nil),      // 14: goblin.v1.GetGlobalAgentResponse
+	(*GetEventsRequest)(nil),            // 15: goblin.v1.GetEventsRequest
+	(*LogEvent)(nil),                    // 16: goblin.v1.LogEvent
+	(*GetEventsResponse)(nil),           // 17: goblin.v1.GetEventsResponse
+	(*ListAgentInstancesRequest)(nil),   // 18: goblin.v1.ListAgentInstancesRequest
+	(*ListAgentInstancesResponse)(nil),  // 19: goblin.v1.ListAgentInstancesResponse
+	(*RegisterGlobalAgentRequest)(nil),  // 20: goblin.v1.RegisterGlobalAgentRequest
+	(*RegisterGlobalAgentResponse)(nil), // 21: goblin.v1.RegisterGlobalAgentResponse
+	(*DeleteGlobalAgentRequest)(nil),    // 22: goblin.v1.DeleteGlobalAgentRequest
+	(*DeleteGlobalAgentResponse)(nil),   // 23: goblin.v1.DeleteGlobalAgentResponse
+	(*Job)(nil),                         // 24: goblin.v1.Job
+	(*SubmitJobRequest)(nil),            // 25: goblin.v1.SubmitJobRequest
+	(*SubmitJobResponse)(nil),           // 26: goblin.v1.SubmitJobResponse
+	(*DrainNodeRequest)(nil),            // 27: goblin.v1.DrainNodeRequest
+	(*DrainNodeResponse)(nil),           // 28: goblin.v1.DrainNodeResponse
+	(*PublishEventRequest)(nil),         // 29: goblin.v1.PublishEventRequest
+	(*PublishEventResponse)(nil),        // 30: goblin.v1.PublishEventResponse
+	nil,                                 // 31: goblin.v1.MemberInfo.TagsEntry
+	nil,                                 // 32: goblin.v1.Job.ConstraintsEntry
+	nil,                                 // 33: goblin.v1.Job.RequirementsEntry
+	nil,                                 // 34: goblin.v1.Job.EnvEntry
+	(*AgentSpec)(nil),                   // 35: goblin.v1.AgentSpec
+	(*timestamppb.Timestamp)(nil),       // 36: google.protobuf.Timestamp
+	(*AgentInstance)(nil),               // 37: goblin.v1.AgentInstance
+	(*ResourceReq)(nil),                 // 38: goblin.v1.ResourceReq
 }
 var file_goblin_v1_scheduler_rpc_proto_depIdxs = []int32{
 	3,  // 0: goblin.v1.ListJobsResponse.jobs:type_name -> goblin.v1.JobInfo
-	20, // 1: goblin.v1.MemberInfo.tags:type_name -> goblin.v1.MemberInfo.TagsEntry
+	31, // 1: goblin.v1.MemberInfo.tags:type_name -> goblin.v1.MemberInfo.TagsEntry
 	6,  // 2: goblin.v1.MembersResponse.members:type_name -> goblin.v1.MemberInfo
-	21, // 3: goblin.v1.ListGlobalAgentsResponse.agents:type_name -> goblin.v1.AgentSpec
+	35, // 3: goblin.v1.ListGlobalAgentsResponse.agents:type_name -> goblin.v1.AgentSpec
 	11, // 4: goblin.v1.ListLocalAgentsResponse.agents:type_name -> goblin.v1.LocalAgentInfo
-	21, // 5: goblin.v1.GetGlobalAgentResponse.spec:type_name -> goblin.v1.AgentSpec
-	22, // 6: goblin.v1.LogEvent.timestamp:type_name -> google.protobuf.Timestamp
+	35, // 5: goblin.v1.GetGlobalAgentResponse.spec:type_name -> goblin.v1.AgentSpec
+	36, // 6: goblin.v1.LogEvent.timestamp:type_name -> google.protobuf.Timestamp
 	16, // 7: goblin.v1.GetEventsResponse.events:type_name -> goblin.v1.LogEvent
-	23, // 8: goblin.v1.ListAgentInstancesResponse.instances:type_name -> goblin.v1.AgentInstance
-	9,  // [9:9] is the sub-list for method output_type
-	9,  // [9:9] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	37, // 8: goblin.v1.ListAgentInstancesResponse.instances:type_name -> goblin.v1.AgentInstance
+	35, // 9: goblin.v1.RegisterGlobalAgentRequest.spec:type_name -> goblin.v1.AgentSpec
+	38, // 10: goblin.v1.Job.resources:type_name -> goblin.v1.ResourceReq
+	32, // 11: goblin.v1.Job.constraints:type_name -> goblin.v1.Job.ConstraintsEntry
+	33, // 12: goblin.v1.Job.requirements:type_name -> goblin.v1.Job.RequirementsEntry
+	34, // 13: goblin.v1.Job.env:type_name -> goblin.v1.Job.EnvEntry
+	24, // 14: goblin.v1.SubmitJobRequest.job:type_name -> goblin.v1.Job
+	15, // [15:15] is the sub-list for method output_type
+	15, // [15:15] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_goblin_v1_scheduler_rpc_proto_init() }
@@ -1147,7 +1816,7 @@ func file_goblin_v1_scheduler_rpc_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_goblin_v1_scheduler_rpc_proto_rawDesc), len(file_goblin_v1_scheduler_rpc_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   21,
+			NumMessages:   35,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

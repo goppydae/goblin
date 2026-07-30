@@ -177,8 +177,9 @@ func (c *testCluster) register(node *clusterNode, spec *goblinv1.AgentSpec) {
 			c.t.Logf("close register client: %v", cerr)
 		}
 	}()
-	var resp string
-	if err := cl.CallJSON("SchedulerRPC.RegisterGlobalAgent", spec, &resp); err != nil {
+	req := &goblinv1.RegisterGlobalAgentRequest{Spec: spec}
+	var resp goblinv1.RegisterGlobalAgentResponse
+	if err := cl.Call("SchedulerRPC.RegisterGlobalAgent", req, &resp); err != nil {
 		c.t.Fatalf("register %s: %v", spec.Name, err)
 	}
 }

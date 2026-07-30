@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/goppydae/goblin/core/migration"
-	"github.com/goppydae/goblin/core/scheduler"
 	goblinv1 "github.com/goppydae/goblin/proto"
 	"google.golang.org/protobuf/proto"
 )
@@ -14,34 +13,30 @@ import (
 
 // RegisterSchedulerHandlers registers all scheduler RPC methods with the QUIC server
 func RegisterSchedulerHandlers(server *QUICRPCServer, rpc *SchedulerRPC) {
-	// SubmitJob handler - takes *scheduler.Job
+	// SubmitJob handler
 	server.RegisterHandler("SchedulerRPC.SubmitJob", func(payload []byte) ([]byte, error) {
-		var job scheduler.Job
-		if err := json.Unmarshal(payload, &job); err != nil {
-			return nil, fmt.Errorf("invalid request: %w", err)
+		var req goblinv1.SubmitJobRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 		}
-
-		var resp string
-		if err := rpc.SubmitJob(&job, &resp); err != nil {
+		var resp goblinv1.SubmitJobResponse
+		if err := rpc.SubmitJob(&req, &resp); err != nil {
 			return nil, err
 		}
-
-		return json.Marshal(resp)
+		return proto.Marshal(&resp)
 	})
 
 	// DrainNode handler
 	server.RegisterHandler("SchedulerRPC.DrainNode", func(payload []byte) ([]byte, error) {
-		var nodeID string
-		if err := json.Unmarshal(payload, &nodeID); err != nil {
-			return nil, fmt.Errorf("invalid request: %w", err)
+		var req goblinv1.DrainNodeRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 		}
-
-		var resp []string
-		if err := rpc.DrainNode(&nodeID, &resp); err != nil {
+		var resp goblinv1.DrainNodeResponse
+		if err := rpc.DrainNode(&req, &resp); err != nil {
 			return nil, err
 		}
-
-		return json.Marshal(resp)
+		return proto.Marshal(&resp)
 	})
 
 	// MigrateJob handler
@@ -139,21 +134,15 @@ func RegisterSchedulerHandlers(server *QUICRPCServer, rpc *SchedulerRPC) {
 	})
 
 	server.RegisterHandler("SchedulerRPC.RegisterGlobalAgent", func(payload []byte) ([]byte, error) {
-		var spec goblinv1.AgentSpec
-		if err := proto.Unmarshal(payload, &spec); err != nil {
-			// Try JSON fallback if Proto fails (CLI sends JSON usually, but let's see)
-			// Actually, existing handlers use JSON unmarshal.
-			// Let's stick to JSON for consistency with other handlers in this file.
-			if jsonErr := json.Unmarshal(payload, &spec); jsonErr != nil {
-				return nil, fmt.Errorf("invalid request (json): %w", jsonErr)
-			}
+		var req goblinv1.RegisterGlobalAgentRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 		}
-
-		var resp string
-		if err := rpc.RegisterGlobalAgent(&spec, &resp); err != nil {
+		var resp goblinv1.RegisterGlobalAgentResponse
+		if err := rpc.RegisterGlobalAgent(&req, &resp); err != nil {
 			return nil, err
 		}
-		return json.Marshal(resp)
+		return proto.Marshal(&resp)
 	})
 
 	// ListGlobalAgents handler
@@ -196,28 +185,28 @@ func RegisterSchedulerHandlers(server *QUICRPCServer, rpc *SchedulerRPC) {
 
 	// DeleteGlobalAgent handler
 	server.RegisterHandler("SchedulerRPC.DeleteGlobalAgent", func(payload []byte) ([]byte, error) {
-		var agentID string
-		if err := json.Unmarshal(payload, &agentID); err != nil {
-			return nil, fmt.Errorf("invalid request: %w", err)
+		var req goblinv1.DeleteGlobalAgentRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 		}
-		var resp string
-		if err := rpc.DeleteGlobalAgent(&agentID, &resp); err != nil {
+		var resp goblinv1.DeleteGlobalAgentResponse
+		if err := rpc.DeleteGlobalAgent(&req, &resp); err != nil {
 			return nil, err
 		}
-		return json.Marshal(resp)
+		return proto.Marshal(&resp)
 	})
 
 	// PublishEvent handler
 	server.RegisterHandler("SchedulerRPC.PublishEvent", func(payload []byte) ([]byte, error) {
-		var req PublishRequest
-		if err := json.Unmarshal(payload, &req); err != nil {
-			return nil, fmt.Errorf("invalid request: %w", err)
+		var req goblinv1.PublishEventRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 		}
-		var resp string
+		var resp goblinv1.PublishEventResponse
 		if err := rpc.PublishEvent(&req, &resp); err != nil {
 			return nil, err
 		}
-		return json.Marshal(resp)
+		return proto.Marshal(&resp)
 	})
 
 	// ListLocalAgents handler

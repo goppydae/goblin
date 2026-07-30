@@ -97,29 +97,56 @@ type MigrateRequest struct {
 	ToNode string
 }
 
-// SubmitJob handles job submission via RPC
-func (s *SchedulerRPC) SubmitJob(job *scheduler.Job, resp *string) error {
+// jobFromProto translates the RPC-facing Job message into the core
+// scheduler's domain type, field for field. core/scheduler.Job predates
+// protobuf and stays a plain Go struct (its storage encoding is JSON in
+// the KV store); this is the one place the two shapes meet.
+func jobFromProto(j *goblinv1.Job) *scheduler.Job {
+	return &scheduler.Job{
+		ID:            j.GetId(),
+		AgentID:       j.GetAgentId(),
+		AgentType:     j.GetAgentType(),
+		AssignedNode:  j.GetAssignedNode(),
+		Resources:     resourceReqFromProto(j.GetResources()),
+		Constraints:   j.GetConstraints(),
+		Requirements:  j.GetRequirements(),
+		RestartPolicy: j.GetRestartPolicy(),
+		Env:           j.GetEnv(),
+	}
+}
+
+// resourceReqFromProto tolerates a nil message (unset field): the
+// generated getters already do, so the zero ResourceReq falls out
+// naturally rather than needing a special case.
+func resourceReqFromProto(r *goblinv1.ResourceReq) scheduler.ResourceReq {
+	return scheduler.ResourceReq{CPU: r.GetCpu(), Memory: r.GetMemory()}
+}
+
+// SubmitJob handles job submission via RPC.
+func (s *SchedulerRPC) SubmitJob(req *goblinv1.SubmitJobRequest, resp *goblinv1.SubmitJobResponse) error {
+	job := jobFromProto(req.GetJob())
 	if _, err := s.authorize(capability.VerbJobSubmit, jobSubject(job.ID)); err != nil {
 		return err
 	}
 	if err := s.scheduler.SubmitJob(context.Background(), job); err != nil {
-		*resp = fmt.Sprintf("failed: %v", err)
 		return err
 	}
-	*resp = fmt.Sprintf("job %s submitted successfully", job.ID)
+	resp.JobId = job.ID
+	resp.AssignedNode = job.AssignedNode
 	return nil
 }
 
-// DrainNode handles node draining via RPC
-func (s *SchedulerRPC) DrainNode(nodeID *string, resp *[]string) error {
-	if _, err := s.authorize(capability.VerbNodeDrain, nodeSubject(*nodeID)); err != nil {
+// DrainNode handles node draining via RPC.
+func (s *SchedulerRPC) DrainNode(req *goblinv1.DrainNodeRequest, resp *goblinv1.DrainNodeResponse) error {
+	nodeID := req.GetNodeId()
+	if _, err := s.authorize(capability.VerbNodeDrain, nodeSubject(nodeID)); err != nil {
 		return err
 	}
-	migratedJobs, err := s.scheduler.DrainNode(context.Background(), *nodeID)
+	migratedJobs, err := s.scheduler.DrainNode(context.Background(), nodeID)
 	if err != nil {
 		return err
 	}
-	*resp = migratedJobs
+	resp.MigratedJobIds = migratedJobs
 	return nil
 }
 
@@ -255,59 +282,55 @@ func (s *SchedulerRPC) Members(req *goblinv1.MembersRequest, resp *goblinv1.Memb
 	return nil
 }
 
-// PublishRequest defines the payload for publishing events
-type PublishRequest struct {
-	Topic   string
-	Payload []byte // JSON payload
-}
-
-// PublishEvent publishes an event to the cluster via the EventBus
-func (s *SchedulerRPC) PublishEvent(req *PublishRequest, resp *string) error {
-	if _, err := s.authorize(capability.VerbEventPublish, topicSubject(req.Topic)); err != nil {
+// PublishEvent publishes an event to the cluster via the EventBus.
+// membership is interface{} on SchedulerRPC to avoid an import cycle,
+// so UserEvent support is checked with a local interface rather than a
+// concrete type.
+func (s *SchedulerRPC) PublishEvent(req *goblinv1.PublishEventRequest, resp *goblinv1.PublishEventResponse) error {
+	if _, err := s.authorize(capability.VerbEventPublish, topicSubject(req.GetTopic())); err != nil {
 		return err
 	}
-	// Forward to membership (Serf) UserEvent for now, or preferably use the EventBus directly
-	// The EventBus wraps Serf, so we should publish "user" type events.
-	// However, SchedulerRPC has access to s.membership (interface{}) and s.consensus.
-	// It doesn't hold the 'bus' explicitly in the struct definition in supervisor.go,
-	// but supervisor.go initializes it with `membership`.
-	// Wait, `membership` in SchedulerRPC is `interface{}` to avoid cycles.
-	// To use UserEvent, we need to cast it or add UserEvent to the interface.
 
-	// Let's check if we can cast to an interface with UserEvent
 	type eventPublisher interface {
 		UserEvent(name string, payload []byte) error
 	}
 
-	if publisher, ok := s.membership.(eventPublisher); ok {
-		// Topic needs to be namespaced for Serf if we are mimicking `goblinctl publish`
-		// which usually sends user events.
-		// The CLI previously did: client.UserEvent(topic, payload, false)
-		if err := publisher.UserEvent(req.Topic, req.Payload); err != nil {
-			*resp = fmt.Sprintf("failed to publish: %v", err)
-			return err
-		}
-		*resp = fmt.Sprintf("event '%s' published", req.Topic)
-		return nil
+	publisher, ok := s.membership.(eventPublisher)
+	if !ok {
+		return fmt.Errorf("membership implementation does not support UserEvent")
 	}
-
-	*resp = "membership does not support UserEvent"
-	return fmt.Errorf("membership implementation does not support UserEvent")
+	if err := publisher.UserEvent(req.GetTopic(), req.GetPayload()); err != nil {
+		return fmt.Errorf("failed to publish: %w", err)
+	}
+	resp.Topic = req.GetTopic()
+	return nil
 }
 
 // Global Agent RPC Methods
 
-// RegisterGlobalAgent registers a new global agent
-func (s *SchedulerRPC) RegisterGlobalAgent(spec *goblinv1.AgentSpec, resp *string) error {
-	if _, err := s.authorize(capability.VerbAgentRegister, specSubject(spec.Name)); err != nil {
+// RegisterGlobalAgent registers a new global agent spec. spec_uuid is
+// server-owned: RegisterAgent mints it from spec.name when unset. A
+// caller-supplied spec_uuid is rejected rather than silently
+// overwritten (design doc, "Server-owned fields must be rejected, not
+// overwritten") so a client bug cannot masquerade as the minted
+// identity.
+func (s *SchedulerRPC) RegisterGlobalAgent(req *goblinv1.RegisterGlobalAgentRequest, resp *goblinv1.RegisterGlobalAgentResponse) error {
+	spec := req.GetSpec()
+	if spec == nil {
+		return fmt.Errorf("%w: spec is required", ErrInvalidRequest)
+	}
+	if _, err := s.authorize(capability.VerbAgentRegister, specSubject(spec.GetName())); err != nil {
 		return err
 	}
+	if len(spec.GetSpecUuid()) != 0 {
+		return fmt.Errorf("%w: spec_uuid is server-owned (minted at registration) and must be left unset by the caller", ErrInvalidRequest)
+	}
 	if err := s.scheduler.RegisterAgent(context.Background(), spec); err != nil {
-		*resp = fmt.Sprintf("failed: %v", err)
 		return err
 	}
 	s.scheduler.KickReconcile()
-	*resp = fmt.Sprintf("agent %s registered successfully (uuid %s)", spec.Name, ident.String(spec.SpecUuid))
+	resp.SpecUuid = spec.SpecUuid
+	resp.Name = spec.Name
 	return nil
 }
 
@@ -371,17 +394,22 @@ func (s *SchedulerRPC) ScaleAgent(req *goblinv1.ScaleAgentRequest, resp *goblinv
 	return nil
 }
 
-// DeleteGlobalAgent removes a global agent
-func (s *SchedulerRPC) DeleteGlobalAgent(agentID *string, resp *string) error {
-	if _, err := s.authorize(capability.VerbAgentDelete, specSubject(*agentID)); err != nil {
+// DeleteGlobalAgent removes a global agent spec.
+func (s *SchedulerRPC) DeleteGlobalAgent(req *goblinv1.DeleteGlobalAgentRequest, resp *goblinv1.DeleteGlobalAgentResponse) error {
+	agentID := req.GetAgentId()
+	if _, err := s.authorize(capability.VerbAgentDelete, specSubject(agentID)); err != nil {
 		return err
 	}
-	if err := s.scheduler.DeleteAgent(context.Background(), *agentID); err != nil {
-		*resp = fmt.Sprintf("failed: %v", err)
+	spec, err := s.scheduler.GetAgent(context.Background(), agentID)
+	if err != nil {
+		return err
+	}
+	if err := s.scheduler.DeleteAgent(context.Background(), agentID); err != nil {
 		return err
 	}
 	s.scheduler.KickReconcile()
-	*resp = fmt.Sprintf("agent %s deleted", *agentID)
+	resp.SpecUuid = spec.SpecUuid
+	resp.Name = spec.Name
 	return nil
 }
 

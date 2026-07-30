@@ -120,3 +120,82 @@ message ListAgentInstancesRequest {
 message ListAgentInstancesResponse {
   repeated AgentInstance instances = 1;
 }
+
+// RegisterGlobalAgentRequest registers or updates a global agent spec.
+// spec.spec_uuid is server-owned: RegisterAgent mints it from spec.name
+// when unset. A caller-supplied spec_uuid is rejected, not overwritten
+// (see goblin-typed-rpc-design.md, "Server-owned fields must be
+// rejected, not overwritten").
+message RegisterGlobalAgentRequest {
+  AgentSpec spec = 1;
+}
+
+// RegisterGlobalAgentResponse reports the identity assigned to the
+// spec rather than a formatted sentence.
+message RegisterGlobalAgentResponse {
+  bytes spec_uuid = 1; // spec UUID minted (or confirmed) at registration
+  string name = 2;
+}
+
+// DeleteGlobalAgentRequest identifies the spec to delete. agent_id
+// accepts either the spec UUID or the operator-facing name.
+message DeleteGlobalAgentRequest {
+  string agent_id = 1;
+}
+
+// DeleteGlobalAgentResponse reports the identity of the spec that was
+// deleted rather than a formatted sentence.
+message DeleteGlobalAgentResponse {
+  bytes spec_uuid = 1;
+  string name = 2;
+}
+
+// Job is the RPC-facing view of a job submission - a faithful,
+// field-for-field translation of core/scheduler.Job. That type predates
+// protobuf and stays a plain Go struct (its storage encoding is JSON in
+// the KV store); this message is only the wire shape for SubmitJob.
+message Job {
+  string id = 1;
+  string agent_id = 2;
+  string agent_type = 3;
+  string assigned_node = 4;
+  ResourceReq resources = 5;
+  map<string, string> constraints = 6;
+  map<string, string> requirements = 7;
+  string restart_policy = 8; // "always", "on-failure", "never"
+  map<string, string> env = 9;
+}
+
+message SubmitJobRequest {
+  Job job = 1;
+}
+
+// SubmitJobResponse reports where the job landed rather than a
+// formatted sentence.
+message SubmitJobResponse {
+  string job_id = 1;
+  string assigned_node = 2;
+}
+
+// DrainNodeRequest names the node to evacuate.
+message DrainNodeRequest {
+  string node_id = 1;
+}
+
+message DrainNodeResponse {
+  repeated string migrated_job_ids = 1;
+}
+
+// PublishEventRequest forwards to membership (Serf) UserEvent. payload
+// stays opaque bytes here; typing the event envelope itself is a
+// separate piece of work (Serf events), not this one.
+message PublishEventRequest {
+  string topic = 1;
+  bytes payload = 2;
+}
+
+// PublishEventResponse confirms the topic that was published rather
+// than a formatted sentence.
+message PublishEventResponse {
+  string topic = 1;
+}
