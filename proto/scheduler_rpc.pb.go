@@ -7,13 +7,12 @@
 package goblinv1
 
 import (
-	reflect "reflect"
-	sync "sync"
-	unsafe "unsafe"
-
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
+	reflect "reflect"
+	sync "sync"
+	unsafe "unsafe"
 )
 
 const (
@@ -1621,6 +1620,351 @@ func (x *PublishEventResponse) GetTopic() string {
 	return ""
 }
 
+// MigrateJobRequest reassigns a job to another node. Distinct from
+// MigrateInstanceRequest: this stops work in one place and starts it
+// in another, and the process does not survive the move.
+type MigrateJobRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	ToNode        string                 `protobuf:"bytes,2,opt,name=to_node,json=toNode,proto3" json:"to_node,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MigrateJobRequest) Reset() {
+	*x = MigrateJobRequest{}
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrateJobRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrateJobRequest) ProtoMessage() {}
+
+func (x *MigrateJobRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrateJobRequest.ProtoReflect.Descriptor instead.
+func (*MigrateJobRequest) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_scheduler_rpc_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *MigrateJobRequest) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+func (x *MigrateJobRequest) GetToNode() string {
+	if x != nil {
+		return x.ToNode
+	}
+	return ""
+}
+
+// MigrateJobResponse reports the applied placement rather than a
+// formatted sentence.
+type MigrateJobResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	ToNode        string                 `protobuf:"bytes,2,opt,name=to_node,json=toNode,proto3" json:"to_node,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MigrateJobResponse) Reset() {
+	*x = MigrateJobResponse{}
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrateJobResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrateJobResponse) ProtoMessage() {}
+
+func (x *MigrateJobResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrateJobResponse.ProtoReflect.Descriptor instead.
+func (*MigrateJobResponse) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_scheduler_rpc_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *MigrateJobResponse) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+func (x *MigrateJobResponse) GetToNode() string {
+	if x != nil {
+		return x.ToNode
+	}
+	return ""
+}
+
+// MigrateInstanceRequest asks the leader to live-migrate one running
+// instance to another node (GOBLIN-DIV-031). instance_id is the
+// canonical UUID string, as goblinctl prints it - not the raw bytes
+// spec_uuid/instance_uuid use elsewhere in this schema, since this is
+// the field the CLI already passes as a string.
+type MigrateInstanceRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InstanceId    string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	ToNode        string                 `protobuf:"bytes,2,opt,name=to_node,json=toNode,proto3" json:"to_node,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MigrateInstanceRequest) Reset() {
+	*x = MigrateInstanceRequest{}
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrateInstanceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrateInstanceRequest) ProtoMessage() {}
+
+func (x *MigrateInstanceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrateInstanceRequest.ProtoReflect.Descriptor instead.
+func (*MigrateInstanceRequest) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_scheduler_rpc_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *MigrateInstanceRequest) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *MigrateInstanceRequest) GetToNode() string {
+	if x != nil {
+		return x.ToNode
+	}
+	return ""
+}
+
+// MigrateInstanceResponse reports the instance's move rather than a
+// formatted sentence.
+type MigrateInstanceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InstanceId    string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	FromNode      string                 `protobuf:"bytes,2,opt,name=from_node,json=fromNode,proto3" json:"from_node,omitempty"`
+	ToNode        string                 `protobuf:"bytes,3,opt,name=to_node,json=toNode,proto3" json:"to_node,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MigrateInstanceResponse) Reset() {
+	*x = MigrateInstanceResponse{}
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrateInstanceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrateInstanceResponse) ProtoMessage() {}
+
+func (x *MigrateInstanceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrateInstanceResponse.ProtoReflect.Descriptor instead.
+func (*MigrateInstanceResponse) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_scheduler_rpc_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *MigrateInstanceResponse) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *MigrateInstanceResponse) GetFromNode() string {
+	if x != nil {
+		return x.FromNode
+	}
+	return ""
+}
+
+func (x *MigrateInstanceResponse) GetToNode() string {
+	if x != nil {
+		return x.ToNode
+	}
+	return ""
+}
+
+// SignalAgentInstanceRequest asks the leader to signal an instance
+// (GOBLIN-DIV-017, DDR-10). instance_id is the canonical UUID string,
+// matching MigrateInstanceRequest.
+type SignalAgentInstanceRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InstanceId    string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	Signum        int32                  `protobuf:"varint,2,opt,name=signum,proto3" json:"signum,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SignalAgentInstanceRequest) Reset() {
+	*x = SignalAgentInstanceRequest{}
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SignalAgentInstanceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SignalAgentInstanceRequest) ProtoMessage() {}
+
+func (x *SignalAgentInstanceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SignalAgentInstanceRequest.ProtoReflect.Descriptor instead.
+func (*SignalAgentInstanceRequest) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_scheduler_rpc_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *SignalAgentInstanceRequest) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *SignalAgentInstanceRequest) GetSignum() int32 {
+	if x != nil {
+		return x.Signum
+	}
+	return 0
+}
+
+// SignalAgentInstanceResponse reports the authorized delivery rather
+// than a formatted sentence.
+type SignalAgentInstanceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Signum        int32                  `protobuf:"varint,1,opt,name=signum,proto3" json:"signum,omitempty"`
+	InstanceId    string                 `protobuf:"bytes,2,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	NodeId        string                 `protobuf:"bytes,3,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SignalAgentInstanceResponse) Reset() {
+	*x = SignalAgentInstanceResponse{}
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SignalAgentInstanceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SignalAgentInstanceResponse) ProtoMessage() {}
+
+func (x *SignalAgentInstanceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SignalAgentInstanceResponse.ProtoReflect.Descriptor instead.
+func (*SignalAgentInstanceResponse) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_scheduler_rpc_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *SignalAgentInstanceResponse) GetSignum() int32 {
+	if x != nil {
+		return x.Signum
+	}
+	return 0
+}
+
+func (x *SignalAgentInstanceResponse) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *SignalAgentInstanceResponse) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
 var File_goblin_v1_scheduler_rpc_proto protoreflect.FileDescriptor
 
 const file_goblin_v1_scheduler_rpc_proto_rawDesc = "" +
@@ -1725,7 +2069,31 @@ const file_goblin_v1_scheduler_rpc_proto_rawDesc = "" +
 	"\x05topic\x18\x01 \x01(\tR\x05topic\x12\x18\n" +
 	"\apayload\x18\x02 \x01(\fR\apayload\",\n" +
 	"\x14PublishEventResponse\x12\x14\n" +
-	"\x05topic\x18\x01 \x01(\tR\x05topicB+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
+	"\x05topic\x18\x01 \x01(\tR\x05topic\"C\n" +
+	"\x11MigrateJobRequest\x12\x15\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x17\n" +
+	"\ato_node\x18\x02 \x01(\tR\x06toNode\"D\n" +
+	"\x12MigrateJobResponse\x12\x15\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x17\n" +
+	"\ato_node\x18\x02 \x01(\tR\x06toNode\"R\n" +
+	"\x16MigrateInstanceRequest\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\tR\n" +
+	"instanceId\x12\x17\n" +
+	"\ato_node\x18\x02 \x01(\tR\x06toNode\"p\n" +
+	"\x17MigrateInstanceResponse\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\tR\n" +
+	"instanceId\x12\x1b\n" +
+	"\tfrom_node\x18\x02 \x01(\tR\bfromNode\x12\x17\n" +
+	"\ato_node\x18\x03 \x01(\tR\x06toNode\"U\n" +
+	"\x1aSignalAgentInstanceRequest\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\tR\n" +
+	"instanceId\x12\x16\n" +
+	"\x06signum\x18\x02 \x01(\x05R\x06signum\"o\n" +
+	"\x1bSignalAgentInstanceResponse\x12\x16\n" +
+	"\x06signum\x18\x01 \x01(\x05R\x06signum\x12\x1f\n" +
+	"\vinstance_id\x18\x02 \x01(\tR\n" +
+	"instanceId\x12\x17\n" +
+	"\anode_id\x18\x03 \x01(\tR\x06nodeIdB+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
 
 var (
 	file_goblin_v1_scheduler_rpc_proto_rawDescOnce sync.Once
@@ -1739,7 +2107,7 @@ func file_goblin_v1_scheduler_rpc_proto_rawDescGZIP() []byte {
 	return file_goblin_v1_scheduler_rpc_proto_rawDescData
 }
 
-var file_goblin_v1_scheduler_rpc_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
+var file_goblin_v1_scheduler_rpc_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
 var file_goblin_v1_scheduler_rpc_proto_goTypes = []any{
 	(*ScaleAgentRequest)(nil),           // 0: goblin.v1.ScaleAgentRequest
 	(*ScaleAgentResponse)(nil),          // 1: goblin.v1.ScaleAgentResponse
@@ -1772,30 +2140,36 @@ var file_goblin_v1_scheduler_rpc_proto_goTypes = []any{
 	(*DrainNodeResponse)(nil),           // 28: goblin.v1.DrainNodeResponse
 	(*PublishEventRequest)(nil),         // 29: goblin.v1.PublishEventRequest
 	(*PublishEventResponse)(nil),        // 30: goblin.v1.PublishEventResponse
-	nil,                                 // 31: goblin.v1.MemberInfo.TagsEntry
-	nil,                                 // 32: goblin.v1.Job.ConstraintsEntry
-	nil,                                 // 33: goblin.v1.Job.RequirementsEntry
-	nil,                                 // 34: goblin.v1.Job.EnvEntry
-	(*AgentSpec)(nil),                   // 35: goblin.v1.AgentSpec
-	(*timestamppb.Timestamp)(nil),       // 36: google.protobuf.Timestamp
-	(*AgentInstance)(nil),               // 37: goblin.v1.AgentInstance
-	(*ResourceReq)(nil),                 // 38: goblin.v1.ResourceReq
+	(*MigrateJobRequest)(nil),           // 31: goblin.v1.MigrateJobRequest
+	(*MigrateJobResponse)(nil),          // 32: goblin.v1.MigrateJobResponse
+	(*MigrateInstanceRequest)(nil),      // 33: goblin.v1.MigrateInstanceRequest
+	(*MigrateInstanceResponse)(nil),     // 34: goblin.v1.MigrateInstanceResponse
+	(*SignalAgentInstanceRequest)(nil),  // 35: goblin.v1.SignalAgentInstanceRequest
+	(*SignalAgentInstanceResponse)(nil), // 36: goblin.v1.SignalAgentInstanceResponse
+	nil,                                 // 37: goblin.v1.MemberInfo.TagsEntry
+	nil,                                 // 38: goblin.v1.Job.ConstraintsEntry
+	nil,                                 // 39: goblin.v1.Job.RequirementsEntry
+	nil,                                 // 40: goblin.v1.Job.EnvEntry
+	(*AgentSpec)(nil),                   // 41: goblin.v1.AgentSpec
+	(*timestamppb.Timestamp)(nil),       // 42: google.protobuf.Timestamp
+	(*AgentInstance)(nil),               // 43: goblin.v1.AgentInstance
+	(*ResourceReq)(nil),                 // 44: goblin.v1.ResourceReq
 }
 var file_goblin_v1_scheduler_rpc_proto_depIdxs = []int32{
 	3,  // 0: goblin.v1.ListJobsResponse.jobs:type_name -> goblin.v1.JobInfo
-	31, // 1: goblin.v1.MemberInfo.tags:type_name -> goblin.v1.MemberInfo.TagsEntry
+	37, // 1: goblin.v1.MemberInfo.tags:type_name -> goblin.v1.MemberInfo.TagsEntry
 	6,  // 2: goblin.v1.MembersResponse.members:type_name -> goblin.v1.MemberInfo
-	35, // 3: goblin.v1.ListGlobalAgentsResponse.agents:type_name -> goblin.v1.AgentSpec
+	41, // 3: goblin.v1.ListGlobalAgentsResponse.agents:type_name -> goblin.v1.AgentSpec
 	11, // 4: goblin.v1.ListLocalAgentsResponse.agents:type_name -> goblin.v1.LocalAgentInfo
-	35, // 5: goblin.v1.GetGlobalAgentResponse.spec:type_name -> goblin.v1.AgentSpec
-	36, // 6: goblin.v1.LogEvent.timestamp:type_name -> google.protobuf.Timestamp
+	41, // 5: goblin.v1.GetGlobalAgentResponse.spec:type_name -> goblin.v1.AgentSpec
+	42, // 6: goblin.v1.LogEvent.timestamp:type_name -> google.protobuf.Timestamp
 	16, // 7: goblin.v1.GetEventsResponse.events:type_name -> goblin.v1.LogEvent
-	37, // 8: goblin.v1.ListAgentInstancesResponse.instances:type_name -> goblin.v1.AgentInstance
-	35, // 9: goblin.v1.RegisterGlobalAgentRequest.spec:type_name -> goblin.v1.AgentSpec
-	38, // 10: goblin.v1.Job.resources:type_name -> goblin.v1.ResourceReq
-	32, // 11: goblin.v1.Job.constraints:type_name -> goblin.v1.Job.ConstraintsEntry
-	33, // 12: goblin.v1.Job.requirements:type_name -> goblin.v1.Job.RequirementsEntry
-	34, // 13: goblin.v1.Job.env:type_name -> goblin.v1.Job.EnvEntry
+	43, // 8: goblin.v1.ListAgentInstancesResponse.instances:type_name -> goblin.v1.AgentInstance
+	41, // 9: goblin.v1.RegisterGlobalAgentRequest.spec:type_name -> goblin.v1.AgentSpec
+	44, // 10: goblin.v1.Job.resources:type_name -> goblin.v1.ResourceReq
+	38, // 11: goblin.v1.Job.constraints:type_name -> goblin.v1.Job.ConstraintsEntry
+	39, // 12: goblin.v1.Job.requirements:type_name -> goblin.v1.Job.RequirementsEntry
+	40, // 13: goblin.v1.Job.env:type_name -> goblin.v1.Job.EnvEntry
 	24, // 14: goblin.v1.SubmitJobRequest.job:type_name -> goblin.v1.Job
 	15, // [15:15] is the sub-list for method output_type
 	15, // [15:15] is the sub-list for method input_type
@@ -1816,7 +2190,7 @@ func file_goblin_v1_scheduler_rpc_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_goblin_v1_scheduler_rpc_proto_rawDesc), len(file_goblin_v1_scheduler_rpc_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   35,
+			NumMessages:   41,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

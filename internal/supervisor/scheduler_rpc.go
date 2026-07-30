@@ -91,12 +91,6 @@ func (s *SchedulerRPC) GetEvents(req *goblinv1.GetEventsRequest, resp *goblinv1.
 	return nil
 }
 
-// MigrateRequest contains parameters for job migration
-type MigrateRequest struct {
-	JobID  string
-	ToNode string
-}
-
 // jobFromProto translates the RPC-facing Job message into the core
 // scheduler's domain type, field for field. core/scheduler.Job predates
 // protobuf and stays a plain Go struct (its storage encoding is JSON in
@@ -150,16 +144,18 @@ func (s *SchedulerRPC) DrainNode(req *goblinv1.DrainNodeRequest, resp *goblinv1.
 	return nil
 }
 
-// MigrateJob handles job migration via RPC
-func (s *SchedulerRPC) MigrateJob(req *MigrateRequest, resp *string) error {
-	if _, err := s.authorize(capability.VerbJobMigrate, jobSubject(req.JobID)); err != nil {
+// MigrateJob handles job migration via RPC.
+func (s *SchedulerRPC) MigrateJob(req *goblinv1.MigrateJobRequest, resp *goblinv1.MigrateJobResponse) error {
+	jobID := req.GetJobId()
+	toNode := req.GetToNode()
+	if _, err := s.authorize(capability.VerbJobMigrate, jobSubject(jobID)); err != nil {
 		return err
 	}
-	if err := s.scheduler.MigrateJob(context.Background(), req.JobID, req.ToNode); err != nil {
-		*resp = fmt.Sprintf("failed: %v", err)
+	if err := s.scheduler.MigrateJob(context.Background(), jobID, toNode); err != nil {
 		return err
 	}
-	*resp = fmt.Sprintf("job %s migrated to %s", req.JobID, req.ToNode)
+	resp.JobId = jobID
+	resp.ToNode = toNode
 	return nil
 }
 

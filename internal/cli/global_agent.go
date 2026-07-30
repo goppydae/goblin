@@ -11,7 +11,6 @@ import (
 
 	"github.com/goppydae/gapi/core/transport"
 	"github.com/goppydae/goblin/internal/ident"
-	"github.com/goppydae/goblin/internal/supervisor"
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
 
@@ -214,15 +213,15 @@ var globalAgentSignalCmd = &cobra.Command{
 		}
 		defer closeClient(client, &err)
 
-		req := supervisor.SignalAgentInstanceRequest{
-			InstanceID: args[0],
+		req := &goblinv1.SignalAgentInstanceRequest{
+			InstanceId: args[0],
 			Signum:     int32(signum),
 		}
-		var resp string
-		if err := client.CallJSON("SchedulerRPC.SignalAgentInstance", &req, &resp); err != nil {
+		var resp goblinv1.SignalAgentInstanceResponse
+		if err := client.Call("SchedulerRPC.SignalAgentInstance", req, &resp); err != nil {
 			return err
 		}
-		fmt.Println(resp)
+		fmt.Printf("signal %d authorized and delivered to instance %s on %s\n", resp.GetSignum(), resp.GetInstanceId(), resp.GetNodeId())
 		return nil
 	},
 }

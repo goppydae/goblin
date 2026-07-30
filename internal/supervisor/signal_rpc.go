@@ -20,12 +20,6 @@ type memberTagLister interface {
 	Members() []serf.Member
 }
 
-// SignalAgentInstanceRequest asks the leader to signal an instance.
-type SignalAgentInstanceRequest struct {
-	InstanceID string
-	Signum     int32
-}
-
 // SignalAgentInstance is the leader-side signal path (GOBLIN-DIV-017,
 // DDR-10): issue a capability token for exactly the required right,
 // verify it through the kernel's single verification codepath (with
@@ -33,8 +27,11 @@ type SignalAgentInstanceRequest struct {
 // through Raft where the FSM authorizes it against the rights bitmap
 // and answers with the placement node, then dispatch delivery to that
 // node's epoch-guarded pidfd path.
-func (s *SchedulerRPC) SignalAgentInstance(req *SignalAgentInstanceRequest, resp *string) error {
-	instUUID, err := ident.Parse(req.InstanceID)
+func (s *SchedulerRPC) SignalAgentInstance(req *goblinv1.SignalAgentInstanceRequest, resp *goblinv1.SignalAgentInstanceResponse) error {
+	instanceID := req.GetInstanceId()
+	signum := req.GetSignum()
+
+	instUUID, err := ident.Parse(instanceID)
 	if err != nil {
 		return fmt.Errorf("instance id must be a UUID: %w", err)
 	}
@@ -42,7 +39,7 @@ func (s *SchedulerRPC) SignalAgentInstance(req *SignalAgentInstanceRequest, resp
 		return fmt.Errorf("capability issuer not initialized on this node")
 	}
 
-	right, err := gapicrypto.RightForSignal(req.Signum)
+	right, err := gapicrypto.RightForSignal(signum)
 	if err != nil {
 		return err
 	}
@@ -60,7 +57,7 @@ func (s *SchedulerRPC) SignalAgentInstance(req *SignalAgentInstanceRequest, resp
 
 	nodeID, err := s.scheduler.Store().SignalInstance(context.Background(), &goblinv1.SignalRequest{
 		InstanceUuid: instUUID,
-		Signum:       req.Signum,
+		Signum:       signum,
 		TokenId:      payload.TokenId,
 		Rights:       payload.Rights,
 	})
@@ -68,10 +65,12 @@ func (s *SchedulerRPC) SignalAgentInstance(req *SignalAgentInstanceRequest, resp
 		return fmt.Errorf("signal authorization: %w", err)
 	}
 
-	if err := s.scheduler.SignalOnNode(context.Background(), nodeID, req.InstanceID, req.Signum); err != nil {
+	if err := s.scheduler.SignalOnNode(context.Background(), nodeID, instanceID, signum); err != nil {
 		return fmt.Errorf("signal delivery on %s: %w", nodeID, err)
 	}
-	*resp = fmt.Sprintf("signal %d authorized and delivered to instance %s on %s", req.Signum, req.InstanceID, nodeID)
+	resp.Signum = signum
+	resp.InstanceId = instanceID
+	resp.NodeId = nodeID
 	return nil
 }
 

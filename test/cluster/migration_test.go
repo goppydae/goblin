@@ -19,14 +19,13 @@ import (
 	"time"
 
 	gapicheckpoint "github.com/goppydae/gapi/core/checkpoint"
-	"github.com/goppydae/goblin/internal/supervisor"
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
 
 const migrationTarget = 90 * time.Second
 
 // migrateInstance drives the operator-facing verb through the leader.
-func (c *testCluster) migrateInstance(node *clusterNode, instanceID, toNode string) (string, error) {
+func (c *testCluster) migrateInstance(node *clusterNode, instanceID, toNode string) (*goblinv1.MigrateInstanceResponse, error) {
 	c.t.Helper()
 	cl := c.client(node)
 	defer func() {
@@ -34,10 +33,10 @@ func (c *testCluster) migrateInstance(node *clusterNode, instanceID, toNode stri
 			c.t.Logf("close migrate client: %v", cerr)
 		}
 	}()
-	req := supervisor.MigrateInstanceRequest{InstanceID: instanceID, ToNode: toNode}
-	var resp string
-	err := cl.CallJSON("SchedulerRPC.MigrateInstance", &req, &resp)
-	return resp, err
+	req := &goblinv1.MigrateInstanceRequest{InstanceId: instanceID, ToNode: toNode}
+	var resp goblinv1.MigrateInstanceResponse
+	err := cl.Call("SchedulerRPC.MigrateInstance", req, &resp)
+	return &resp, err
 }
 
 // findInstance returns the current record for one instance UUID.
@@ -93,7 +92,7 @@ func TestTwoNodeLiveMigration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("migrate %s to %s: %v", instanceID, destNode, err)
 	}
-	t.Logf("migrate returned: %s", resp)
+	t.Logf("migrate returned: instance %s from %s to %s", resp.GetInstanceId(), resp.GetFromNode(), resp.GetToNode())
 
 	// --- the assertions that matter -----------------------------------
 
