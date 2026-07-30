@@ -35,17 +35,33 @@ type FSM struct {
 	// concurrent migration, so it must survive snapshot/restore or a
 	// restarted leader would forget an arbitration it already made.
 	migrations map[string]*goblinv1.MigrationRecord
-	mu         sync.RWMutex
+	// operatorKeys is the registry of authorized operator identities
+	// (GOBLIN-DIV-015 piece 1), keyed by key id. It is the root of trust
+	// for every mutating verb: an empty registry authorizes nothing.
+	//
+	// It is FSM state and not per-node config on purpose. Config keys
+	// differ between nodes; if Apply consulted them, the same log entry
+	// would be accepted on one replica and refused on another, which is
+	// divergence. Config reaches the registry only by being proposed as
+	// an OPERATOR_KEY_SEED entry that every replica then applies
+	// identically.
+	operatorKeys map[string]*goblinv1.OperatorKey
+	// operatorSerial is the registry's monotone version. It is the replay
+	// guard for signed changes: a change names the serial it was signed
+	// against and is dead once any other change lands.
+	operatorSerial uint64
+	mu             sync.RWMutex
 }
 
 // NewFSM creates a new FSM
 func NewFSM() *FSM {
 	return &FSM{
-		state:      make(map[string]map[string][]byte),
-		versions:   make(map[string]map[string]uint64),
-		instances:  make(map[string]*goblinv1.AgentInstance),
-		tombstones: make(map[string]struct{}),
-		migrations: make(map[string]*goblinv1.MigrationRecord),
+		state:        make(map[string]map[string][]byte),
+		versions:     make(map[string]map[string]uint64),
+		instances:    make(map[string]*goblinv1.AgentInstance),
+		tombstones:   make(map[string]struct{}),
+		migrations:   make(map[string]*goblinv1.MigrationRecord),
+		operatorKeys: make(map[string]*goblinv1.OperatorKey),
 	}
 }
 
@@ -114,6 +130,9 @@ func (f *FSM) Apply(log *raft.Log) interface{} {
 	case goblinv1.CommandType_COMMAND_TYPE_MIGRATE_COMMIT:
 		return f.applyMigrateCommit(cmd.GetMigrateCommit())
 
+	case goblinv1.CommandType_COMMAND_TYPE_OPERATOR_KEY_SEED:
+		return f.applyOperatorKeySeed(cmd.GetOperatorKeySeed())
+
 	default:
 		return fmt.Errorf("unknown command type %v (namespace %s, key %s)",
 			cmd.Type, cmd.Namespace, cmd.Key)
@@ -173,11 +192,22 @@ func (f *FSM) Snapshot() (raft.FSMSnapshot, error) {
 		migrations[id] = raw
 	}
 
+	operatorKeys := make(map[string][]byte, len(f.operatorKeys))
+	for id, k := range f.operatorKeys {
+		raw, err := proto.Marshal(k)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot: marshal operator key %s: %w", id, err)
+		}
+		operatorKeys[id] = raw
+	}
+
 	return &fsmSnapshot{payload: &goblinv1.FSMSnapshot{
-		Namespaces: namespaces,
-		Instances:  instances,
-		Tombstones: tombstones,
-		Migrations: migrations,
+		Namespaces:             namespaces,
+		Instances:              instances,
+		Tombstones:             tombstones,
+		Migrations:             migrations,
+		OperatorKeys:           operatorKeys,
+		OperatorRegistrySerial: f.operatorSerial,
 	}}, nil
 }
 
@@ -240,6 +270,19 @@ func (f *FSM) Restore(rc io.ReadCloser) (err error) {
 		migrations[id] = &rec
 	}
 
+	// The registry and its serial. Restoring the serial matters as much
+	// as restoring the keys: it is the replay guard, and a leader that
+	// came back from a snapshot with serial 0 would accept a signed
+	// change it had already applied.
+	operatorKeys := make(map[string]*goblinv1.OperatorKey, len(payload.GetOperatorKeys()))
+	for id, raw := range payload.GetOperatorKeys() {
+		var k goblinv1.OperatorKey
+		if err := proto.Unmarshal(raw, &k); err != nil {
+			return fmt.Errorf("restore: unmarshal operator key %s: %w", id, err)
+		}
+		operatorKeys[id] = &k
+	}
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -248,6 +291,8 @@ func (f *FSM) Restore(rc io.ReadCloser) (err error) {
 	f.instances = instances
 	f.tombstones = tombstones
 	f.migrations = migrations
+	f.operatorKeys = operatorKeys
+	f.operatorSerial = payload.GetOperatorRegistrySerial()
 	return nil
 }
 
