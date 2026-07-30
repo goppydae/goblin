@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package goblin.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/goppydae/goblin/proto;goblinv1";
+
+// ClusterEvent is the gossip wire form of an eventbus Event
+// (GOBLIN-DIV-039). The envelope is typed so buf breaking covers it;
+// payload is a google.protobuf.Struct because the in-process contract
+// is map[string]interface{} - per-topic payload schemas are a future
+// eventbus API decision, not smuggled in here. Serf bounds user events
+// at 512 bytes (name + payload); the encoder fails loudly rather than
+// letting an oversized event truncate or vanish.
+message ClusterEvent {
+  string id = 1;
+  string topic = 2;
+  string namespace = 3;
+  repeated string tags = 4;
+  google.protobuf.Struct payload = 5;
+  string node_id = 6;
+  google.protobuf.Timestamp timestamp = 7;
+}
