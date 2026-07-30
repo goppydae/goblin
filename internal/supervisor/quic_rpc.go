@@ -115,7 +115,7 @@ func (s *QUICRPCServer) handleStream(stream *quic.Stream) {
 	}
 
 	// Execute handler
-	respPayload, handlerErr := handler(req.Payload)
+	respPayload, handlerErr := runHandler(req.Method, handler, req.Payload)
 	if handlerErr != nil {
 		if serr := s.sendError(stream, req.RequestId, handlerErr); serr != nil {
 			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "send error response failed", logattr.Err(serr))
@@ -127,6 +127,24 @@ func (s *QUICRPCServer) handleStream(stream *quic.Stream) {
 	if err := s.sendResponse(stream, req.RequestId, respPayload, nil); err != nil {
 		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "send rpc response failed", logattr.Err(err))
 	}
+}
+
+// runHandler invokes one RPC handler with a panic boundary: a panicking
+// handler costs its request, never the process (GOBLIN-DIV-041). Every
+// stream runs in its own goroutine, so without this recover a single
+// panicking input in any handler is a remote one-request node-crash
+// primitive. The panic is logged loudly with the method name and
+// converted to an error that rpcErrorFor classifies INTERNAL - a
+// panic is by definition an unclassified server fault.
+func runHandler(method string, handler RPCHandler, payload []byte) (out []byte, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Default().LogAttrs(context.Background(), slog.LevelError, "rpc handler panicked", logattr.Method(method), logattr.PanicValue(fmt.Sprintf("%v", r)))
+			out = nil
+			err = fmt.Errorf("handler for %s panicked: %v", method, r)
+		}
+	}()
+	return handler(payload)
 }
 
 // sendResponse sends an RPC response. handlerErr is nil on success; when

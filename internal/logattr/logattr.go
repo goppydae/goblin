@@ -22,6 +22,7 @@ func AgentID(s string) slog.Attr    { return slog.String("agent_id", s) }
 func Topic(s string) slog.Attr      { return slog.String("topic", s) }
 func Addr(s string) slog.Attr       { return slog.String("addr", s) }
 func Method(s string) slog.Attr     { return slog.String("method", s) }
+func PanicValue(s string) slog.Attr { return slog.String("panic_value", s) }
 func Member(s string) slog.Attr     { return slog.String("member", s) }
 func Status(s string) slog.Attr     { return slog.String("status", s) }
 func Source(s string) slog.Attr     { return slog.String("source", s) }
