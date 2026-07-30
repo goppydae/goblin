@@ -183,17 +183,16 @@ func RegisterSchedulerHandlers(server *QUICRPCServer, rpc *SchedulerRPC) {
 		return json.Marshal(&resp)
 	})
 
-	// ScaleAgent handler
 	server.RegisterHandler("SchedulerRPC.ScaleAgent", func(payload []byte) ([]byte, error) {
-		var req ScaleAgentRequest
-		if err := json.Unmarshal(payload, &req); err != nil {
-			return nil, fmt.Errorf("invalid request: %w", err)
+		var req goblinv1.ScaleAgentRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 		}
-		var resp string
+		var resp goblinv1.ScaleAgentResponse
 		if err := rpc.ScaleAgent(&req, &resp); err != nil {
 			return nil, err
 		}
-		return json.Marshal(resp)
+		return proto.Marshal(&resp)
 	})
 
 	// DeleteGlobalAgent handler

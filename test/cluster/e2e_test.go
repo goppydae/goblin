@@ -7,7 +7,6 @@ import (
 	"time"
 
 	goblintransport "github.com/goppydae/goblin/core/transport"
-	"github.com/goppydae/goblin/internal/supervisor"
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
 
@@ -179,7 +178,7 @@ func (c *testCluster) register(node *clusterNode, spec *goblinv1.AgentSpec) {
 		}
 	}()
 	var resp string
-	if err := cl.Call("SchedulerRPC.RegisterGlobalAgent", spec, &resp); err != nil {
+	if err := cl.CallJSON("SchedulerRPC.RegisterGlobalAgent", spec, &resp); err != nil {
 		c.t.Fatalf("register %s: %v", spec.Name, err)
 	}
 }
@@ -193,9 +192,9 @@ func (c *testCluster) scale(node *clusterNode, specID string, replicas int32) {
 			c.t.Logf("close scale client: %v", cerr)
 		}
 	}()
-	req := supervisor.ScaleAgentRequest{AgentID: specID, Replicas: replicas}
-	var resp string
-	if err := cl.Call("SchedulerRPC.ScaleAgent", &req, &resp); err != nil {
+	req := &goblinv1.ScaleAgentRequest{AgentId: specID, Replicas: replicas}
+	var resp goblinv1.ScaleAgentResponse
+	if err := cl.Call("SchedulerRPC.ScaleAgent", req, &resp); err != nil {
 		c.t.Fatalf("scale %s to %d: %v", specID, replicas, err)
 	}
 }

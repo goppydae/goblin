@@ -36,7 +36,7 @@ func (c *testCluster) migrateInstance(node *clusterNode, instanceID, toNode stri
 	}()
 	req := supervisor.MigrateInstanceRequest{InstanceID: instanceID, ToNode: toNode}
 	var resp string
-	err := cl.Call("SchedulerRPC.MigrateInstance", &req, &resp)
+	err := cl.CallJSON("SchedulerRPC.MigrateInstance", &req, &resp)
 	return resp, err
 }
 

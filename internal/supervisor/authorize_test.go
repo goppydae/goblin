@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/serf/serf"
 
 	"github.com/goppydae/goblin/core/capability"
+	goblinv1 "github.com/goppydae/goblin/proto"
 )
 
 // staticMembers publishes one member carrying the issuer's cap_key tag,
@@ -45,8 +46,8 @@ func mutatingVerbs() map[string]func(*SchedulerRPC) error {
 			return s.MigrateJob(&MigrateRequest{JobID: "j1", ToNode: "node-2"}, &out)
 		},
 		"ScaleAgent": func(s *SchedulerRPC) error {
-			var out string
-			return s.ScaleAgent(&ScaleAgentRequest{AgentID: agent, Replicas: 3}, &out)
+			var out goblinv1.ScaleAgentResponse
+			return s.ScaleAgent(&goblinv1.ScaleAgentRequest{AgentId: agent, Replicas: 3}, &out)
 		},
 		"DeleteGlobalAgent": func(s *SchedulerRPC) error {
 			var out string
