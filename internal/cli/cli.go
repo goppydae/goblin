@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -123,9 +124,17 @@ var runCmd = &cobra.Command{
 			return fmt.Errorf("failed to read job file: %w", err)
 		}
 
-		// Parse YAML/JSON
-		var job map[string]interface{}
-		if err := yaml.Unmarshal(data, &job); err != nil {
+		// Decode YAML/JSON -> map -> JSON -> Proto
+		var raw map[string]interface{}
+		if err := yaml.Unmarshal(data, &raw); err != nil {
+			return fmt.Errorf("failed to parse job spec: %w", err)
+		}
+		jsonBytes, err := json.Marshal(raw)
+		if err != nil {
+			return err
+		}
+		var job goblinv1.Job
+		if err := json.Unmarshal(jsonBytes, &job); err != nil {
 			return fmt.Errorf("failed to parse job spec: %w", err)
 		}
 
@@ -136,13 +145,13 @@ var runCmd = &cobra.Command{
 		}
 		defer closeClient(client, &err)
 
-		// Call SchedulerRPC.SubmitJob
-		var resp string
-		if err := client.CallJSON("SchedulerRPC.SubmitJob", job, &resp); err != nil {
+		req := &goblinv1.SubmitJobRequest{Job: &job}
+		var resp goblinv1.SubmitJobResponse
+		if err := client.Call("SchedulerRPC.SubmitJob", req, &resp); err != nil {
 			return fmt.Errorf("job submission failed: %w", err)
 		}
 
-		fmt.Println(resp)
+		fmt.Printf("job %s submitted, assigned to node %s\n", resp.GetJobId(), resp.GetAssignedNode())
 		return nil
 	},
 }
@@ -161,14 +170,14 @@ var drainCmd = &cobra.Command{
 		}
 		defer closeClient(client, &err)
 
-		// Call SchedulerRPC.DrainNode
-		var migratedJobs []string
-		if err := client.CallJSON("SchedulerRPC.DrainNode", &nodeID, &migratedJobs); err != nil {
+		req := &goblinv1.DrainNodeRequest{NodeId: nodeID}
+		var resp goblinv1.DrainNodeResponse
+		if err := client.Call("SchedulerRPC.DrainNode", req, &resp); err != nil {
 			return fmt.Errorf("drain failed: %w", err)
 		}
 
-		fmt.Printf("[OK] Drained %d jobs from node %s\n", len(migratedJobs), nodeID)
-		for _, jobID := range migratedJobs {
+		fmt.Printf("[OK] Drained %d jobs from node %s\n", len(resp.GetMigratedJobIds()), nodeID)
+		for _, jobID := range resp.GetMigratedJobIds() {
 			fmt.Printf("  - %s\n", jobID)
 		}
 		return nil
@@ -267,17 +276,13 @@ var publishCmd = &cobra.Command{
 		// but the new RPC method just takes topic and payload.
 		// Historically publishCmd used Serf directly.
 
-		// Call PublishEvent RPC
-		req := &supervisor.PublishRequest{
-			Topic:   topic,
-			Payload: payload,
-		}
-		var resp string
-		if err := client.CallJSON("SchedulerRPC.PublishEvent", req, &resp); err != nil {
+		req := &goblinv1.PublishEventRequest{Topic: topic, Payload: payload}
+		var resp goblinv1.PublishEventResponse
+		if err := client.Call("SchedulerRPC.PublishEvent", req, &resp); err != nil {
 			return err
 		}
 
-		fmt.Println(resp)
+		fmt.Printf("event '%s' published\n", resp.GetTopic())
 		return nil
 	},
 }

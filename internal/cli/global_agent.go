@@ -52,11 +52,12 @@ var globalAgentRegisterCmd = &cobra.Command{
 		}
 		defer closeClient(client, &err)
 
-		var resp string
-		if err := client.CallJSON("SchedulerRPC.RegisterGlobalAgent", &spec, &resp); err != nil {
+		req := &goblinv1.RegisterGlobalAgentRequest{Spec: &spec}
+		var resp goblinv1.RegisterGlobalAgentResponse
+		if err := client.Call("SchedulerRPC.RegisterGlobalAgent", req, &resp); err != nil {
 			return err
 		}
-		fmt.Println(resp)
+		fmt.Printf("agent %s registered successfully (uuid %s)\n", resp.GetName(), ident.String(resp.GetSpecUuid()))
 		return nil
 	},
 }
@@ -122,11 +123,12 @@ var globalAgentDeleteCmd = &cobra.Command{
 		defer closeClient(client, &err)
 
 		id := args[0]
-		var resp string
-		if err := client.CallJSON("SchedulerRPC.DeleteGlobalAgent", id, &resp); err != nil {
+		req := &goblinv1.DeleteGlobalAgentRequest{AgentId: id}
+		var resp goblinv1.DeleteGlobalAgentResponse
+		if err := client.Call("SchedulerRPC.DeleteGlobalAgent", req, &resp); err != nil {
 			return err
 		}
-		fmt.Println(resp)
+		fmt.Printf("agent %s deleted (uuid %s)\n", resp.GetName(), ident.String(resp.GetSpecUuid()))
 		return nil
 	},
 }
