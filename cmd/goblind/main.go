@@ -24,6 +24,9 @@ var (
 	advertiseAddr      string
 	advertisePort      int
 	raftDir            string
+	raftSnapshotThresh uint64
+	raftSnapshotInt    time.Duration
+	raftTrailingLogs   uint64
 	joinAddr           string
 	bootstrapExpect    int
 	pid1Mode           bool
@@ -61,28 +64,31 @@ var rootCmd = &cobra.Command{
 		}
 
 		cfg := supervisor.Config{
-			NodeID:             nodeID,
-			ListenAddr:         listenAddr,
-			AdvertiseAddr:      advertiseAddr,
-			AdvertisePort:      advertisePort,
-			RaftDir:            raftDir,
-			JoinAddr:           joinAddr,
-			BootstrapExpect:    bootstrapExpect,
-			Pid1Mode:           pid1Mode,
-			NoEarlyMounts:      noEarlyMounts,
-			WatchdogDevice:     watchdogDevice,
-			WatchdogInterval:   watchdogInterval,
-			ShutdownGrace:      shutdownGrace,
-			Tags:               tags,
-			EncryptionKey:      encryptionKey,
-			CertFile:           tlsCertFile,
-			KeyFile:            tlsKeyFile,
-			CAFile:             tlsCAFile,
-			MetricsAddr:        metricsAddr,
-			ProductionMode:     productionMode,
-			AgentVerifyKey:     agentVerifyKey,
-			Logging:            buildLoggingConfig(),
-			NetworkGateTimeout: networkGateTimeout,
+			NodeID:                nodeID,
+			ListenAddr:            listenAddr,
+			AdvertiseAddr:         advertiseAddr,
+			AdvertisePort:         advertisePort,
+			RaftDir:               raftDir,
+			RaftSnapshotThreshold: raftSnapshotThresh,
+			RaftSnapshotInterval:  raftSnapshotInt,
+			RaftTrailingLogs:      raftTrailingLogs,
+			JoinAddr:              joinAddr,
+			BootstrapExpect:       bootstrapExpect,
+			Pid1Mode:              pid1Mode,
+			NoEarlyMounts:         noEarlyMounts,
+			WatchdogDevice:        watchdogDevice,
+			WatchdogInterval:      watchdogInterval,
+			ShutdownGrace:         shutdownGrace,
+			Tags:                  tags,
+			EncryptionKey:         encryptionKey,
+			CertFile:              tlsCertFile,
+			KeyFile:               tlsKeyFile,
+			CAFile:                tlsCAFile,
+			MetricsAddr:           metricsAddr,
+			ProductionMode:        productionMode,
+			AgentVerifyKey:        agentVerifyKey,
+			Logging:               buildLoggingConfig(),
+			NetworkGateTimeout:    networkGateTimeout,
 		}
 		return supervisor.New(cfg).Run(cmd.Context())
 	},
@@ -149,6 +155,9 @@ func init() {
 	rootCmd.Flags().DurationVar(&watchdogInterval, "watchdog-interval", 10*time.Second, "Watchdog keepalive kick interval")
 	rootCmd.Flags().DurationVar(&shutdownGrace, "shutdown-grace", 10*time.Second, "Per-phase shutdown grace (drain + agent stop) before forcing")
 	rootCmd.Flags().StringVar(&raftDir, "data", "./data/raft", "Data directory for Raft log")
+	rootCmd.Flags().Uint64Var(&raftSnapshotThresh, "raft-snapshot-threshold", 0, "Outstanding Raft log entries before a compaction snapshot (0: raft default, 8192)")
+	rootCmd.Flags().DurationVar(&raftSnapshotInt, "raft-snapshot-interval", 0, "How often Raft checks whether a compaction snapshot is due (0: raft default, 120s)")
+	rootCmd.Flags().Uint64Var(&raftTrailingLogs, "raft-trailing-logs", 0, "Raft log entries retained after a snapshot for fast follower replay (0: raft default, 10240)")
 	rootCmd.Flags().StringVar(&joinAddr, "join", "", "Join existing cluster peer (host:port)")
 	rootCmd.Flags().IntVar(&bootstrapExpect, "bootstrap-expect", 0, "Seed the cluster once this many nodes carrying the same value are visible; one of them is elected to bootstrap (0: seed model, the node with no --join bootstraps alone)")
 	rootCmd.Flags().StringVar(&metricsAddr, "metrics-addr", "", "Prometheus metrics listen address (empty: disabled)")

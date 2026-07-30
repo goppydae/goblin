@@ -8,6 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/goppydae/gapi v0.1.0-proto2b
 	github.com/goppydae/magelib v0.1.0
+	github.com/hashicorp/go-hclog v1.6.2
 	github.com/hashicorp/go-metrics v0.5.4
 	github.com/hashicorp/go-msgpack v0.5.5
 	github.com/hashicorp/memberlist v0.5.2
@@ -43,7 +44,6 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/google/btree v1.1.2 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
-	github.com/hashicorp/go-hclog v1.6.2 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
 	github.com/hashicorp/go-msgpack/v2 v2.1.2 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
