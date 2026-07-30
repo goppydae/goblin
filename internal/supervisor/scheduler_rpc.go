@@ -19,7 +19,7 @@ import (
 	"github.com/goppydae/goblin/core/scheduler"
 	"github.com/goppydae/goblin/internal/ident"
 	goblinv1 "github.com/goppydae/goblin/proto"
-	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // LogEvent represents a single event in the history
@@ -72,23 +72,22 @@ func (s *SchedulerRPC) AddEvent(msg string) {
 	}
 }
 
-// GetEventsRequest defines the cursor for fetching events
-type GetEventsRequest struct {
-	Cursor uint64
-}
-
 // GetEvents returns events occurring after the given cursor
-func (s *SchedulerRPC) GetEvents(req *GetEventsRequest, resp *[]LogEvent) error {
+func (s *SchedulerRPC) GetEvents(req *goblinv1.GetEventsRequest, resp *goblinv1.GetEventsResponse) error {
 	s.eventsMu.RLock()
 	defer s.eventsMu.RUnlock()
 
-	var result []LogEvent
+	var result []*goblinv1.LogEvent
 	for _, event := range s.events {
-		if event.Index > req.Cursor {
-			result = append(result, event)
+		if event.Index > req.GetCursor() {
+			result = append(result, &goblinv1.LogEvent{
+				Index:     event.Index,
+				Timestamp: timestamppb.New(event.Timestamp),
+				Message:   event.Message,
+			})
 		}
 	}
-	*resp = result
+	resp.Events = result
 	return nil
 }
 
@@ -137,16 +136,8 @@ func (s *SchedulerRPC) MigrateJob(req *MigrateRequest, resp *string) error {
 	return nil
 }
 
-// JobInfo contains information about a scheduled job
-type JobInfo struct {
-	JobID        string
-	AssignedNode string
-	AgentType    string
-	Status       string
-}
-
 // ListJobs returns all jobs in the cluster
-func (s *SchedulerRPC) ListJobs(req *struct{}, resp *[]JobInfo) error {
+func (s *SchedulerRPC) ListJobs(req *goblinv1.ListJobsRequest, resp *goblinv1.ListJobsResponse) error {
 	ctx := context.Background()
 
 	// Scan all job assignments
@@ -155,7 +146,7 @@ func (s *SchedulerRPC) ListJobs(req *struct{}, resp *[]JobInfo) error {
 		return fmt.Errorf("failed to scan assignments: %w", err)
 	}
 
-	var jobs []JobInfo
+	var jobs []*goblinv1.JobInfo
 	for key, jobIDBytes := range assignments {
 		// Key format: /jobs/assignments/<node>/<job-id>
 		parts := strings.Split(key, "/")
@@ -180,29 +171,20 @@ func (s *SchedulerRPC) ListJobs(req *struct{}, resp *[]JobInfo) error {
 			}
 		}
 
-		jobs = append(jobs, JobInfo{
-			JobID:        jobID,
+		jobs = append(jobs, &goblinv1.JobInfo{
+			JobId:        jobID,
 			AssignedNode: nodeID,
 			AgentType:    agentType,
 			Status:       "running",
 		})
 	}
 
-	*resp = jobs
+	resp.Jobs = jobs
 	return nil
 }
 
-// MemberInfo represents cluster member information
-type MemberInfo struct {
-	Name   string
-	Addr   string
-	Status string
-	Tags   map[string]string
-	Leader bool
-}
-
 // Members returns the list of cluster members
-func (s *SchedulerRPC) Members(req *struct{}, resp *[]MemberInfo) error {
+func (s *SchedulerRPC) Members(req *goblinv1.MembersRequest, resp *goblinv1.MembersResponse) error {
 	leaderAddr := ""
 	if s.consensus != nil {
 		leaderAddr = s.consensus.Leader()
@@ -257,14 +239,14 @@ func (s *SchedulerRPC) Members(req *struct{}, resp *[]MemberInfo) error {
 					memberAddr := fmt.Sprintf("%s:%d", ip.String(), port)
 					isLeader := memberAddr == leaderAddr
 
-					info := MemberInfo{
+					info := &goblinv1.MemberInfo{
 						Name:   name,
 						Addr:   memberAddr,
 						Status: status,
 						Tags:   tags,
 						Leader: isLeader,
 					}
-					*resp = append(*resp, info)
+					resp.Members = append(resp.Members, info)
 				}
 			}
 		}
@@ -313,15 +295,6 @@ func (s *SchedulerRPC) PublishEvent(req *PublishRequest, resp *string) error {
 	return fmt.Errorf("membership implementation does not support UserEvent")
 }
 
-// LocalAgentInfo represents a local GAPI agent
-type LocalAgentInfo struct {
-	ID       string
-	Type     string
-	State    string
-	Language string
-	Uptime   int64 // nanoseconds
-}
-
 // Global Agent RPC Methods
 
 // RegisterGlobalAgent registers a new global agent
@@ -338,16 +311,10 @@ func (s *SchedulerRPC) RegisterGlobalAgent(spec *goblinv1.AgentSpec, resp *strin
 	return nil
 }
 
-// ListAgentInstancesRequest filters instance listing; empty SpecID
-// returns every instance.
-type ListAgentInstancesRequest struct {
-	SpecID string
-}
-
-// ListAgentInstances returns the scheduler's instance records. SpecID
+// ListAgentInstances returns the scheduler's instance records. SpecId
 // accepts either the canonical spec UUID or the operator-facing name.
-func (s *SchedulerRPC) ListAgentInstances(req *ListAgentInstancesRequest, resp *[]*goblinv1.AgentInstance) error {
-	specID := req.SpecID
+func (s *SchedulerRPC) ListAgentInstances(req *goblinv1.ListAgentInstancesRequest, resp *goblinv1.ListAgentInstancesResponse) error {
+	specID := req.GetSpecId()
 	if specID != "" {
 		if _, err := ident.Parse(specID); err != nil {
 			spec, gerr := s.scheduler.GetAgent(context.Background(), specID)
@@ -361,27 +328,27 @@ func (s *SchedulerRPC) ListAgentInstances(req *ListAgentInstancesRequest, resp *
 	if err != nil {
 		return fmt.Errorf("list instances: %w", err)
 	}
-	*resp = instances
+	resp.Instances = instances
 	return nil
 }
 
 // ListGlobalAgents returns all global agents
-func (s *SchedulerRPC) ListGlobalAgents(req *struct{}, resp *[]*goblinv1.AgentSpec) error {
+func (s *SchedulerRPC) ListGlobalAgents(req *goblinv1.ListGlobalAgentsRequest, resp *goblinv1.ListGlobalAgentsResponse) error {
 	specs, err := s.scheduler.ListAgents(context.Background())
 	if err != nil {
 		return err
 	}
-	*resp = specs
+	resp.Agents = specs
 	return nil
 }
 
 // GetGlobalAgent returns a specific global agent by ID
-func (s *SchedulerRPC) GetGlobalAgent(agentID *string, resp *goblinv1.AgentSpec) error {
-	spec, err := s.scheduler.GetAgent(context.Background(), *agentID)
+func (s *SchedulerRPC) GetGlobalAgent(req *goblinv1.GetGlobalAgentRequest, resp *goblinv1.GetGlobalAgentResponse) error {
+	spec, err := s.scheduler.GetAgent(context.Background(), req.GetAgentId())
 	if err != nil {
 		return err
 	}
-	proto.Merge(resp, spec)
+	resp.Spec = spec
 	return nil
 }
 
@@ -419,10 +386,9 @@ func (s *SchedulerRPC) DeleteGlobalAgent(agentID *string, resp *string) error {
 }
 
 // ListLocalAgents returns agents managed by the local GAPI agent manager
-func (s *SchedulerRPC) ListLocalAgents(req *struct{}, resp *[]LocalAgentInfo) error {
+func (s *SchedulerRPC) ListLocalAgents(req *goblinv1.ListLocalAgentsRequest, resp *goblinv1.ListLocalAgentsResponse) error {
 	if s.agentMgr == nil {
 		// Local agents not enabled
-		*resp = []LocalAgentInfo{}
 		return nil
 	}
 
@@ -430,15 +396,15 @@ func (s *SchedulerRPC) ListLocalAgents(req *struct{}, resp *[]LocalAgentInfo) er
 	agents := s.agentMgr.All()
 
 	for _, agent := range agents {
-		info := LocalAgentInfo{
-			ID:       agent.ID(),
+		info := &goblinv1.LocalAgentInfo{
+			Id:       agent.ID(),
 			Type:     agent.Type(),
 			Language: agent.Lang(),
 			State:    agent.Controller().State(),
-			Uptime:   int64(agent.(interface{ Uptime() time.Duration }).Uptime()),
+			UptimeNs: int64(agent.(interface{ Uptime() time.Duration }).Uptime()),
 		}
 
-		*resp = append(*resp, info)
+		resp.Agents = append(resp.Agents, info)
 	}
 
 	return nil

@@ -76,44 +76,41 @@ func RegisterSchedulerHandlers(server *QUICRPCServer, rpc *SchedulerRPC) {
 
 	// ListJobs handler
 	server.RegisterHandler("SchedulerRPC.ListJobs", func(payload []byte) ([]byte, error) {
-		var req struct{}
-		// payload might be empty for ListJobs
-
-		var resp []JobInfo
+		var req goblinv1.ListJobsRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
+		}
+		var resp goblinv1.ListJobsResponse
 		if err := rpc.ListJobs(&req, &resp); err != nil {
 			return nil, err
 		}
-
-		return json.Marshal(resp)
+		return proto.Marshal(&resp)
 	})
 
 	// Members handler
 	server.RegisterHandler("SchedulerRPC.Members", func(payload []byte) ([]byte, error) {
-		var req struct{}
-		// payload might be empty for Members
-
-		var resp []MemberInfo
+		var req goblinv1.MembersRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
+		}
+		var resp goblinv1.MembersResponse
 		if err := rpc.Members(&req, &resp); err != nil {
 			return nil, err
 		}
-
-		return json.Marshal(resp)
+		return proto.Marshal(&resp)
 	})
 
-	// Register new GetEvents handler
+	// GetEvents handler
 	server.RegisterHandler("SchedulerRPC.GetEvents", func(payload []byte) ([]byte, error) {
-		var req GetEventsRequest
-		// If payload is empty, use default request (cursor 0)
-		if len(payload) > 0 {
-			if err := json.Unmarshal(payload, &req); err != nil {
-				return nil, fmt.Errorf("invalid request: %w", err)
-			}
+		var req goblinv1.GetEventsRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 		}
-		var resp []LogEvent
+		var resp goblinv1.GetEventsResponse
 		if err := rpc.GetEvents(&req, &resp); err != nil {
 			return nil, err
 		}
-		return json.Marshal(resp)
+		return proto.Marshal(&resp)
 	})
 
 	server.RegisterHandler("SchedulerRPC.SignalAgentInstance", func(payload []byte) ([]byte, error) {
@@ -128,17 +125,17 @@ func RegisterSchedulerHandlers(server *QUICRPCServer, rpc *SchedulerRPC) {
 		return json.Marshal(resp)
 	})
 
-	// RegisterGlobalAgent handler
+	// ListAgentInstances handler
 	server.RegisterHandler("SchedulerRPC.ListAgentInstances", func(payload []byte) ([]byte, error) {
-		var req ListAgentInstancesRequest
-		if err := json.Unmarshal(payload, &req); err != nil {
-			return nil, fmt.Errorf("invalid request: %w", err)
+		var req goblinv1.ListAgentInstancesRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 		}
-		var out []*goblinv1.AgentInstance
-		if err := rpc.ListAgentInstances(&req, &out); err != nil {
+		var resp goblinv1.ListAgentInstancesResponse
+		if err := rpc.ListAgentInstances(&req, &resp); err != nil {
 			return nil, err
 		}
-		return json.Marshal(out)
+		return proto.Marshal(&resp)
 	})
 
 	server.RegisterHandler("SchedulerRPC.RegisterGlobalAgent", func(payload []byte) ([]byte, error) {
@@ -161,26 +158,28 @@ func RegisterSchedulerHandlers(server *QUICRPCServer, rpc *SchedulerRPC) {
 
 	// ListGlobalAgents handler
 	server.RegisterHandler("SchedulerRPC.ListGlobalAgents", func(payload []byte) ([]byte, error) {
-		var req struct{}
-		// payload empty
-		var resp []*goblinv1.AgentSpec
+		var req goblinv1.ListGlobalAgentsRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
+		}
+		var resp goblinv1.ListGlobalAgentsResponse
 		if err := rpc.ListGlobalAgents(&req, &resp); err != nil {
 			return nil, err
 		}
-		return json.Marshal(resp)
+		return proto.Marshal(&resp)
 	})
 
 	// GetGlobalAgent handler
 	server.RegisterHandler("SchedulerRPC.GetGlobalAgent", func(payload []byte) ([]byte, error) {
-		var agentID string
-		if err := json.Unmarshal(payload, &agentID); err != nil {
-			return nil, fmt.Errorf("invalid request: %w", err)
+		var req goblinv1.GetGlobalAgentRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 		}
-		var resp goblinv1.AgentSpec
-		if err := rpc.GetGlobalAgent(&agentID, &resp); err != nil {
+		var resp goblinv1.GetGlobalAgentResponse
+		if err := rpc.GetGlobalAgent(&req, &resp); err != nil {
 			return nil, err
 		}
-		return json.Marshal(&resp)
+		return proto.Marshal(&resp)
 	})
 
 	server.RegisterHandler("SchedulerRPC.ScaleAgent", func(payload []byte) ([]byte, error) {
@@ -223,15 +222,15 @@ func RegisterSchedulerHandlers(server *QUICRPCServer, rpc *SchedulerRPC) {
 
 	// ListLocalAgents handler
 	server.RegisterHandler("SchedulerRPC.ListLocalAgents", func(payload []byte) ([]byte, error) {
-		var req struct{}
-		if err := json.Unmarshal(payload, &req); err != nil {
-			return nil, fmt.Errorf("invalid request: %w", err)
+		var req goblinv1.ListLocalAgentsRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 		}
-		var resp []LocalAgentInfo
+		var resp goblinv1.ListLocalAgentsResponse
 		if err := rpc.ListLocalAgents(&req, &resp); err != nil {
 			return nil, err
 		}
-		return json.Marshal(resp)
+		return proto.Marshal(&resp)
 	})
 }
 

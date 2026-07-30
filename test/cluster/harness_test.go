@@ -235,7 +235,7 @@ func (c *testCluster) client(node *clusterNode) *cli.QUICRPCClient {
 }
 
 // members calls SchedulerRPC.Members via the given node.
-func (c *testCluster) members(node *clusterNode) ([]supervisor.MemberInfo, error) {
+func (c *testCluster) members(node *clusterNode) ([]*goblinv1.MemberInfo, error) {
 	cl, err := cli.NewQUICRPCClient(node.listenAddr, gapitransport.TLSConfig{InsecureSkipVerify: true})
 	if err != nil {
 		return nil, err
@@ -245,11 +245,11 @@ func (c *testCluster) members(node *clusterNode) ([]supervisor.MemberInfo, error
 			c.t.Logf("close members client: %v", cerr)
 		}
 	}()
-	var members []supervisor.MemberInfo
-	if err := cl.CallJSON("SchedulerRPC.Members", struct{}{}, &members); err != nil {
+	var resp goblinv1.MembersResponse
+	if err := cl.Call("SchedulerRPC.Members", &goblinv1.MembersRequest{}, &resp); err != nil {
 		return nil, err
 	}
-	return members, nil
+	return resp.GetMembers(), nil
 }
 
 // waitLeader polls until the cluster (as seen from `via`) has n alive
@@ -292,12 +292,12 @@ func (c *testCluster) instances(node *clusterNode, specID string) ([]*goblinv1.A
 			c.t.Logf("close instances client: %v", cerr)
 		}
 	}()
-	req := supervisor.ListAgentInstancesRequest{SpecID: specID}
-	var out []*goblinv1.AgentInstance
-	if err := cl.CallJSON("SchedulerRPC.ListAgentInstances", &req, &out); err != nil {
+	req := &goblinv1.ListAgentInstancesRequest{SpecId: specID}
+	var resp goblinv1.ListAgentInstancesResponse
+	if err := cl.Call("SchedulerRPC.ListAgentInstances", req, &resp); err != nil {
 		return nil, err
 	}
-	return out, nil
+	return resp.GetInstances(), nil
 }
 
 // waitInstances polls until the spec has exactly `count` running
