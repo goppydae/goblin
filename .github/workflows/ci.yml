@@ -28,7 +28,7 @@ jobs:
         with:
           repository: goppydae/gapi
           path: gapi
-          token: ${{ secrets.CI_PAT }}
+          token: ${{ secrets.GOPPYDAE_READ_TOKEN }}
 
       - name: Synchronize Environment (Nix)
         uses: cachix/install-nix-action@v24
@@ -148,9 +148,13 @@ jobs:
     #   doctor   - reads the sibling directories for workspace shape
     #   envcheck - evaluates all three dev shells to compare inventories
     #
-    # This is therefore the only job needing CI_PAT read access to every
-    # repository in the silo, and it is split out so a credential problem
-    # fails here alone rather than taking the schema gate with it.
+    # This is therefore the only job needing cross-repo credentials, and it
+    # is split out so a credential problem fails here alone rather than
+    # taking the schema gate with it. It uses GOPPYDAE_READ_TOKEN, not
+    # CI_PAT: the read token is scoped to exactly these three repos with
+    # contents-read and nothing else, while CI_PAT carries the write access
+    # the repository-dispatch step needs. Three runs failed here against
+    # CI_PAT, which does not list magelib.
     #
     # Sibling checkouts are for the checks, not module resolution: GOWORK
     # stays off, so the build still resolves through vendor/ exactly as
@@ -170,14 +174,14 @@ jobs:
         with:
           repository: goppydae/gapi
           path: gapi
-          token: ${{ secrets.CI_PAT }}
+          token: ${{ secrets.GOPPYDAE_READ_TOKEN }}
 
       - name: Checkout Workspace (Magelib)
         uses: actions/checkout@v4
         with:
           repository: goppydae/magelib
           path: magelib
-          token: ${{ secrets.CI_PAT }}
+          token: ${{ secrets.GOPPYDAE_READ_TOKEN }}
 
       - name: Synchronize Environment (Nix)
         uses: cachix/install-nix-action@v24
@@ -225,7 +229,7 @@ jobs:
         with:
           repository: goppydae/gapi
           path: gapi
-          token: ${{ secrets.CI_PAT }}
+          token: ${{ secrets.GOPPYDAE_READ_TOKEN }}
 
       - name: Synchronize Environment (Nix)
         uses: cachix/install-nix-action@v24
