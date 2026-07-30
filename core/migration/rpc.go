@@ -46,7 +46,6 @@ const (
 // google.golang.org/protobuf/proto plus the generated goblinv1
 // messages, not either domain package.
 type Caller interface {
-	CallJSON(serviceMethod string, args interface{}, reply interface{}) error
 	Call(method string, req, resp proto.Message) error
 	Close() error
 }

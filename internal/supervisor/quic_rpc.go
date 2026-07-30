@@ -108,7 +108,7 @@ func (s *QUICRPCServer) handleStream(stream *quic.Stream) {
 	s.mu.RUnlock()
 
 	if !ok {
-		if serr := s.sendError(stream, req.RequestId, fmt.Errorf("method not found: %s", req.Method)); serr != nil {
+		if serr := s.sendError(stream, req.RequestId, fmt.Errorf("%w: %s", ErrMethodNotFound, req.Method)); serr != nil {
 			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "send error response failed", logattr.Err(serr))
 		}
 		return

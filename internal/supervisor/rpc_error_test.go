@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	goblinv1 "github.com/goppydae/goblin/proto"
@@ -45,5 +46,12 @@ func TestRPCErrorFor_MapsInvalidRequest(t *testing.T) {
 	e := rpcErrorFor(ErrInvalidRequest)
 	if e.GetCode() != goblinv1.RPCErrorCode_RPC_ERROR_CODE_INVALID_REQUEST {
 		t.Errorf("code = %v, want INVALID_REQUEST", e.GetCode())
+	}
+}
+
+func TestRPCErrorFor_MapsMethodNotFound(t *testing.T) {
+	e := rpcErrorFor(fmt.Errorf("%w: NodeRPC.NoSuchMethod", ErrMethodNotFound))
+	if e.GetCode() != goblinv1.RPCErrorCode_RPC_ERROR_CODE_NOT_FOUND {
+		t.Errorf("code = %v, want NOT_FOUND", e.GetCode())
 	}
 }

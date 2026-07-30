@@ -12,6 +12,11 @@ import (
 // it maps to its own code rather than INTERNAL.
 var ErrInvalidRequest = errors.New("invalid request payload")
 
+// ErrMethodNotFound marks a dispatch against a method the server has no
+// handler for. It is a routing miss, not a server fault, so it maps to
+// its own code rather than INTERNAL.
+var ErrMethodNotFound = errors.New("method not found")
+
 // RPCCallError is the client-side error carrying a server RPCError.
 // Callers branch on Code via errors.As; Message is for humans.
 type RPCCallError struct {
@@ -28,8 +33,11 @@ func (e *RPCCallError) Error() string {
 // someone proves otherwise.
 func rpcErrorFor(err error) *goblinv1.RPCError {
 	code := goblinv1.RPCErrorCode_RPC_ERROR_CODE_INTERNAL
-	if errors.Is(err, ErrInvalidRequest) {
+	switch {
+	case errors.Is(err, ErrInvalidRequest):
 		code = goblinv1.RPCErrorCode_RPC_ERROR_CODE_INVALID_REQUEST
+	case errors.Is(err, ErrMethodNotFound):
+		code = goblinv1.RPCErrorCode_RPC_ERROR_CODE_NOT_FOUND
 	}
 	return &goblinv1.RPCError{Code: code, Message: err.Error()}
 }
