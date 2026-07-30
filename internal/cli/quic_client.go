@@ -133,7 +133,7 @@ func (c *QUICRPCClient) Call(method string, request interface{}, response interf
 
 	// Check for RPC error
 	if !rpcResp.Success {
-		return fmt.Errorf("RPC error: %s", rpcResp.Error)
+		return fmt.Errorf("RPC error: %s", rpcResp.GetErrorDetail().GetMessage())
 	}
 
 	// Unmarshal response payload

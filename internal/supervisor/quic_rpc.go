@@ -96,7 +96,7 @@ func (s *QUICRPCServer) handleStream(stream *quic.Stream) {
 	// Decode protobuf request
 	var req goblinv1.RPCRequest
 	if err := proto.Unmarshal(reqData, &req); err != nil {
-		if serr := s.sendError(stream, 0, fmt.Sprintf("failed to decode request: %v", err)); serr != nil {
+		if serr := s.sendError(stream, 0, fmt.Errorf("failed to decode request: %w", err)); serr != nil {
 			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "send error response failed", logattr.Err(serr))
 		}
 		return
@@ -108,34 +108,39 @@ func (s *QUICRPCServer) handleStream(stream *quic.Stream) {
 	s.mu.RUnlock()
 
 	if !ok {
-		if serr := s.sendError(stream, req.RequestId, fmt.Sprintf("method not found: %s", req.Method)); serr != nil {
+		if serr := s.sendError(stream, req.RequestId, fmt.Errorf("method not found: %s", req.Method)); serr != nil {
 			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "send error response failed", logattr.Err(serr))
 		}
 		return
 	}
 
 	// Execute handler
-	respPayload, err := handler(req.Payload)
-	if err != nil {
-		if serr := s.sendError(stream, req.RequestId, err.Error()); serr != nil {
+	respPayload, handlerErr := handler(req.Payload)
+	if handlerErr != nil {
+		if serr := s.sendError(stream, req.RequestId, handlerErr); serr != nil {
 			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "send error response failed", logattr.Err(serr))
 		}
 		return
 	}
 
 	// Send success response
-	if err := s.sendResponse(stream, req.RequestId, respPayload, ""); err != nil {
+	if err := s.sendResponse(stream, req.RequestId, respPayload, nil); err != nil {
 		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "send rpc response failed", logattr.Err(err))
 	}
 }
 
-// sendResponse sends a successful RPC response
-func (s *QUICRPCServer) sendResponse(stream *quic.Stream, requestID uint32, payload []byte, errMsg string) error {
+// sendResponse sends an RPC response. handlerErr is nil on success; when
+// non-nil it is classified onto the wire as a typed RPCError and payload
+// is dropped.
+func (s *QUICRPCServer) sendResponse(stream *quic.Stream, requestID uint32, payload []byte, handlerErr error) error {
 	resp := &goblinv1.RPCResponse{
 		RequestId: requestID,
-		Success:   errMsg == "",
+		Success:   handlerErr == nil,
 		Payload:   payload,
-		Error:     errMsg,
+	}
+	if handlerErr != nil {
+		resp.ErrorDetail = rpcErrorFor(handlerErr)
+		resp.Payload = nil
 	}
 
 	respData, err := proto.Marshal(resp)
@@ -167,6 +172,6 @@ func (s *QUICRPCServer) sendResponse(stream *quic.Stream, requestID uint32, payl
 }
 
 // sendError sends an error RPC response
-func (s *QUICRPCServer) sendError(stream *quic.Stream, requestID uint32, errMsg string) error {
-	return s.sendResponse(stream, requestID, nil, errMsg)
+func (s *QUICRPCServer) sendError(stream *quic.Stream, requestID uint32, err error) error {
+	return s.sendResponse(stream, requestID, nil, err)
 }
