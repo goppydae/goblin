@@ -2,7 +2,6 @@ package eventbus
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"sync"
@@ -12,7 +11,9 @@ import (
 	"github.com/goppydae/goblin/core/consensus"
 	"github.com/goppydae/goblin/internal/ident"
 	"github.com/goppydae/goblin/internal/logattr"
+	goblinv1 "github.com/goppydae/goblin/proto"
 	"github.com/hashicorp/serf/serf"
+	"google.golang.org/protobuf/proto"
 )
 
 // Event represents a distributed event
@@ -67,14 +68,15 @@ func NewDistributedEventBus(nodeID string, membership *cluster.Membership, conse
 // the proto-2 'distributed eventbus integration point' seam).
 func (bus *DistributedEventBus) HandleSerfEvent(e serf.Event) {
 	ue, ok := e.(serf.UserEvent)
-	if !ok || ue.Name != "goblin.event" {
+	if !ok || ue.Name != clusterEventName {
 		return
 	}
-	var event Event
-	if err := json.Unmarshal(ue.Payload, &event); err != nil {
+	var ce goblinv1.ClusterEvent
+	if err := proto.Unmarshal(ue.Payload, &ce); err != nil {
 		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "failed to unmarshal cluster event", logattr.Err(err))
 		return
 	}
+	event := eventFromWire(&ce)
 	// PublishCluster already dispatched locally on the origin node.
 	if event.NodeID == bus.nodeID {
 		return
@@ -161,12 +163,19 @@ func (bus *DistributedEventBus) PublishCluster(namespace, topic string, payload 
 
 	// Replicate via Serf if available
 	if bus.membership != nil {
-		eventJSON, err := json.Marshal(event)
+		wire, err := eventToWire(event)
 		if err != nil {
 			return err
 		}
+		b, err := proto.Marshal(wire)
+		if err != nil {
+			return err
+		}
+		if err := checkSerfEventSize(clusterEventName, b); err != nil {
+			return err
+		}
 
-		return bus.membership.UserEvent("goblin.event", eventJSON)
+		return bus.membership.UserEvent(clusterEventName, b)
 	}
 
 	return nil
@@ -195,12 +204,16 @@ func (bus *DistributedEventBus) PublishLeader(namespace, topic string, payload m
 	}
 
 	// Apply via Raft
-	eventJSON, err := json.Marshal(event)
+	wire, err := eventToWire(event)
+	if err != nil {
+		return err
+	}
+	eventBytes, err := proto.Marshal(wire)
 	if err != nil {
 		return err
 	}
 
-	return bus.consensus.Apply(eventJSON, 5*time.Second)
+	return bus.consensus.Apply(eventBytes, 5*time.Second)
 }
 
 // dispatch sends an event to all registered handlers
@@ -223,13 +236,13 @@ func (bus *DistributedEventBus) dispatch(event Event) error {
 }
 
 // HandleRemoteEvent processes an event received from another node
-func (bus *DistributedEventBus) HandleRemoteEvent(eventJSON []byte) error {
-	var event Event
-	if err := json.Unmarshal(eventJSON, &event); err != nil {
+func (bus *DistributedEventBus) HandleRemoteEvent(eventBytes []byte) error {
+	var ce goblinv1.ClusterEvent
+	if err := proto.Unmarshal(eventBytes, &ce); err != nil {
 		return err
 	}
 
-	return bus.dispatch(event)
+	return bus.dispatch(eventFromWire(&ce))
 }
 
 // generateEventID mints a UUIDv7 event/subscription id (operator
