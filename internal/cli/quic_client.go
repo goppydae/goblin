@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"io"
 	"sync/atomic"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/goppydae/gapi/core/transport"
 	goblintransport "github.com/goppydae/goblin/core/transport"
+	"github.com/goppydae/goblin/internal/supervisor"
 	goblinv1 "github.com/goppydae/goblin/proto"
 	"github.com/quic-go/quic-go"
 	"google.golang.org/protobuf/proto"
@@ -50,7 +50,10 @@ func NewQUICRPCClient(addr string, tlsConfig transport.TLSConfig) (*QUICRPCClien
 	return &QUICRPCClient{conn: conn}, nil
 }
 
-// roundTrip sends a payload and receives a response, handling framing.
+// roundTrip sends a payload and receives a response, handling framing and
+// error decode into supervisor's typed RPCCallError, the same shape the
+// in-process client builds, so every caller branches on Code via
+// errors.As regardless of which client made the call.
 func (c *QUICRPCClient) roundTrip(method string, payload []byte) (raw []byte, err error) {
 	// Create RPC request
 	reqID := c.requestID.Add(1)
@@ -125,37 +128,17 @@ func (c *QUICRPCClient) roundTrip(method string, payload []byte) (raw []byte, er
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	// Check for RPC error
+	// Check for RPC error (typed error, shared with the supervisor client)
 	if !rpcResp.Success {
-		err = fmt.Errorf("RPC error: %s", rpcResp.GetErrorDetail().GetMessage())
+		err = &supervisor.RPCCallError{
+			Code:    rpcResp.GetErrorDetail().GetCode(),
+			Message: rpcResp.GetErrorDetail().GetMessage(),
+		}
 		return
 	}
 
 	raw = rpcResp.Payload
 	return
-}
-
-// CallJSON makes an RPC call and returns the response
-func (c *QUICRPCClient) CallJSON(method string, request interface{}, response interface{}) (err error) {
-	// Marshal request payload
-	payload, err := json.Marshal(request)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	raw, err := c.roundTrip(method, payload)
-	if err != nil {
-		return err
-	}
-
-	// Unmarshal response payload
-	if response != nil && len(raw) > 0 {
-		if err := json.Unmarshal(raw, response); err != nil {
-			return fmt.Errorf("failed to unmarshal response payload: %w", err)
-		}
-	}
-
-	return nil
 }
 
 // Call sends a protobuf request and decodes a protobuf response.

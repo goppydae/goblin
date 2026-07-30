@@ -21,10 +21,8 @@ import (
 
 // RPCClient defines a generic RPC client. Call carries a protobuf
 // payload so buf breaking covers every field that crosses the wire
-// (GOBLIN-DIV-036); CallJSON is the pre-conversion path and is deleted
-// once every caller has moved to Call.
+// (GOBLIN-DIV-036).
 type RPCClient interface {
-	CallJSON(serviceMethod string, args interface{}, reply interface{}) error
 	Call(method string, req, resp proto.Message) error
 	Close() error
 }

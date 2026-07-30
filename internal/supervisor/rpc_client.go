@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"io"
 	"sync/atomic"
@@ -50,8 +49,8 @@ func NewQUICRPCClient(addr string, tlsConfig *tls.Config) (*QUICRPCClient, error
 }
 
 // roundTrip sends a payload and receives a response, handling framing and
-// error decode from Task 1's typed RPCCallError. Both Call and CallJSON use
-// this for the envelope send-and-receive.
+// error decode from Task 1's typed RPCCallError. Call uses this for the
+// envelope send-and-receive.
 func (c *QUICRPCClient) roundTrip(method string, payload []byte) (raw []byte, err error) {
 	// Create RPC request
 	reqID := c.requestID.Add(1)
@@ -137,31 +136,6 @@ func (c *QUICRPCClient) roundTrip(method string, payload []byte) (raw []byte, er
 
 	raw = rpcResp.Payload
 	return
-}
-
-// CallJSON is the pre-GOBLIN-DIV-036 untyped path. It JSON-marshals into
-// a protobuf envelope, so buf breaking cannot see the payload. Every
-// method migrates to Call; this is deleted when the last one does.
-func (c *QUICRPCClient) CallJSON(method string, request interface{}, response interface{}) (err error) {
-	// Marshal request payload
-	payload, err := json.Marshal(request)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	raw, err := c.roundTrip(method, payload)
-	if err != nil {
-		return err
-	}
-
-	// Unmarshal response payload
-	if response != nil && len(raw) > 0 {
-		if err := json.Unmarshal(raw, response); err != nil {
-			return fmt.Errorf("failed to unmarshal response payload: %w", err)
-		}
-	}
-
-	return nil
 }
 
 // Call sends a protobuf request and decodes a protobuf response. The

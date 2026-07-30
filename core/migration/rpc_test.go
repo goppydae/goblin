@@ -22,10 +22,6 @@ type recordingCaller struct {
 	closed bool
 }
 
-func (c *recordingCaller) CallJSON(method string, args, _ interface{}) error {
-	return errors.New("recordingCaller: CallJSON not used by the typed migration RPCs")
-}
-
 func (c *recordingCaller) Call(method string, req, _ proto.Message) error {
 	c.method = method
 	c.args = req
