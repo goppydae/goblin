@@ -24,12 +24,22 @@ import (
 // First, a cluster with an empty registry authorizes no mutation at all,
 // so there is nothing to steal by seeding one. Second, no log entry can
 // drive a non-empty registry back to empty: removing the last key is
-// refused. Restore is not a hole in that, even though it installs
-// whatever the snapshot holds - a snapshot is a prefix of the same log,
-// so the seed either lives in the snapshot or replays after it at its
-// original index, and a later attacker seed always meets a non-empty
-// registry. The seed is therefore reachable exactly once in a cluster's
+// refused. The seed is therefore reachable exactly once in a cluster's
 // life, at bootstrap, which is the only time it means anything.
+//
+// Restore is a different matter and the boundary is worth stating
+// plainly: it installs whatever the snapshot holds, and a snapshot is
+// not a signed object. The prefix argument - that a snapshot is a
+// prefix of the same log, so the original seed either lives in it or
+// replays after it - holds only for snapshots produced by an honest
+// leader. A hostile raft peer that can forge InstallSnapshot can
+// install arbitrary registry state on every replica, bypassing every
+// rule in this file, because none of them run on that path. That is a
+// node-trust boundary this piece does not close; caller-supplied
+// tokens and mTLS are what close it, and both are later work. What
+// Restore does enforce is below: a record whose key id lies about its
+// bytes is refused, so the id-is-derived invariant holds everywhere
+// and not merely on the Apply path.
 
 var (
 	// ErrOperatorRegistryEmpty means no operator key is registered.

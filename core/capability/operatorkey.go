@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"google.golang.org/protobuf/proto"
@@ -93,7 +94,12 @@ func LoadOperatorKey(path string) (*goblinv1.OperatorKey, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s is not hex: %w", ErrOperatorKeyMalformed, path, err)
 	}
-	k, err := NewOperatorKey(pub, path)
+	// The comment is replicated cluster state and is what an operator
+	// will see listed, so it carries the file's base name only: the
+	// seeding node's full local path is deliberately not replicated -
+	// it describes one machine's disk, not the key. A real
+	// operator-supplied label is piece 2's job (GOBLIN-DIV-015).
+	k, err := NewOperatorKey(pub, filepath.Base(path))
 	if err != nil {
 		return nil, fmt.Errorf("operator key %s: %w", path, err)
 	}

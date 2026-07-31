@@ -6,6 +6,7 @@ import (
 	"io"
 	"sync"
 
+	"github.com/goppydae/goblin/core/capability"
 	goblinv1 "github.com/goppydae/goblin/proto"
 	"github.com/hashicorp/raft"
 	"google.golang.org/protobuf/proto"
@@ -278,15 +279,28 @@ func (f *FSM) Restore(rc io.ReadCloser) (err error) {
 	// came back from a snapshot with serial 0 would accept a signed
 	// change it had already applied.
 	//
-	// Records are not re-validated here. The length check in
-	// capability.VerifyOperatorKeyChange before ed25519.Verify is what
-	// keeps a corrupt snapshot from panicking the FSM, so that check is
-	// load-bearing rather than paranoia.
+	// Every record is re-validated. A snapshot arrives off the Apply
+	// path, so none of the rules in fsm_operator_keys.go have run on
+	// it; a malformed record refuses the whole Restore rather than
+	// entering the registry, the same fail-loud choice as the
+	// pre-schema-reset JSON refusal above.
 	operatorKeys := make(map[string]*goblinv1.OperatorKey, len(payload.GetOperatorKeys()))
 	for id, raw := range payload.GetOperatorKeys() {
 		var k goblinv1.OperatorKey
 		if err := proto.Unmarshal(raw, &k); err != nil {
 			return fmt.Errorf("restore: unmarshal operator key %s: %w", id, err)
+		}
+		// A snapshot carries no authorization, so this is the only
+		// place the id-is-derived invariant can be enforced off the
+		// Apply path. It does not stop a well-formed hostile key -
+		// nothing here can - but it does stop a stored record whose
+		// id lies about its bytes, which every reader of this
+		// registry assumes cannot exist.
+		if err := capability.ValidateOperatorKey(&k); err != nil {
+			return fmt.Errorf("restore: operator key %s: %w", id, err)
+		}
+		if k.GetKeyId() != id {
+			return fmt.Errorf("restore: operator key filed under %q names %q", id, k.GetKeyId())
 		}
 		operatorKeys[id] = &k
 	}

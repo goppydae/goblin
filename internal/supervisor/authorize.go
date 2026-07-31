@@ -38,18 +38,35 @@ func (s *SchedulerRPC) authorize(verb capability.Verb, subject []byte) (*gapiv1.
 	return payload, err
 }
 
+// operatorRegistryGate is the one definition of the fail-closed rule
+// (GOBLIN-DIV-015 piece 1). Both RPC surfaces call it rather than
+// carrying their own copy: NodeRPC missing the gate entirely went
+// unnoticed until a whole-branch review, and two copies of the rule is
+// how the next surface diverges from it.
+//
+// It answers one question - does the cluster have a root of trust. It
+// does NOT authenticate the caller.
+//
+// A nil consensus is treated as no registry and therefore refused: a
+// surface with nothing to read the registry from cannot show that any
+// key was ever registered.
+func operatorRegistryGate(c *consensus.Consensus, op string) error {
+	if c == nil || c.OperatorKeyCount() == 0 {
+		return fmt.Errorf("%w: %s refused", consensus.ErrOperatorRegistryEmpty, op)
+	}
+	return nil
+}
+
 // requireOperatorRegistry is the fail-closed gate (GOBLIN-DIV-015
 // piece 1): a cluster with no registered operator key authorizes no
 // mutation.
 //
 // It is a separate check rather than a branch inside token issuance
 // because the signal path issues its own token and must fail the same
-// way. Two call sites, one rule.
+// way. Two call sites, one rule - and the rule itself lives in
+// operatorRegistryGate, shared with NodeRPC.
 func (s *SchedulerRPC) requireOperatorRegistry(verb string) error {
-	if s.consensus == nil || s.consensus.OperatorKeyCount() == 0 {
-		return fmt.Errorf("%w: %s refused", consensus.ErrOperatorRegistryEmpty, verb)
-	}
-	return nil
+	return operatorRegistryGate(s.consensus, verb)
 }
 
 // authorizeToken is authorize plus the serialized token itself, for the

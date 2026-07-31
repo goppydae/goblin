@@ -7,6 +7,8 @@ import (
 	"io"
 	"testing"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/goppydae/goblin/core/capability"
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
@@ -227,7 +229,7 @@ func TestResolveOperatorKeyReturnsACopy(t *testing.T) {
 
 func TestRegistrySurvivesSnapshotRestore(t *testing.T) {
 	f := NewFSM()
-	k1, _ := opKey(t, "one")
+	k1, k1Priv := opKey(t, "one")
 	k2, _ := opKey(t, "two")
 	if err, _ := f.applyOperatorKeySeed(&goblinv1.OperatorKeySeed{
 		Keys: []*goblinv1.OperatorKey{k1, k2},
@@ -261,4 +263,86 @@ func TestRegistrySurvivesSnapshotRestore(t *testing.T) {
 	if _, ok := restored.resolveOperatorKey(k1.GetKeyId()); !ok {
 		t.Fatalf("restored registry cannot resolve %s", k1.GetKeyId())
 	}
+
+	// Counting keys and resolving an id are both blind to the key
+	// MATERIAL. resolveOperatorKey returns (nil, true) for a record with
+	// no public key, so a Snapshot/Restore pair that carried ids and
+	// dropped bytes would satisfy every assertion above. That failure is
+	// not hypothetical: every node joining past the trailing-log window
+	// and every restart past the snapshot threshold goes through Restore,
+	// and a registry of ids with no bytes still reports a non-zero count
+	// - so the fail-closed gate stays green and mutations keep flowing
+	// while every signed registry change is refused forever. Authorizing
+	// a real change with k1's private half is the only assertion here
+	// that touches the restored bytes.
+	third, _ := opKey(t, "third")
+	if cerr, _ := restored.applyOperatorKeyChange(signedChange(t,
+		goblinv1.OperatorKeyOp_OPERATOR_KEY_OP_ADD, third, serial, k1.GetKeyId(), k1Priv,
+	)).(error); cerr != nil {
+		t.Fatalf("a change authorized by a restored key was refused: %v", cerr)
+	}
+	if restored.OperatorKeyCount() != 3 {
+		t.Fatalf("restored registry holds %d keys after the add, want 3",
+			restored.OperatorKeyCount())
+	}
+}
+
+// TestRestoreRefusesAKeyWhoseIDLiesAboutItsBytes pins the one
+// invariant Restore can enforce. A snapshot is not signed and carries
+// no authorization, so nothing here can stop a well-formed hostile key
+// - but a record whose id does not match its bytes must never reach
+// the registry, because every reader assumes ids are derived. Without
+// this check that assumption held only on the Apply path.
+func TestRestoreRefusesAKeyWhoseIDLiesAboutItsBytes(t *testing.T) {
+	// A snapshot is built directly rather than via FSM.Snapshot: the
+	// Apply path refuses these records, so the only way to produce one
+	// is to forge the snapshot, which is exactly the threat.
+	snapshotWith := func(t *testing.T, id string, k *goblinv1.OperatorKey) []byte {
+		t.Helper()
+		raw, err := proto.Marshal(k)
+		if err != nil {
+			t.Fatalf("marshal operator key: %v", err)
+		}
+		out, err := proto.Marshal(&goblinv1.FSMSnapshot{
+			OperatorKeys:           map[string][]byte{id: raw},
+			OperatorRegistrySerial: 1,
+		})
+		if err != nil {
+			t.Fatalf("marshal snapshot: %v", err)
+		}
+		return out
+	}
+
+	t.Run("id lies about its bytes", func(t *testing.T) {
+		k, _ := opKey(t, "liar")
+		k.KeyId = "0000000000000000000000000000000000000000000000000000000000000000"
+
+		f := NewFSM()
+		err := f.Restore(io.NopCloser(bytes.NewReader(snapshotWith(t, k.GetKeyId(), k))))
+		if !errors.Is(err, capability.ErrOperatorKeyMalformed) {
+			t.Fatalf("restore of a lying key id = %v, want ErrOperatorKeyMalformed", err)
+		}
+		if f.OperatorKeyCount() != 0 {
+			t.Fatalf("a refused restore installed %d key(s)", f.OperatorKeyCount())
+		}
+	})
+
+	t.Run("filed under the wrong map key", func(t *testing.T) {
+		// The record itself is internally consistent - it would pass
+		// ValidateOperatorKey - but the map files it under someone
+		// else's id. Every lookup in this package is by map key, so
+		// accepting this would resolve one operator's id to another
+		// operator's public key.
+		k, _ := opKey(t, "honest")
+		other, _ := opKey(t, "other")
+
+		f := NewFSM()
+		err := f.Restore(io.NopCloser(bytes.NewReader(snapshotWith(t, other.GetKeyId(), k))))
+		if err == nil {
+			t.Fatal("restore accepted a key filed under another key's id")
+		}
+		if f.OperatorKeyCount() != 0 {
+			t.Fatalf("a refused restore installed %d key(s)", f.OperatorKeyCount())
+		}
+	})
 }

@@ -219,6 +219,9 @@ func (n *NodeRPC) captureIdentity(instanceID string, a any) {
 // image through the node running consensus is exactly what the separate
 // goblin-ckpt ALPN exists to avoid.
 func (n *NodeRPC) PullCheckpoint(req *goblinv1.NodePullCheckpointRequest, resp *goblinv1.NodePullCheckpointResponse) error {
+	if err := n.requireOperatorRegistry("node.pull"); err != nil {
+		return err
+	}
 	if n.images == nil {
 		return fmt.Errorf("checkpoint store not configured on this node")
 	}

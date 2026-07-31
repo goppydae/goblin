@@ -434,7 +434,7 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 		// alerts on; this line is for whoever is reading the log at the
 		// time.
 		slog.Default().LogAttrs(ctx, slog.LevelError,
-			"configured operator keys are not in the cluster registry; this node contributed none and its --operator-key flag is inert",
+			"some or all of this node's configured operator keys are absent from the cluster registry; those keys authorize nothing and re-supplying them via --operator-key is inert",
 			logattr.Err(serr))
 	}()
 	if s.cfg.BootstrapExpect > 1 {
