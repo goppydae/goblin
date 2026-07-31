@@ -3,6 +3,7 @@
 package main_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -179,8 +180,24 @@ func (c *testCluster) register(node *clusterNode, spec *goblinv1.AgentSpec) {
 	}()
 	req := &goblinv1.RegisterGlobalAgentRequest{Spec: spec}
 	var resp goblinv1.RegisterGlobalAgentResponse
-	if err := cl.Call("SchedulerRPC.RegisterGlobalAgent", req, &resp); err != nil {
-		c.t.Fatalf("register %s: %v", spec.Name, err)
+	// A freshly elected leader's operator-key seeder (GOBLIN-DIV-015
+	// piece 1) commits the configured key to Raft on its own poll tick
+	// after it notices leadership; that can trail a short beat behind
+	// waitLeader's observation of the same leadership over RPC. Retry
+	// this one named, transient refusal rather than widen waitLeader's
+	// contract with a registry-read RPC this piece deliberately does
+	// not add. Any other error, or the same one past the deadline,
+	// fails immediately.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		err := cl.Call("SchedulerRPC.RegisterGlobalAgent", req, &resp)
+		if err == nil {
+			break
+		}
+		if !strings.Contains(err.Error(), "operator key registry is empty") || time.Now().After(deadline) {
+			c.t.Fatalf("register %s: %v", spec.Name, err)
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 

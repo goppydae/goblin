@@ -688,10 +688,11 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 	// DialAndFetch clones it before stamping the ALPN, so this stays
 	// usable by the other planes.
 	nodeRPC := &NodeRPC{
-		agentMgr: agentMgr,
-		tracker:  instTracker,
-		images:   migration.NewStore(imageRoot),
-		ckptTLS:  tlsCfg,
+		agentMgr:  agentMgr,
+		tracker:   instTracker,
+		images:    migration.NewStore(imageRoot),
+		ckptTLS:   tlsCfg,
+		consensus: consensus,
 	}
 	RegisterNodeHandlers(quicServer, nodeRPC)
 

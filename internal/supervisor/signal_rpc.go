@@ -35,6 +35,9 @@ func (s *SchedulerRPC) SignalAgentInstance(req *goblinv1.SignalAgentInstanceRequ
 	if err != nil {
 		return fmt.Errorf("instance id must be a UUID: %w", err)
 	}
+	if err := s.requireOperatorRegistry(fmt.Sprintf("signal %d", signum)); err != nil {
+		return err
+	}
 	if s.issuer == nil || s.revocations == nil {
 		return fmt.Errorf("capability issuer not initialized on this node")
 	}

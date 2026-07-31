@@ -47,7 +47,11 @@ func TestStartAgentInstance_RejectsNilSpec(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			n := &NodeRPC{agentMgr: newTestAgentMgr(t), tracker: newInstanceTracker()}
+			n := &NodeRPC{
+				agentMgr:  newTestAgentMgr(t),
+				tracker:   newInstanceTracker(),
+				consensus: testConsensusWithOperatorKey(t),
+			}
 			req := &goblinv1.NodeStartAgentInstanceRequest{InstanceId: "inst-1", Spec: tc.spec}
 			var resp goblinv1.NodeStartAgentInstanceResponse
 
