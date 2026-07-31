@@ -31,6 +31,18 @@ var (
 		Name: "goblin_jobs_total",
 		Help: "Total number of jobs by status",
 	}, []string{"status"})
+
+	// OperatorKeyConfigDrift is 1 while this node's configured
+	// --operator-key values are absent from the replicated registry, and
+	// 0 otherwise. It exists because the condition is otherwise only
+	// visible as a startup log line that scrolls away: the flag is inert
+	// once a registry is seeded, so a node can run indefinitely and
+	// correctly while its operator believes it contributed a key it did
+	// not. A gauge stays raised for as long as the disagreement does.
+	OperatorKeyConfigDrift = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "goblin_operator_key_config_drift",
+		Help: "1 when this node's configured operator keys are absent from the cluster registry, 0 otherwise",
+	})
 )
 
 func init() {
@@ -38,4 +50,5 @@ func init() {
 	Registry.MustRegister(RaftState)
 	Registry.MustRegister(ClusterMembers)
 	Registry.MustRegister(JobCount)
+	Registry.MustRegister(OperatorKeyConfigDrift)
 }

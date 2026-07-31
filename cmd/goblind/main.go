@@ -41,6 +41,7 @@ var (
 	metricsAddr        string
 	productionMode     bool
 	agentVerifyKey     string
+	operatorKeyFiles   []string
 	logLevel           string
 	logFormat          string
 	logFile            string
@@ -87,6 +88,7 @@ var rootCmd = &cobra.Command{
 			MetricsAddr:           metricsAddr,
 			ProductionMode:        productionMode,
 			AgentVerifyKey:        agentVerifyKey,
+			OperatorKeyFiles:      operatorKeyFiles,
 			Logging:               buildLoggingConfig(),
 			NetworkGateTimeout:    networkGateTimeout,
 		}
@@ -170,6 +172,8 @@ func init() {
 	rootCmd.Flags().StringVar(&logLokiURL, "log-loki-url", "", "Forward logs to this Loki endpoint")
 	rootCmd.Flags().DurationVar(&networkGateTimeout, "network-gate-timeout", 0, "Block startup until the network agent reports running, failing after this bound (0: gate disabled)")
 	rootCmd.Flags().StringVar(&agentVerifyKey, "agent-verify-key", "", "Path to the Ed25519 public key for agent signature verification (falls back to $RUNTIME_VERIFY_KEY)")
+	rootCmd.Flags().StringArrayVar(&operatorKeyFiles, "operator-key", nil,
+		"Path to a hex-encoded Ed25519 operator public key that bootstraps the cluster's operator registry (repeatable; with none, every mutating verb is refused). Keep the matching private key: the last registered key cannot be removed, so a registry left holding only keys nobody controls can neither authorize anything nor be re-seeded, and the only recovery is wiping the data dir on EVERY replica and re-bootstrapping. Produce keys with 'goblinctl operator keygen'.")
 	rootCmd.Flags().StringVar(&encryptionKey, "encrypt", "", "Base64 encoded 32-byte secret key for Serf encryption")
 	rootCmd.Flags().StringVar(&tlsCertFile, "tls-cert", "", "Path to TLS certificate")
 	rootCmd.Flags().StringVar(&tlsKeyFile, "tls-key", "", "Path to TLS private key")
