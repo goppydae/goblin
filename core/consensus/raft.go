@@ -232,6 +232,18 @@ func (c *Consensus) IsTombstoned(instanceID string) bool {
 	return c.fsm.IsTombstoned(instanceID)
 }
 
+// OperatorKeys returns the replicated operator key registry and its
+// serial (GOBLIN-DIV-015 piece 1).
+func (c *Consensus) OperatorKeys() ([]*goblinv1.OperatorKey, uint64) {
+	return c.fsm.OperatorKeys()
+}
+
+// OperatorKeyCount reports how many operator keys are registered. Zero
+// is the fail-closed condition: no key, no mutation.
+func (c *Consensus) OperatorKeyCount() int {
+	return c.fsm.OperatorKeyCount()
+}
+
 // Stats returns Raft statistics
 func (c *Consensus) Stats() map[string]string {
 	return c.raft.Stats()

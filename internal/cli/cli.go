@@ -74,6 +74,7 @@ func init() {
 	RootCmd.AddCommand(startCmd)
 	RootCmd.AddCommand(clusterCmd)
 	RootCmd.AddCommand(tuiCmd)
+	RootCmd.AddCommand(operatorCmd)
 
 	clusterCmd.AddCommand(statusCmd)
 	clusterCmd.AddCommand(publishCmd)

@@ -96,6 +96,12 @@ type Config struct {
 	// AgentVerifyKey is the path to the Ed25519 public key that verifies
 	// agent-binary signatures; falls back to $RUNTIME_VERIFY_KEY.
 	AgentVerifyKey string
+	// OperatorKeyFiles are paths to hex-encoded Ed25519 public keys that
+	// bootstrap the cluster's operator registry (GOBLIN-DIV-015 piece 1).
+	// They are this node's claim about the root of trust; they become
+	// authoritative only once committed to Raft. Empty means the cluster
+	// refuses every mutating verb.
+	OperatorKeyFiles []string
 	// Logging mirrors gapi's logging configuration (level, format, file
 	// rotation, Loki); handlers are built by the kernel's core/logging.
 	Logging gapiconfig.LoggingConfig
@@ -150,6 +156,30 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 	// can never block init duties (goblin-architecture.md boot phases).
 	runCtx, runCancel := context.WithCancel(ctx)
 	defer runCancel()
+	// Why the context was cancelled, so a fatal misconfiguration exits
+	// nonzero instead of looking like a clean stop. Buffered and
+	// select-guarded so the first cause wins and no failure path can
+	// block on it.
+	fatalCh := make(chan error, 1)
+	failFatal := func(cause error) {
+		select {
+		case fatalCh <- cause:
+		default:
+		}
+		runCancel()
+	}
+	// The fatal cause must beat whatever return path actually fired.
+	// Several returns between here and the bottom of Run are ctx-aware
+	// and will surface "context canceled" the moment failFatal cancels,
+	// which would report the symptom instead of the cause. Registered
+	// first, so it runs last.
+	defer func() {
+		select {
+		case ferr := <-fatalCh:
+			err = ferr
+		default:
+		}
+	}()
 	var pid1 *pid1Completion
 	if s.cfg.Pid1Mode {
 		p, perr := s.enablePid1(runCtx, runCancel)
@@ -388,6 +418,25 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 	if err != nil {
 		return fmt.Errorf("failed to create consensus: %w", err)
 	}
+	operatorKeys, err := loadOperatorKeys(s.cfg.OperatorKeyFiles)
+	if err != nil {
+		return fmt.Errorf("load operator keys: %w", err)
+	}
+	go func() {
+		serr := runOperatorKeySeeder(ctx, consensus, operatorKeys, slog.Default(), time.Second)
+		if serr == nil || errors.Is(serr, context.Canceled) {
+			return // seeded, or shutting down
+		}
+		// Never fatal. See ErrOperatorConfigStale for why: the flag is
+		// inert on an already-seeded cluster, and the fatal-versus-benign
+		// distinction is not reliably knowable from here. The
+		// goblin_operator_key_config_drift gauge is what an operator
+		// alerts on; this line is for whoever is reading the log at the
+		// time.
+		slog.Default().LogAttrs(ctx, slog.LevelError,
+			"configured operator keys are not in the cluster registry; this node contributed none and its --operator-key flag is inert",
+			logattr.Err(serr))
+	}()
 	if s.cfg.BootstrapExpect > 1 {
 		// In the background: the node serves gossip and RPC while it
 		// waits: it is running, the cluster simply is not seeded yet.
@@ -401,7 +450,7 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 				// A disagreement about the seed set would split the
 				// cluster; refuse to run rather than seed half of it.
 				slog.Default().LogAttrs(ctx, slog.LevelError, "bootstrap-expect failed", logattr.Err(berr))
-				runCancel()
+				failFatal(berr)
 			}
 		}()
 	}
@@ -934,7 +983,15 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 			pid1.complete(context.Background(), s.agentMgr)
 		}
 	}
-	return nil
+	select {
+	case ferr := <-fatalCh:
+		// Shut down because of a fault, not a signal. Returning the
+		// cause is what makes goblind exit nonzero, so systemd and any
+		// supervisor see a failed unit rather than a clean stop.
+		return ferr
+	default:
+		return nil
+	}
 }
 
 func handleQUICConn(conn *quic.Conn, bus eventbus.EventBus, m *cluster.Membership) {
