@@ -3,11 +3,11 @@
 package main_test
 
 import (
-	"strings"
 	"testing"
 	"time"
 
 	goblintransport "github.com/goppydae/goblin/core/transport"
+	"github.com/goppydae/goblin/internal/supervisor"
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
 
@@ -184,17 +184,27 @@ func (c *testCluster) register(node *clusterNode, spec *goblinv1.AgentSpec) {
 	// piece 1) commits the configured key to Raft on its own poll tick
 	// after it notices leadership; that can trail a short beat behind
 	// waitLeader's observation of the same leadership over RPC. Retry
-	// this one named, transient refusal rather than widen waitLeader's
-	// contract with a registry-read RPC this piece deliberately does
-	// not add. Any other error, or the same one past the deadline,
+	// this one refusal - PERMISSION_DENIED, the code the fail-closed
+	// gate maps to - rather than widen waitLeader's contract with a
+	// registry-read RPC this piece deliberately does not add. Branching
+	// on the code is the contract in rpc.proto; the message is for
+	// humans. Any other error, or the same one past the deadline,
 	// fails immediately.
+	//
+	// This depends on PERMISSION_DENIED meaning exactly one thing today:
+	// the registry is empty, which is transient at first seed. Other
+	// authorization refusals - an ungrantable verb, insufficient rights -
+	// are still classified INTERNAL and so are not retried. Whoever maps
+	// a second sentinel onto PERMISSION_DENIED must narrow this check at
+	// the same time, or a permanent refusal will be retried for ten
+	// seconds before failing.
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		err := cl.Call("SchedulerRPC.RegisterGlobalAgent", req, &resp)
 		if err == nil {
 			break
 		}
-		if !strings.Contains(err.Error(), "operator key registry is empty") || time.Now().After(deadline) {
+		if !supervisor.IsPermissionDenied(err) || time.Now().After(deadline) {
 			c.t.Fatalf("register %s: %v", spec.Name, err)
 		}
 		time.Sleep(100 * time.Millisecond)

@@ -84,25 +84,26 @@ type FSMSnapshot struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Namespace name -> that namespace's state.
 	Namespaces map[string]*FSMNamespaceState `protobuf:"bytes,1,rep,name=namespaces,proto3" json:"namespaces,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	// Instance UUID (canonical string form) -> pre-marshalled
-	// goblin.v1.AgentInstance bytes. Stored as bytes rather than a nested
-	// AgentInstance field because the FSM already carries these
-	// proto-marshalled in memory at snapshot time; re-parsing and
-	// re-embedding would cost a decode/re-encode round trip for no
-	// change in the data.
+	// Instance UUID (canonical string form) -> marshalled
+	// goblin.v1.AgentInstance bytes. The FSM holds these as typed
+	// AgentInstance messages; fsm.go marshals each one when it takes a
+	// snapshot and unmarshals it again on restore. They are carried as
+	// bytes rather than a nested AgentInstance field so this message does
+	// not have to import the instance schema.
 	Instances map[string][]byte `protobuf:"bytes,2,rep,name=instances,proto3" json:"instances,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// Every instance UUID ever terminated. Append-only forever (operator
 	// decision 2026-07-28): a tombstoned UUID is never reused.
 	Tombstones []string `protobuf:"bytes,3,rep,name=tombstones,proto3" json:"tombstones,omitempty"`
-	// Instance UUID (canonical string form) -> pre-marshalled
+	// Instance UUID (canonical string form) -> marshalled
 	// goblin.v1.MigrationRecord bytes for in-flight migrations. Same
-	// rationale as instances: already proto bytes in memory, carried
-	// through unchanged.
+	// rationale as instances: typed messages in the FSM, marshalled into
+	// the snapshot and unmarshalled on restore, kept as bytes so this
+	// message does not have to import their schema.
 	Migrations map[string][]byte `protobuf:"bytes,4,rep,name=migrations,proto3" json:"migrations,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	// Operator key id -> pre-marshalled goblin.v1.OperatorKey bytes. Same
-	// rationale as instances and migrations: already proto bytes in
-	// memory at snapshot time, carried through without a decode/encode
-	// round trip.
+	// Operator key id -> marshalled goblin.v1.OperatorKey bytes. Same
+	// rationale as instances and migrations: typed messages in the FSM,
+	// marshalled into the snapshot and unmarshalled on restore, kept as
+	// bytes so this message does not have to import their schema.
 	OperatorKeys map[string][]byte `protobuf:"bytes,5,rep,name=operator_keys,json=operatorKeys,proto3" json:"operator_keys,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// The registry's monotone serial. It rides the snapshot because it is
 	// the replay guard for signed changes: a leader restored from a

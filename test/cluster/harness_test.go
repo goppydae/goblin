@@ -27,21 +27,35 @@ import (
 var builtBinaries struct {
 	goblind   string
 	agentsDir string
+	// scratch is the run-scoped temp dir every other per-run artifact
+	// lives under, so one removal in runTests cleans all of them.
+	scratch string
 }
 
-func TestMain(m *testing.M) {
+func TestMain(m *testing.M) { os.Exit(runTests(m)) }
+
+// runTests is TestMain's body pulled into a function so its defers
+// actually run. os.Exit skips defers, so a cleanup deferred in TestMain
+// itself never fires and the run's scratch dir leaks once per e2e
+// binary invocation.
+func runTests(m *testing.M) int {
 	tmp, err := os.MkdirTemp("", "goblin-cluster-*")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "mkdtemp:", err)
-		os.Exit(1)
+		return 1
 	}
-	defer os.RemoveAll(tmp)
+	defer func() {
+		if rerr := os.RemoveAll(tmp); rerr != nil {
+			fmt.Fprintln(os.Stderr, "remove scratch dir:", rerr)
+		}
+	}()
 
+	builtBinaries.scratch = tmp
 	builtBinaries.goblind = filepath.Join(tmp, "goblind")
 	builtBinaries.agentsDir = filepath.Join(tmp, "agents")
 	if err := os.MkdirAll(builtBinaries.agentsDir, 0750); err != nil {
 		fmt.Fprintln(os.Stderr, "mkdir agents:", err)
-		os.Exit(1)
+		return 1
 	}
 
 	// One build for the daemon, one for the fixture agent; both from the
@@ -58,7 +72,7 @@ func TestMain(m *testing.M) {
 		if _, serr := os.Stat(builtBinaries.goblind); serr != nil {
 			fmt.Fprintf(os.Stderr, "GOBLIN_TEST_BIN_DIR set but %s is missing: %v\n",
 				builtBinaries.goblind, serr)
-			os.Exit(1)
+			return 1
 		}
 	} else {
 		for _, b := range []struct{ out, pkg string }{
@@ -69,12 +83,12 @@ func TestMain(m *testing.M) {
 			cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 			if err := cmd.Run(); err != nil {
 				fmt.Fprintf(os.Stderr, "build %s: %v\n", b.pkg, err)
-				os.Exit(1)
+				return 1
 			}
 		}
 	}
 
-	os.Exit(m.Run())
+	return m.Run()
 }
 
 // clusterNode is one goblind process under harness control.
@@ -116,12 +130,13 @@ func operatorKeyPath(t *testing.T) string {
 		if operatorKeyErr != nil {
 			return
 		}
-		dir, err := os.MkdirTemp("", "goblin-e2e-opkey")
-		if err != nil {
-			operatorKeyErr = err
-			return
-		}
-		operatorKeyFile = filepath.Join(dir, "operator.pub")
+		// The key lives in the run scratch dir rather than its own
+		// MkdirTemp. It is created lazily inside a sync.Once shared by
+		// every test, so t.Cleanup on whichever test happened to call
+		// first would delete it while later tests still need it;
+		// runTests' removal is the only hook whose lifetime matches the
+		// key's.
+		operatorKeyFile = filepath.Join(builtBinaries.scratch, "operator.pub")
 		operatorKeyErr = kp.SavePublic(operatorKeyFile)
 	})
 	if operatorKeyErr != nil {

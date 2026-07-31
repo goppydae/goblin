@@ -29,28 +29,29 @@ message FSMSnapshot {
   // Namespace name -> that namespace's state.
   map<string, FSMNamespaceState> namespaces = 1;
 
-  // Instance UUID (canonical string form) -> pre-marshalled
-  // goblin.v1.AgentInstance bytes. Stored as bytes rather than a nested
-  // AgentInstance field because the FSM already carries these
-  // proto-marshalled in memory at snapshot time; re-parsing and
-  // re-embedding would cost a decode/re-encode round trip for no
-  // change in the data.
+  // Instance UUID (canonical string form) -> marshalled
+  // goblin.v1.AgentInstance bytes. The FSM holds these as typed
+  // AgentInstance messages; fsm.go marshals each one when it takes a
+  // snapshot and unmarshals it again on restore. They are carried as
+  // bytes rather than a nested AgentInstance field so this message does
+  // not have to import the instance schema.
   map<string, bytes> instances = 2;
 
   // Every instance UUID ever terminated. Append-only forever (operator
   // decision 2026-07-28): a tombstoned UUID is never reused.
   repeated string tombstones = 3;
 
-  // Instance UUID (canonical string form) -> pre-marshalled
+  // Instance UUID (canonical string form) -> marshalled
   // goblin.v1.MigrationRecord bytes for in-flight migrations. Same
-  // rationale as instances: already proto bytes in memory, carried
-  // through unchanged.
+  // rationale as instances: typed messages in the FSM, marshalled into
+  // the snapshot and unmarshalled on restore, kept as bytes so this
+  // message does not have to import their schema.
   map<string, bytes> migrations = 4;
 
-  // Operator key id -> pre-marshalled goblin.v1.OperatorKey bytes. Same
-  // rationale as instances and migrations: already proto bytes in
-  // memory at snapshot time, carried through without a decode/encode
-  // round trip.
+  // Operator key id -> marshalled goblin.v1.OperatorKey bytes. Same
+  // rationale as instances and migrations: typed messages in the FSM,
+  // marshalled into the snapshot and unmarshalled on restore, kept as
+  // bytes so this message does not have to import their schema.
   map<string, bytes> operator_keys = 5;
 
   // The registry's monotone serial. It rides the snapshot because it is

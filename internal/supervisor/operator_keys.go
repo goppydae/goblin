@@ -34,8 +34,14 @@ import (
 // that watched the registry fill with someone else's keys. An earlier
 // attempt to tell them apart killed healthy nodes during scale-out.
 // The disagreement is surfaced through the
-// goblin_operator_key_config_drift gauge instead, which stays raised
-// for as long as it lasts rather than scrolling past in a log.
+// goblin_operator_key_config_drift gauge instead, which an operator can
+// alert on rather than having it scroll past in a log.
+//
+// The gauge is set once, by the seeder below, and reports the situation
+// as of that check; the seeder is one-shot and nothing re-evaluates it
+// afterwards. Nothing can change the registry in band in piece 1, so
+// the value cannot go stale there. Piece 2's change RPC must re-evaluate
+// it when it commits, or the gauge starts lying.
 var ErrOperatorConfigStale = errors.New("operator key config is stale: the cluster registry does not contain this node's configured keys")
 
 // Operator key bootstrap (GOBLIN-DIV-015 piece 1).
@@ -91,9 +97,16 @@ func loadOperatorKeys(paths []string) ([]*goblinv1.OperatorKey, error) {
 func runOperatorKeySeeder(ctx context.Context, reg operatorRegistry,
 	keys []*goblinv1.OperatorKey, logger *slog.Logger, poll time.Duration) error {
 	if len(keys) == 0 {
+		// Say only what this node knows. The enforcement gate reads the
+		// REPLICATED registry, not this node's config, so "no keys here"
+		// does not imply "mutations are refused": in a cluster seeded by
+		// another node, mutations through this one succeed. The old
+		// wording asserted the refusal outright and named a remedy that
+		// is inert once any node has seeded, which during an incident
+		// points the operator at exactly the wrong conclusion.
 		logger.LogAttrs(ctx, slog.LevelWarn,
-			"no operator keys configured; every mutating verb will be refused",
-			slog.String("remedy", "start goblind with --operator-key"))
+			"this node contributed no operator key; whether mutations are refused depends on the cluster registry, which another node may have seeded",
+			slog.String("remedy", "if no node was given --operator-key, the cluster refuses every mutating verb until one is"))
 		return nil
 	}
 	if poll <= 0 {

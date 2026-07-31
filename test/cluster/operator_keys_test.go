@@ -3,10 +3,10 @@
 package main_test
 
 import (
-	"strings"
 	"testing"
 	"time"
 
+	"github.com/goppydae/goblin/internal/supervisor"
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
 
@@ -34,8 +34,10 @@ func TestKeylessClusterRefusesMutations(t *testing.T) {
 	if err == nil {
 		t.Fatal("RegisterGlobalAgent succeeded on a node with no operator key")
 	}
-	if !strings.Contains(err.Error(), "operator key registry is empty") {
-		t.Fatalf("refusal did not name the empty registry: %v", err)
+	// Assert the wire code, not the message: rpc.proto says callers
+	// branch on the code and never match on text.
+	if !supervisor.IsPermissionDenied(err) {
+		t.Fatalf("refusal was not classified PERMISSION_DENIED: %v", err)
 	}
 }
 

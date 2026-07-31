@@ -316,9 +316,15 @@ func TestSignalAgentInstanceRefusesWithNoOperatorKeys(t *testing.T) {
 // the node-side surface. NodeRPC is registered on the same listener and
 // ALPN as SchedulerRPC and is directly callable, so gating only the
 // operator-facing surface would leave every node-side mutation open -
-// which is exactly what a review found before this test existed. Table
-// driven so a newly added mutating method is a one-line addition and an
-// ungated one is a visible omission.
+// which is exactly what a review found before this test existed.
+//
+// Table driven so a newly added mutating method is a one-line
+// addition. Note this does NOT make an ungated method visible on its
+// own: nothing here enumerates NodeRPC's method set, so a method with
+// no row reads exactly like a method that does not exist. PullCheckpoint
+// was missing from both the gate and this table and the gap went
+// unnoticed until a whole-branch review. When adding a NodeRPC method,
+// add its row here in the same change.
 func TestNodeRPCMutatingMethodsRefuseWithNoOperatorKeys(t *testing.T) {
 	n := &NodeRPC{}
 	cases := map[string]func() error{
@@ -341,6 +347,10 @@ func TestNodeRPCMutatingMethodsRefuseWithNoOperatorKeys(t *testing.T) {
 		"RestoreAgentInstance": func() error {
 			var resp goblinv1.NodeRestoreAgentInstanceResponse
 			return n.RestoreAgentInstance(&goblinv1.NodeRestoreAgentInstanceRequest{}, &resp)
+		},
+		"PullCheckpoint": func() error {
+			var resp goblinv1.NodePullCheckpointResponse
+			return n.PullCheckpoint(&goblinv1.NodePullCheckpointRequest{}, &resp)
 		},
 	}
 	for name, call := range cases {

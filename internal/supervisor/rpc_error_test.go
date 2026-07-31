@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/goppydae/goblin/core/consensus"
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
 
@@ -53,5 +54,17 @@ func TestRPCErrorFor_MapsMethodNotFound(t *testing.T) {
 	e := rpcErrorFor(fmt.Errorf("%w: NodeRPC.NoSuchMethod", ErrMethodNotFound))
 	if e.GetCode() != goblinv1.RPCErrorCode_RPC_ERROR_CODE_NOT_FOUND {
 		t.Errorf("code = %v, want NOT_FOUND", e.GetCode())
+	}
+}
+
+// TestRPCErrorFor_MapsOperatorRegistryEmpty pins the fail-closed gate's
+// refusal to PERMISSION_DENIED. It is the only classified refusal on the
+// wire, and callers branch on the code rather than the message: without
+// this mapping the refusal arrives as INTERNAL and every caller has to
+// string-match to tell a deliberate refusal from a server fault.
+func TestRPCErrorFor_MapsOperatorRegistryEmpty(t *testing.T) {
+	e := rpcErrorFor(fmt.Errorf("%w: agent.register refused", consensus.ErrOperatorRegistryEmpty))
+	if e.GetCode() != goblinv1.RPCErrorCode_RPC_ERROR_CODE_PERMISSION_DENIED {
+		t.Errorf("code = %v, want PERMISSION_DENIED", e.GetCode())
 	}
 }

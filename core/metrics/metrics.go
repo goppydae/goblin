@@ -32,16 +32,25 @@ var (
 		Help: "Total number of jobs by status",
 	}, []string{"status"})
 
-	// OperatorKeyConfigDrift is 1 while this node's configured
-	// --operator-key values are absent from the replicated registry, and
-	// 0 otherwise. It exists because the condition is otherwise only
-	// visible as a startup log line that scrolls away: the flag is inert
-	// once a registry is seeded, so a node can run indefinitely and
-	// correctly while its operator believes it contributed a key it did
-	// not. A gauge stays raised for as long as the disagreement does.
+	// OperatorKeyConfigDrift is 1 when some or all of this node's
+	// configured --operator-key values are absent from the replicated
+	// registry, and 0 otherwise. It exists because the condition is
+	// otherwise only visible as a startup log line that scrolls away:
+	// the flag is inert once a registry is seeded, so a node can run
+	// indefinitely and correctly while its operator believes it
+	// contributed a key it did not.
+	//
+	// Scope of the value: it is set exactly once, by the startup seeder
+	// (internal/supervisor/operator_keys.go), and reflects the situation
+	// as of that check. The seeder is a one-shot goroutine that returns
+	// after setting it, so nothing re-evaluates it afterwards. That is
+	// harmless in GOBLIN-DIV-015 piece 1, where no in-band way to change
+	// the registry exists, and stops being harmless the moment piece 2
+	// lands a change RPC: whatever applies a registry change must
+	// re-evaluate this gauge, or it will report a stale verdict forever.
 	OperatorKeyConfigDrift = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "goblin_operator_key_config_drift",
-		Help: "1 when this node's configured operator keys are absent from the cluster registry, 0 otherwise",
+		Help: "1 when any of this node's configured operator keys were absent from the cluster registry at startup, 0 otherwise",
 	})
 )
 

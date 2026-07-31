@@ -44,11 +44,12 @@ type NodeRPC struct {
 }
 
 // requireOperatorRegistry refuses when the cluster has no registered
-// operator key (GOBLIN-DIV-015 piece 1). SchedulerRPC has its own copy
-// of this check; NodeRPC needs a separate one because it is registered
-// on the same listener and ALPN and is reachable directly, so gating
-// only the operator-facing surface would leave every node-side mutation
-// open and make the piece's claim false.
+// operator key (GOBLIN-DIV-015 piece 1). NodeRPC must be gated as well
+// as SchedulerRPC because it is registered on the same listener and
+// ALPN and is reachable directly, so gating only the operator-facing
+// surface would leave every node-side mutation open and make the
+// piece's claim false. The rule itself is operatorRegistryGate, shared
+// with SchedulerRPC; this method only names the operation.
 //
 // This checks whether the CLUSTER has a root of trust. It does NOT
 // authenticate the caller: on a seeded cluster these methods remain
@@ -56,10 +57,7 @@ type NodeRPC struct {
 // that needs caller-supplied tokens (piece 3) or mTLS, both out of
 // scope here. Do not read this gate as caller authorization.
 func (n *NodeRPC) requireOperatorRegistry(op string) error {
-	if n.consensus == nil || n.consensus.OperatorKeyCount() == 0 {
-		return fmt.Errorf("%w: %s refused", consensus.ErrOperatorRegistryEmpty, op)
-	}
-	return nil
+	return operatorRegistryGate(n.consensus, op)
 }
 
 // StartAgentInstance instantiates the spec's agent type - which must be
