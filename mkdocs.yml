@@ -1,5 +1,5 @@
 site_name: Goblin
-site_description: Distributed Orchestrator for GAPI (GoPPydae Agent Programming Interface)
+site_description: Distributed Orchestrator for GAPI (GoPPydae Agent Process Infrastructure)
 theme:
   name: material
   palette:

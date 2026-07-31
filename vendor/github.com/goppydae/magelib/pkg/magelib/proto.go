@@ -19,6 +19,15 @@ import (
 // against the pre-reset baseline by design. The first post-commit run
 // must be made WITHOUT the variable so the gate re-arms against the
 // new baseline.
+//
+// PROTO_BREAKING_AGAINST overrides the caller's baseline. The callers
+// pass ".git#ref=HEAD", which is right for a developer comparing an
+// edited working tree against the last commit, and useless anywhere the
+// working tree IS the commit: a fresh CI checkout compares the schema
+// against itself and cannot fail. CI must therefore name a baseline it
+// does not already equal (the pull request's merge base, or HEAD~1 on a
+// push). The chosen baseline is echoed before the run so a build log
+// records what the gate actually compared.
 func BufGenerate(against string) error {
 	fmt.Println("Generating protobuf code (buf)...")
 	if err := sh.RunV("buf", "generate"); err != nil {
@@ -31,6 +40,9 @@ func BufGenerate(against string) error {
 	if os.Getenv("PROTO_BREAKING_SKIP") == "1" {
 		fmt.Println("BREAKING: SKIPPED (PROTO_BREAKING_SKIP=1 - intentional schema reset; re-run without it after commit)")
 		return nil
+	}
+	if override := os.Getenv("PROTO_BREAKING_AGAINST"); override != "" {
+		against = override
 	}
 	fmt.Printf("Checking for breaking schema changes (buf breaking --against %s)...\n", against)
 	if err := sh.RunV("buf", "breaking", "--against", against); err != nil {
