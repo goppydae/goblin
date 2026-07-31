@@ -1,5 +1,5 @@
 {
-  description = "Goblin - Distributed Orchestrator for GAPI (GoPPydae Agent Programming Interface)";
+  description = "Goblin - Distributed Orchestrator for GAPI (GoPPydae Agent Process Infrastructure)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

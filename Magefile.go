@@ -248,6 +248,19 @@ func checkHermetic() error {
 	return magelib.CheckHermetic()
 }
 
+// checkTerminology enforces the silo's naming rules through magelib.
+// The rules themselves live there, not here: a Magefile sits at the
+// repo root and is walked, so declaring the phrases inline would trip
+// the gate on its own declaration.
+//
+// divergence.jsonl and deprecation.jsonl are skipped because
+// GOBLIN-DIV-045 quotes both phrases, being about them, and would
+// otherwise fail the gate it asked for.
+func checkTerminology() error {
+	return magelib.CheckTerminology(magelib.GoppydaeTerminologyRules,
+		"divergence.jsonl", "deprecation.jsonl")
+}
+
 // All runs fmt, tidy, build, and test
 func All() error {
 	mg.Deps(Fmt, Tidy, Build, Test)
@@ -321,7 +334,7 @@ func TestUnit() error {
 //     generator whose path segments are validated (nodeIDPattern) and
 //     joined under a constant certDir.
 func Lint() error {
-	mg.Deps(checkHermetic)
+	mg.Deps(checkHermetic, checkTerminology)
 	return magelib.Lint("G402", "G404", "G304")
 }
 
