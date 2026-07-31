@@ -102,7 +102,7 @@ github.com/goppydae/gapi/internal/statewatch
 github.com/goppydae/gapi/internal/toposort
 github.com/goppydae/gapi/pkg/cli
 github.com/goppydae/gapi/pkg/proto
-# github.com/goppydae/magelib v0.2.0
+# github.com/goppydae/magelib v0.3.0
 ## explicit; go 1.26.0
 github.com/goppydae/magelib/pkg/magelib
 # github.com/hashicorp/errwrap v1.1.0

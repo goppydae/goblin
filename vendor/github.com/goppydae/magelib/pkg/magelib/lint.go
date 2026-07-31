@@ -53,19 +53,26 @@ func Lint(gosecExcludes ...string) error {
 		return fmt.Errorf("golangci-lint: %w", err)
 	}
 
-	// Generated code (protoc-gen-go, cgo intermediates) is skipped: it is
-	// not hand-fixable, and rule-level excludes would also mute the same
-	// rule in hand-written code. Rule excludes below stay the per-repo
-	// carve-out mechanism for code we own.
-	gosecArgs := []string{"-exclude-generated"}
-	if len(gosecExcludes) > 0 {
-		gosecArgs = append(gosecArgs, "-exclude="+strings.Join(gosecExcludes, ","))
-	}
-	gosecArgs = append(gosecArgs, "./...")
-	if err := sh.RunV("gosec", gosecArgs...); err != nil {
+	if err := sh.RunV("gosec", gosecArgs(gosecExcludes)...); err != nil {
 		return fmt.Errorf("gosec: %w", err)
 	}
 	return nil
+}
+
+// gosecArgs builds the gosec command line for a set of rule-level
+// carve-outs.
+//
+// Generated code (protoc-gen-go, cgo intermediates) is skipped: it is not
+// hand-fixable, and rule-level excludes would also mute the same rule in
+// hand-written code. The rule excludes stay the per-repo carve-out
+// mechanism for code we own, and they go out as a single comma-joined
+// -exclude flag because gosec takes the last one it is given.
+func gosecArgs(excludes []string) []string {
+	args := []string{"-exclude-generated"}
+	if len(excludes) > 0 {
+		args = append(args, "-exclude="+strings.Join(excludes, ","))
+	}
+	return append(args, "./...")
 }
 
 // Vuln runs govulncheck, the call-graph-filtered CVE gate. It is a named

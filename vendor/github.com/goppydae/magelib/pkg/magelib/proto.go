@@ -37,18 +37,36 @@ func BufGenerate(against string) error {
 	if err := sh.RunV("buf", "lint"); err != nil {
 		return fmt.Errorf("buf lint: %w", err)
 	}
-	if os.Getenv("PROTO_BREAKING_SKIP") == "1" {
+	baseline, skip := breakingPlan(against)
+	if skip {
 		fmt.Println("BREAKING: SKIPPED (PROTO_BREAKING_SKIP=1 - intentional schema reset; re-run without it after commit)")
 		return nil
 	}
-	if override := os.Getenv("PROTO_BREAKING_AGAINST"); override != "" {
-		against = override
-	}
-	fmt.Printf("Checking for breaking schema changes (buf breaking --against %s)...\n", against)
-	if err := sh.RunV("buf", "breaking", "--against", against); err != nil {
+	fmt.Printf("Checking for breaking schema changes (buf breaking --against %s)...\n", baseline)
+	if err := sh.RunV("buf", "breaking", "--against", baseline); err != nil {
 		return fmt.Errorf("buf breaking: %w", err)
 	}
 	return nil
+}
+
+// breakingPlan decides what the breaking check compares against, and
+// whether it runs at all. It is split out of BufGenerate because
+// BufGenerate shells out to buf and cannot be unit tested, while this
+// decision is the part that has actually been wrong before: it is pure
+// apart from the two environment variables it reads, so it is testable.
+//
+// Precedence: PROTO_BREAKING_SKIP=1 wins over everything, including an
+// explicit PROTO_BREAKING_AGAINST. The skip is an operator escape hatch
+// for an intentional schema reset, so a baseline configured elsewhere
+// (a CI variable, a shell export) must not silently re-arm the gate.
+func breakingPlan(against string) (baseline string, skip bool) {
+	if os.Getenv("PROTO_BREAKING_SKIP") == "1" {
+		return "", true
+	}
+	if override := os.Getenv("PROTO_BREAKING_AGAINST"); override != "" {
+		return override, false
+	}
+	return against, false
 }
 
 // MirrorGenerated and the protoc-based GenerateProto are gone: both
