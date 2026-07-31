@@ -96,6 +96,7 @@ func registerTestRPC(t *testing.T) *SchedulerRPC {
 		revocations: capability.NewRevocations(),
 		members:     membersFor(issuer),
 		scheduler:   scheduler.NewScheduler(newMemKVStore(), nil, nil, nil, nil),
+		consensus:   testConsensusWithOperatorKey(t),
 	}
 }
 

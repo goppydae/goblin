@@ -14,6 +14,7 @@ import (
 	"github.com/goppydae/goblin/core/capability"
 	"github.com/goppydae/goblin/core/consensus"
 	"github.com/goppydae/goblin/core/metrics"
+	"github.com/goppydae/goblin/internal/ident"
 	goblinv1 "github.com/goppydae/goblin/proto"
 	"github.com/hashicorp/raft"
 )
@@ -278,5 +279,91 @@ func TestSeederRaisesTheDriftGauge(t *testing.T) {
 
 	if got := gaugeValue(t, "goblin_operator_key_config_drift"); got != 1 {
 		t.Fatalf("drift gauge = %v, want 1", got)
+	}
+}
+
+func TestRequireOperatorRegistryRefusesWithNoKeys(t *testing.T) {
+	// A SchedulerRPC with no consensus at all is the strictest case:
+	// nothing can vouch for the registry, so nothing is authorized.
+	s := &SchedulerRPC{}
+	if err := s.requireOperatorRegistry("agent.scale"); !errors.Is(err, consensus.ErrOperatorRegistryEmpty) {
+		t.Fatalf("requireOperatorRegistry with no consensus = %v, want ErrOperatorRegistryEmpty", err)
+	}
+}
+
+// TestSignalAgentInstanceRefusesWithNoOperatorKeys pins the gate on the
+// SIGNAL path specifically. SignalAgentInstance issues its own
+// capability token and never passes through authorizeToken, so the
+// verb authorizer's gate does not cover it - the two call sites are
+// gated separately and only a separate test says so. Without this, a
+// refactor that dropped the check here would leave signals as the one
+// mutation a keyless cluster still accepts, and every other test would
+// stay green.
+func TestSignalAgentInstanceRefusesWithNoOperatorKeys(t *testing.T) {
+	s := &SchedulerRPC{}
+	req := &goblinv1.SignalAgentInstanceRequest{
+		InstanceId: ident.String(ident.NewV7()),
+		Signum:     15,
+	}
+	var resp goblinv1.SignalAgentInstanceResponse
+	err := s.SignalAgentInstance(req, &resp)
+	if !errors.Is(err, consensus.ErrOperatorRegistryEmpty) {
+		t.Fatalf("SignalAgentInstance with no operator keys = %v, want ErrOperatorRegistryEmpty", err)
+	}
+}
+
+// TestNodeRPCMutatingMethodsRefuseWithNoOperatorKeys pins the gate on
+// the node-side surface. NodeRPC is registered on the same listener and
+// ALPN as SchedulerRPC and is directly callable, so gating only the
+// operator-facing surface would leave every node-side mutation open -
+// which is exactly what a review found before this test existed. Table
+// driven so a newly added mutating method is a one-line addition and an
+// ungated one is a visible omission.
+func TestNodeRPCMutatingMethodsRefuseWithNoOperatorKeys(t *testing.T) {
+	n := &NodeRPC{}
+	cases := map[string]func() error{
+		"StartAgentInstance": func() error {
+			var resp goblinv1.NodeStartAgentInstanceResponse
+			return n.StartAgentInstance(&goblinv1.NodeStartAgentInstanceRequest{}, &resp)
+		},
+		"SignalAgentInstance": func() error {
+			var resp goblinv1.NodeSignalAgentInstanceResponse
+			return n.SignalAgentInstance(&goblinv1.NodeSignalAgentInstanceRequest{}, &resp)
+		},
+		"StopAgentInstance": func() error {
+			var resp goblinv1.NodeStopAgentInstanceResponse
+			return n.StopAgentInstance(&goblinv1.NodeStopAgentInstanceRequest{}, &resp)
+		},
+		"CheckpointAgentInstance": func() error {
+			var resp goblinv1.NodeCheckpointAgentInstanceResponse
+			return n.CheckpointAgentInstance(&goblinv1.NodeCheckpointAgentInstanceRequest{}, &resp)
+		},
+		"RestoreAgentInstance": func() error {
+			var resp goblinv1.NodeRestoreAgentInstanceResponse
+			return n.RestoreAgentInstance(&goblinv1.NodeRestoreAgentInstanceRequest{}, &resp)
+		},
+	}
+	for name, call := range cases {
+		t.Run(name, func(t *testing.T) {
+			if err := call(); !errors.Is(err, consensus.ErrOperatorRegistryEmpty) {
+				t.Fatalf("NodeRPC.%s with no operator keys = %v, want ErrOperatorRegistryEmpty", name, err)
+			}
+		})
+	}
+}
+
+// TestNodeRPCMutatingMethodsPassTheGateWithAKey shows the refusals above
+// come from the gate and not from something else failing first: with a
+// seeded registry the same calls get past it and fail later, on their
+// own missing collaborators.
+func TestNodeRPCMutatingMethodsPassTheGateWithAKey(t *testing.T) {
+	n := &NodeRPC{consensus: testConsensusWithOperatorKey(t)}
+	var resp goblinv1.NodeStartAgentInstanceResponse
+	err := n.StartAgentInstance(&goblinv1.NodeStartAgentInstanceRequest{}, &resp)
+	if errors.Is(err, consensus.ErrOperatorRegistryEmpty) {
+		t.Fatalf("StartAgentInstance with a seeded registry still hit the registry gate: %v", err)
+	}
+	if err == nil {
+		t.Fatal("StartAgentInstance with an empty request and no agent manager unexpectedly succeeded")
 	}
 }

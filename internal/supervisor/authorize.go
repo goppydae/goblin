@@ -11,6 +11,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/goppydae/goblin/core/capability"
+	"github.com/goppydae/goblin/core/consensus"
 	"github.com/goppydae/goblin/internal/ident"
 )
 
@@ -37,6 +38,20 @@ func (s *SchedulerRPC) authorize(verb capability.Verb, subject []byte) (*gapiv1.
 	return payload, err
 }
 
+// requireOperatorRegistry is the fail-closed gate (GOBLIN-DIV-015
+// piece 1): a cluster with no registered operator key authorizes no
+// mutation.
+//
+// It is a separate check rather than a branch inside token issuance
+// because the signal path issues its own token and must fail the same
+// way. Two call sites, one rule.
+func (s *SchedulerRPC) requireOperatorRegistry(verb string) error {
+	if s.consensus == nil || s.consensus.OperatorKeyCount() == 0 {
+		return fmt.Errorf("%w: %s refused", consensus.ErrOperatorRegistryEmpty, verb)
+	}
+	return nil
+}
+
 // authorizeToken is authorize plus the serialized token itself, for the
 // one caller that must forward proof of authorization to another node.
 //
@@ -45,6 +60,9 @@ func (s *SchedulerRPC) authorize(verb capability.Verb, subject []byte) (*gapiv1.
 // token. Re-issuing a second token for the transfer would put two
 // audit ids on one operation and let them diverge in rights or expiry.
 func (s *SchedulerRPC) authorizeToken(verb capability.Verb, subject []byte) (*gapiv1.CapabilityTokenPayload, []byte, error) {
+	if err := s.requireOperatorRegistry(string(verb)); err != nil {
+		return nil, nil, err
+	}
 	if s.issuer == nil || s.revocations == nil {
 		return nil, nil, fmt.Errorf("capability issuer not initialized on this node")
 	}

@@ -9,6 +9,7 @@ import (
 
 	gapiagentmgr "github.com/goppydae/gapi/core/agentmgr"
 	"github.com/goppydae/gapi/core/procsig"
+	"github.com/goppydae/goblin/core/consensus"
 	"github.com/goppydae/goblin/core/migration"
 	"github.com/goppydae/goblin/internal/logattr"
 	goblinv1 "github.com/goppydae/goblin/proto"
@@ -36,6 +37,29 @@ type NodeRPC struct {
 	// invent a verification policy for a transfer that carries an
 	// instance's memory.
 	ckptTLS *tls.Config
+	// consensus is the replicated operator key registry, read by the
+	// fail-closed gate below. Nil outside a full supervisor, which the
+	// gate treats as "no registry" and therefore refuses.
+	consensus *consensus.Consensus
+}
+
+// requireOperatorRegistry refuses when the cluster has no registered
+// operator key (GOBLIN-DIV-015 piece 1). SchedulerRPC has its own copy
+// of this check; NodeRPC needs a separate one because it is registered
+// on the same listener and ALPN and is reachable directly, so gating
+// only the operator-facing surface would leave every node-side mutation
+// open and make the piece's claim false.
+//
+// This checks whether the CLUSTER has a root of trust. It does NOT
+// authenticate the caller: on a seeded cluster these methods remain
+// callable by anything that can reach the control-plane port. Closing
+// that needs caller-supplied tokens (piece 3) or mTLS, both out of
+// scope here. Do not read this gate as caller authorization.
+func (n *NodeRPC) requireOperatorRegistry(op string) error {
+	if n.consensus == nil || n.consensus.OperatorKeyCount() == 0 {
+		return fmt.Errorf("%w: %s refused", consensus.ErrOperatorRegistryEmpty, op)
+	}
+	return nil
 }
 
 // StartAgentInstance instantiates the spec's agent type - which must be
@@ -44,6 +68,9 @@ type NodeRPC struct {
 // commands, so the discovery security model (R20) holds for scheduled
 // work.
 func (n *NodeRPC) StartAgentInstance(req *goblinv1.NodeStartAgentInstanceRequest, resp *goblinv1.NodeStartAgentInstanceResponse) error {
+	if err := n.requireOperatorRegistry("node.start"); err != nil {
+		return err
+	}
 	if n.agentMgr == nil {
 		return fmt.Errorf("agent manager not initialized on this node")
 	}
@@ -91,6 +118,9 @@ func (n *NodeRPC) StartAgentInstance(req *goblinv1.NodeStartAgentInstanceRequest
 // this node only guards delivery: a stale epoch means the process the
 // caller meant is gone, so the delivery is refused with no retry.
 func (n *NodeRPC) SignalAgentInstance(req *goblinv1.NodeSignalAgentInstanceRequest, resp *goblinv1.NodeSignalAgentInstanceResponse) error {
+	if err := n.requireOperatorRegistry("node.signal"); err != nil {
+		return err
+	}
 	instanceID := req.GetInstanceId()
 	info, ok := n.tracker.Get(instanceID)
 	if !ok || info.Pid <= 0 {
@@ -109,6 +139,9 @@ func (n *NodeRPC) SignalAgentInstance(req *goblinv1.NodeSignalAgentInstanceReque
 // StopAgentInstance stops and deregisters an instance. Unknown instances
 // succeed: a stop for something already gone is the desired state.
 func (n *NodeRPC) StopAgentInstance(req *goblinv1.NodeStopAgentInstanceRequest, resp *goblinv1.NodeStopAgentInstanceResponse) error {
+	if err := n.requireOperatorRegistry("node.stop"); err != nil {
+		return err
+	}
 	if n.agentMgr == nil {
 		return fmt.Errorf("agent manager not initialized")
 	}

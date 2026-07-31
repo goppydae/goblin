@@ -71,7 +71,10 @@ func mutatingVerbs() map[string]func(*SchedulerRPC) error {
 func TestMutatingVerbs_RefuseWithoutACapabilityIssuer(t *testing.T) {
 	for name, call := range mutatingVerbs() {
 		t.Run(name, func(t *testing.T) {
-			err := call(&SchedulerRPC{})
+			// A populated registry, so the assertion below actually
+			// probes the issuer check (GOBLIN-DIV-015's registry gate
+			// runs first and would otherwise mask it).
+			err := call(&SchedulerRPC{consensus: testConsensusWithOperatorKey(t)})
 			if err == nil {
 				t.Fatal("verb ran without a capability issuer")
 			}
@@ -87,7 +90,11 @@ func TestAuthorize_UngrantableVerbFailsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new issuer: %v", err)
 	}
-	s := &SchedulerRPC{issuer: issuer, revocations: capability.NewRevocations()}
+	s := &SchedulerRPC{
+		issuer:      issuer,
+		revocations: capability.NewRevocations(),
+		consensus:   testConsensusWithOperatorKey(t),
+	}
 
 	if _, err := s.authorize("agent.exfiltrate", specSubject("web")); !errors.Is(err, gapicrypto.ErrTokenRights) {
 		t.Fatalf("err = %v, want ErrTokenRights", err)
@@ -103,6 +110,7 @@ func TestAuthorize_ScopesTheTokenToTheNamedSubject(t *testing.T) {
 		issuer:      issuer,
 		revocations: capability.NewRevocations(),
 		members:     membersFor(issuer),
+		consensus:   testConsensusWithOperatorKey(t),
 	}
 
 	payload, err := s.authorize(capability.VerbAgentScale, specSubject("web"))

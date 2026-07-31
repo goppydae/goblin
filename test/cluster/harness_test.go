@@ -10,10 +10,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
 
+	gapicrypto "github.com/goppydae/gapi/core/crypto"
 	gapitransport "github.com/goppydae/gapi/core/transport"
 	"github.com/goppydae/goblin/internal/cli"
 	"github.com/goppydae/goblin/internal/ident"
@@ -88,6 +90,44 @@ type clusterNode struct {
 type testCluster struct {
 	t     *testing.T
 	nodes map[string]*clusterNode
+
+	// noOperatorKey starts nodes without --operator-key, leaving the
+	// registry empty. Only the fail-closed test sets it; every other
+	// path supplies a key so mutations are authorized.
+	noOperatorKey bool
+}
+
+// operatorKeyPath writes a throwaway operator public key once per test
+// binary and returns its path. Every node in the harness is started
+// with it, so the e2e cluster seeds a registry and mutations are
+// authorized; the keyless case is exercised deliberately in
+// operator_keys_test.go instead.
+var (
+	operatorKeyOnce sync.Once
+	operatorKeyFile string
+	operatorKeyErr  error
+)
+
+func operatorKeyPath(t *testing.T) string {
+	t.Helper()
+	operatorKeyOnce.Do(func() {
+		var kp *gapicrypto.KeyPair
+		kp, operatorKeyErr = gapicrypto.GenerateKey()
+		if operatorKeyErr != nil {
+			return
+		}
+		dir, err := os.MkdirTemp("", "goblin-e2e-opkey")
+		if err != nil {
+			operatorKeyErr = err
+			return
+		}
+		operatorKeyFile = filepath.Join(dir, "operator.pub")
+		operatorKeyErr = kp.SavePublic(operatorKeyFile)
+	})
+	if operatorKeyErr != nil {
+		t.Fatalf("prepare operator key: %v", operatorKeyErr)
+	}
+	return operatorKeyFile
 }
 
 // freeAddrs reserves n distinct loopback ports and returns them as
@@ -139,6 +179,9 @@ func (c *testCluster) startNodeWithArgs(id, join string, extra ...string) *clust
 	}
 	if join != "" {
 		args = append(args, "--join", join)
+	}
+	if !c.noOperatorKey {
+		args = append(args, "--operator-key", operatorKeyPath(c.t))
 	}
 	args = append(args, extra...)
 
@@ -215,6 +258,14 @@ func startCluster(t *testing.T, n int) *testCluster {
 		c.startNode(fmt.Sprintf("node-%d", i), first.listenAddr)
 	}
 	return c
+}
+
+// startKeylessNode brings up a single node with no operator key, so its
+// registry stays empty. It exists only for the fail-closed test.
+func startKeylessNode(t *testing.T, id string) (*testCluster, *clusterNode) {
+	t.Helper()
+	c := &testCluster{t: t, nodes: map[string]*clusterNode{}, noOperatorKey: true}
+	return c, c.startNode(id, "")
 }
 
 // client opens an RPC client against one node (insecure: dev cluster).

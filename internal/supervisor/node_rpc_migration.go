@@ -32,6 +32,9 @@ import (
 // captured would have diverged from it before the destination even
 // started restoring.
 func (n *NodeRPC) CheckpointAgentInstance(req *goblinv1.NodeCheckpointAgentInstanceRequest, resp *goblinv1.NodeCheckpointAgentInstanceResponse) error {
+	if err := n.requireOperatorRegistry("node.checkpoint"); err != nil {
+		return err
+	}
 	if n.agentMgr == nil {
 		return fmt.Errorf("agent manager not initialized on this node")
 	}
@@ -110,6 +113,9 @@ func (n *NodeRPC) CheckpointAgentInstance(req *goblinv1.NodeCheckpointAgentInsta
 // through the ordinary heartbeat is the locator move. The instance UUID
 // does not change - that is the entire migration semantic.
 func (n *NodeRPC) RestoreAgentInstance(req *goblinv1.NodeRestoreAgentInstanceRequest, resp *goblinv1.NodeRestoreAgentInstanceResponse) error {
+	if err := n.requireOperatorRegistry("node.restore"); err != nil {
+		return err
+	}
 	if n.agentMgr == nil {
 		return fmt.Errorf("agent manager not initialized on this node")
 	}
