@@ -16,6 +16,18 @@ import (
 	"github.com/zeebo/blake3"
 )
 
+// toolchain is this repo's single declaration of what the dev shell must
+// provide. Doctor reports on it and checkHermetic gates on it, so the
+// advisory check and the enforcing one read one value and cannot drift:
+// MAGELIB-DIV-003 is exactly the drift that two declarations produce.
+var toolchain = magelib.DoctorConfig{
+	ReplaceTargets: []string{"../gapi", "../magelib"},
+	ProtoPlugins:   []string{"buf", "protoc-gen-go", "protoc-gen-go-grpc"},
+	GopyVersion:    "v0.4.10",
+	RequiredEnv:    []string{"GOBIN"},
+	SharedTools:    []string{"buf", "golangci-lint", "gosec", "govulncheck", "mage", "goimports", "mkdocs", "pandoc", "criu"},
+}
+
 // versionLdflags stamps the resolved version into internal/version, the
 // shared injection point read by both binaries (VERSION file is the source
 // of version truth).
@@ -113,13 +125,7 @@ func Vuln() error {
 
 // Doctor validates the local environment against the ecosystem pins
 func Doctor() error {
-	return magelib.Doctor(magelib.DoctorConfig{
-		ReplaceTargets: []string{"../gapi", "../magelib"},
-		ProtoPlugins:   []string{"buf", "protoc-gen-go", "protoc-gen-go-grpc"},
-		GopyVersion:    "v0.4.10",
-		RequiredEnv:    []string{"GOBIN"},
-		SharedTools:    []string{"buf", "golangci-lint", "gosec", "govulncheck", "mage", "goimports", "mkdocs", "pandoc", "criu"},
-	})
+	return magelib.Doctor(toolchain)
 }
 
 // EnvCheck compares the sibling dev shells' tool inventories; skew is red
@@ -231,7 +237,7 @@ func Tidy() error {
 
 // checkHermetic ensures tools are running from Nix store
 func checkHermetic() error {
-	return magelib.CheckHermetic()
+	return magelib.CheckHermetic(toolchain.SharedTools...)
 }
 
 // checkTerminology enforces the silo's naming rules through magelib.

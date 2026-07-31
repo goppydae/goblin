@@ -16,19 +16,34 @@ var baseTools = []string{"go", "gcc", "protoc"}
 // CheckHermetic ensures every core tool resolves from the Nix store and that
 // the shell's go toolchain matches the go.mod toolchain directive. Any
 // violation fails closed (hermetic shell rule; the double pin).
-func CheckHermetic() error {
-	tools := append([]string{}, baseTools...)
-	if _, err := exec.LookPath("pandoc"); err == nil {
-		tools = append(tools, "pandoc")
-	}
-
-	for _, tool := range tools {
+//
+// extra names tools beyond the base compiler set that the caller's targets
+// actually execute -- golangci-lint, gosec, buf. It is variadic so callers
+// that pass nothing keep compiling: gapi and goblin vendor this package and
+// call CheckHermetic() with no arguments. Callers should feed it the same
+// value they hand DoctorConfig.SharedTools, so the doctor and the gate
+// cannot report different tool sets.
+func CheckHermetic(extra ...string) error {
+	for _, tool := range hermeticTools(extra) {
 		if err := checkStorePath(tool); err != nil {
 			return err
 		}
 	}
 
 	return CheckToolchainPin("go.mod")
+}
+
+// hermeticTools returns the tools CheckHermetic will resolve: the base
+// compiler set, pandoc when the shell has it, then the caller's extras in
+// the order given. Split out of CheckHermetic so the tool-set decision is
+// testable without a shell; note the pandoc probe still reads PATH, so it
+// is not fully pure.
+func hermeticTools(extra []string) []string {
+	tools := append([]string{}, baseTools...)
+	if _, err := exec.LookPath("pandoc"); err == nil {
+		tools = append(tools, "pandoc")
+	}
+	return append(tools, extra...)
 }
 
 // checkStorePath fails unless the named tool resolves into /nix/store.

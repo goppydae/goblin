@@ -2,6 +2,7 @@ package magelib
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -25,6 +26,10 @@ type DoctorConfig struct {
 	// SharedTools extends the hermetic-resolution tool list beyond the base
 	// compiler set (linters, buf, docs toolchain, ...).
 	SharedTools []string
+	// Out receives the per-check report lines. Nil means os.Stdout, which
+	// is what every Magefile caller wants; tests set it to capture the
+	// output contract.
+	Out io.Writer
 }
 
 // Doctor runs the six field-guide checks in order. Output contract: one line
@@ -32,18 +37,24 @@ type DoctorConfig struct {
 // error (nonzero exit) if anything failed. It builds nothing, installs
 // nothing, mutates nothing (operator field guide section 2).
 func Doctor(cfg DoctorConfig) error {
+	out := cfg.Out
+	if out == nil {
+		out = os.Stdout
+	}
 	failed := 0
+	// The report lines are the terminus: a write failure here has nowhere
+	// left to be reported, so the count is discarded deliberately.
 	report := func(name string, err error, passNote string) {
 		if err != nil {
 			failed++
-			fmt.Printf("FAIL %-22s %v\n", name, err)
+			_, _ = fmt.Fprintf(out, "FAIL %-22s %v\n", name, err)
 			return
 		}
 		if passNote != "" {
-			fmt.Printf("PASS %-22s %s\n", name, passNote)
+			_, _ = fmt.Fprintf(out, "PASS %-22s %s\n", name, passNote)
 			return
 		}
-		fmt.Printf("PASS %s\n", name)
+		_, _ = fmt.Fprintf(out, "PASS %s\n", name)
 	}
 
 	// 1. Hermetic resolution: every ecosystem tool from the pinned store.
