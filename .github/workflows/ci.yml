@@ -314,5 +314,19 @@ jobs:
           sudo udevadm trigger --name-match=kvm
           ls -l /dev/kvm
 
+      # --max-jobs 1 serializes the guests. nix builds derivations in
+      # parallel by default, and each of these boots a VM: on a 4-vCPU
+      # runner two guests starting at once oversubscribes the host with
+      # its own hypervisor. Measured on the two failures that made this
+      # necessary - runs 30721840066 and 30722370281 - where the
+      # heavyweight three-node guest started within 2ms of another guest
+      # both times, and TestClusterEndToEnd took 61.8s against 28.7s on
+      # an uncontended runner, missing a 5s placement deadline while all
+      # three instances were in fact running.
+      #
+      # This trades wall-clock for determinism, which is the right trade
+      # for a required gate: a flaky gate blocks pull requests it has
+      # nothing to do with, and teaches everyone to rerun rather than to
+      # read.
       - name: Execute NixOS VM Checks
-        run: nix flake check --print-build-logs
+        run: nix flake check --print-build-logs --max-jobs 1
