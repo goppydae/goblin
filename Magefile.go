@@ -57,7 +57,7 @@ var fileLengthWaivers = []string{
 // already recognises, so those files need no declaration; and nothing
 // gitignored or vendored outside vendor/ lands a .go file in the walk.
 // gapi needs an entry only because gopy stamps a non-standard header.
-var fileLengthSkips = []string{}
+var fileLengthSkips = []magelib.Skip{}
 
 // versionLdflags stamps the resolved version into internal/version, the
 // shared injection point read by both binaries (VERSION file is the source
@@ -276,12 +276,34 @@ func checkHermetic() error {
 // repo root and is walked, so declaring the phrases inline would trip
 // the gate on its own declaration.
 //
-// divergence.jsonl and deprecation.jsonl are skipped because
-// GOBLIN-DIV-045 quotes both phrases, being about them, and would
-// otherwise fail the gate it asked for.
+// The two ledgers are skipped; each skip states its own reason at the
+// call below, which is where a reviewer can audit the claim.
 func checkTerminology() error {
 	return magelib.CheckTerminology(magelib.GoppydaeTerminologyRules,
-		"divergence.jsonl", "deprecation.jsonl")
+		magelib.Skip{
+			Name: "divergence.jsonl",
+			Reason: "the divergence ledger quotes what it polices: " +
+				"GOBLIN-DIV-045 is the entry that corrected GAPI's expansion " +
+				"across this repo, and it cannot record which expansion it " +
+				"rejected without writing that expansion down. Measured " +
+				"2026-08-01: exactly one line matches, the violation field " +
+				"of that entry, on the expansion rule - so the gate would go " +
+				"red against the entry that asked for it. The styling rule " +
+				"matches nothing here; its occurrences in that entry sit " +
+				"inside Go identifiers, which WordBoundary spares by design.",
+		},
+		magelib.Skip{
+			Name: "deprecation.jsonl",
+			Reason: "the deprecation ledger is the sibling surface of the " +
+				"same exemption: retiring a name means writing the retired " +
+				"name down, so an entry that deprecates a term must quote " +
+				"it. This file is zero bytes - goblin has deprecated nothing " +
+				"yet - so the skip guards no violation today and removing it " +
+				"changes no result (measured 2026-08-01). It is granted for " +
+				"the record the file exists to hold, and is inert until that " +
+				"record has a first entry.",
+		},
+	)
 }
 
 // checkFileLength enforces the manifesto's 500-line limit on hand-written
