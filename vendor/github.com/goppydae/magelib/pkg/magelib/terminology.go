@@ -172,19 +172,12 @@ const terminologyAllow = "terminology:allow"
 // target so it rides a CI context that already blocks merges, rather
 // than becoming a target nobody invokes.
 //
-// extraSkipNames takes two shapes and the shape is decided by whether
-// the entry contains a '/':
-//
-//   - No separator ("divergence.jsonl"): matches any file OR directory
-//     with that BASE NAME, at any depth. Broad - "README.md" unpolices
-//     every README in the tree.
-//   - Contains a separator ("docs/legacy.md"): matches that one
-//     repo-relative path, and nothing else.
-//
-// A match on a directory prunes it; a match on a file skips it. A
-// '/'-bearing entry that is absolute, or that escapes the repo root, is
-// a configuration ERROR: it could only ever match nothing, or - for
-// "./" - prune the entire tree and report clean.
+// skips are paths and base names this gate does not walk, each with the
+// reason the rule does not reach it. Their shapes and the errors they
+// can be rejected with are Skip's, not this gate's: the validation is
+// shared with every other gate through compileSkips, so a skip that
+// cannot mean what the caller intended is rejected once, for all of
+// them.
 //
 // A single line may waive its own match with the marker
 // "terminology:allow" (see terminologyAllow), which is the granular
@@ -192,7 +185,7 @@ const terminologyAllow = "terminology:allow"
 //
 // Unreadable files are an ERROR, not a skip: a gate that cannot read a
 // file must not report it clean.
-func CheckTerminology(rules []TerminologyRule, extraSkipNames ...string) error {
+func CheckTerminology(rules []TerminologyRule, skips ...Skip) error {
 	if len(rules) == 0 {
 		return fmt.Errorf("terminology check: no rules configured")
 	}
@@ -204,34 +197,17 @@ func CheckTerminology(rules []TerminologyRule, extraSkipNames ...string) error {
 		}
 		matchers[i] = re
 	}
-	skipNames := make(map[string]bool, len(terminologySkipNames))
+	skipPaths, skipNames, err := compileSkips("terminology check", skips)
+	if err != nil {
+		return err
+	}
 	for k, v := range terminologySkipNames {
 		skipNames[k] = v
-	}
-	skipPaths := make(map[string]bool)
-	for _, n := range extraSkipNames {
-		if strings.Contains(n, "/") {
-			cleaned := filepath.Clean(n)
-			// A skip that silently matches nothing - or silently
-			// matches everything - is worse than no skip at all: the
-			// gate goes quiet and quiet is indistinguishable from
-			// clean. Reject the shapes that cannot mean what the
-			// caller intended.
-			if filepath.IsAbs(n) {
-				return fmt.Errorf("terminology check: skip %q must be repo-relative, not absolute", n)
-			}
-			if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
-				return fmt.Errorf("terminology check: skip %q does not name a path inside the repo", n)
-			}
-			skipPaths[cleaned] = true
-			continue
-		}
-		skipNames[n] = true
 	}
 
 	var hits []string
 	var waived int
-	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(".", func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}

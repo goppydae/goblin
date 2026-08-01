@@ -36,7 +36,7 @@ const maxFileLines = 500
 // output - gapi's adk/python/gapi/native/adk.go at 1312 lines - is not
 // recognised here. Special-casing one generator's prose would make this
 // gate carry a list of vendor spellings that nobody maintains. Such a
-// file belongs in extraSkipNames, which is the mechanism for "the rule
+// file belongs in a Skip, which is the mechanism for "the rule
 // does not apply", NOT in the waiver list, which is the mechanism for
 // "the rule applies and is being violated". See CheckFileLength.
 var generatedMarker = regexp.MustCompile(`^// Code generated .* DO NOT EDIT\.$`)
@@ -80,7 +80,7 @@ var generatedMarker = regexp.MustCompile(`^// Code generated .* DO NOT EDIT\.$`)
 //     typo, a deleted file, or a path the walk never reaches, and in
 //     every case the list is lying about what it covers.
 //
-// A SKIP (extraSkipNames) is a path the rule does not apply to at all:
+// A SKIP is a path the rule does not apply to at all:
 // generated output whose header the marker does not recognise, vendored
 // trees outside skipDirs, data that happens to carry a .go suffix. It
 // is an EXEMPTION THE RULE ITSELF GRANTS, not debt. It will never
@@ -100,25 +100,21 @@ var generatedMarker = regexp.MustCompile(`^// Code generated .* DO NOT EDIT\.$`)
 // is a contradiction about which of the two it is, and it is a config
 // error.
 //
-// extraSkipNames takes the same two shapes as CheckTerminology's, and
-// the shape is decided by whether the entry contains a '/':
-//
-//   - No separator ("adk.go"): matches any file OR directory with that
-//     BASE NAME, at any depth. Broad.
-//   - Contains a separator ("adk/python/gapi/native/adk.go"): matches
-//     that one repo-relative path, and nothing else.
-//
-// A match on a directory prunes it; a match on a file skips it. An
-// absolute or escaping entry - waiver or skip - is a config ERROR: it
-// could only ever match nothing, or, for "./", prune the whole tree and
-// report clean.
+// Skips are the shared Skip type, validated by compileSkips exactly as
+// CheckTerminology's are - one parser, so the two gates cannot drift
+// apart on what a usable skip is. A skip carries a required reason,
+// which is what makes the waiver/skip classification auditable at the
+// point it is made. Waivers are validated here, by repoRelative, since
+// they are this gate's alone: an absolute or escaping waiver is a config
+// ERROR for the same reason a bad skip is, because it could only ever
+// match nothing.
 //
 // Every violation is reported, not just the first: a gate that stops at
 // the first hit turns one fix into N build cycles.
 //
 // Unreadable files are an ERROR, not a skip: a gate that cannot read a
 // file must not report it clean.
-func CheckFileLength(waivers []string, extraSkipNames ...string) error {
+func CheckFileLength(waivers []string, skips ...Skip) error {
 	waived := make(map[string]bool, len(waivers))
 	for _, w := range waivers {
 		cleaned, err := repoRelative("waiver", w)
@@ -127,25 +123,9 @@ func CheckFileLength(waivers []string, extraSkipNames ...string) error {
 		}
 		waived[cleaned] = true
 	}
-	skipNames := make(map[string]bool)
-	skipPaths := make(map[string]bool)
-	for _, n := range extraSkipNames {
-		if !strings.Contains(n, "/") {
-			// A bare name is not path-validated - it is a base name, not
-			// a path - but "" and "." are the walk root's own name and
-			// would prune the entire tree and report clean, which is the
-			// one failure a gate must never have.
-			if n == "" || n == "." || n == ".." {
-				return fmt.Errorf("file length check: skip %q would prune the whole tree", n)
-			}
-			skipNames[n] = true
-			continue
-		}
-		cleaned, err := repoRelative("skip", n)
-		if err != nil {
-			return err
-		}
-		skipPaths[cleaned] = true
+	skipPaths, skipNames, err := compileSkips("file length check", skips)
+	if err != nil {
+		return err
 	}
 	// A path claimed as both is not a redundancy to resolve silently:
 	// the two mechanisms make opposite promises about the file's future,
@@ -168,7 +148,7 @@ func CheckFileLength(waivers []string, extraSkipNames ...string) error {
 	// told apart from a live one after the walk.
 	checked := make(map[string]int, len(waived))
 
-	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(".", func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
