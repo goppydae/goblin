@@ -29,8 +29,8 @@ func opKey(t *testing.T, comment string) (*goblinv1.OperatorKey, ed25519.Private
 
 func TestSeedInstallsKeysIntoEmptyRegistry(t *testing.T) {
 	f := NewFSM()
-	if f.OperatorKeyCount() != 0 {
-		t.Fatalf("a fresh FSM has %d operator keys, want 0", f.OperatorKeyCount())
+	if f.OperatorKeyCountLocal() != 0 {
+		t.Fatalf("a fresh FSM has %d operator keys, want 0", f.OperatorKeyCountLocal())
 	}
 	k1, _ := opKey(t, "one")
 	k2, _ := opKey(t, "two")
@@ -40,7 +40,7 @@ func TestSeedInstallsKeysIntoEmptyRegistry(t *testing.T) {
 	}).(error); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	keys, serial := f.OperatorKeys()
+	keys, serial := f.OperatorKeysLocal()
 	if len(keys) != 2 {
 		t.Fatalf("registry holds %d keys, want 2", len(keys))
 	}
@@ -57,7 +57,7 @@ func TestSeedIsIdempotentForAnIdenticalSet(t *testing.T) {
 	if err, _ := f.applyOperatorKeySeed(seed).(error); err != nil {
 		t.Fatalf("first seed: %v", err)
 	}
-	_, serialAfterFirst := f.OperatorKeys()
+	_, serialAfterFirst := f.OperatorKeysLocal()
 
 	// A node restart re-proposes the same configured set. It must not
 	// fail the boot and must not bump the serial, which would invalidate
@@ -65,7 +65,7 @@ func TestSeedIsIdempotentForAnIdenticalSet(t *testing.T) {
 	if err, _ := f.applyOperatorKeySeed(seed).(error); err != nil {
 		t.Fatalf("re-seed with an identical set: %v", err)
 	}
-	keys, serial := f.OperatorKeys()
+	keys, serial := f.OperatorKeysLocal()
 	if len(keys) != 1 {
 		t.Fatalf("registry holds %d keys after re-seed, want 1", len(keys))
 	}
@@ -90,16 +90,16 @@ func TestSeedIntoNonEmptyRegistryWithDifferentKeysIsRefused(t *testing.T) {
 	if !errors.Is(err, ErrOperatorRegistrySeeded) {
 		t.Fatalf("seeding a different set = %v, want ErrOperatorRegistrySeeded", err)
 	}
-	if f.OperatorKeyCount() != 1 {
-		t.Fatalf("a refused seed changed the registry (now %d keys)", f.OperatorKeyCount())
+	if f.OperatorKeyCountLocal() != 1 {
+		t.Fatalf("a refused seed changed the registry (now %d keys)", f.OperatorKeyCountLocal())
 	}
 	// Count alone would not catch a regression that swapped the
 	// registry's contents for the incoming set of the same size, so
 	// assert identity: the ORIGINAL key must still be the one there.
-	if _, ok := f.resolveOperatorKey(k1.GetKeyId()); !ok {
+	if _, ok := f.resolveOperatorKeyLocked(k1.GetKeyId()); !ok {
 		t.Fatalf("the originally seeded key %s is gone after a refused re-seed", k1.GetKeyId())
 	}
-	if _, ok := f.resolveOperatorKey(k2.GetKeyId()); ok {
+	if _, ok := f.resolveOperatorKeyLocked(k2.GetKeyId()); ok {
 		t.Fatalf("the refused seed's key %s was installed", k2.GetKeyId())
 	}
 }
@@ -123,11 +123,11 @@ func TestSeedValidatesEveryKeyBeforeInstallingAny(t *testing.T) {
 	if !errors.Is(err, capability.ErrOperatorKeyMalformed) {
 		t.Fatalf("seed with a good key ahead of a bad one = %v, want ErrOperatorKeyMalformed", err)
 	}
-	if f.OperatorKeyCount() != 0 {
+	if f.OperatorKeyCountLocal() != 0 {
 		t.Fatalf("a refused seed installed %d key(s); validation must complete before any install",
-			f.OperatorKeyCount())
+			f.OperatorKeyCountLocal())
 	}
-	if _, ok := f.resolveOperatorKey(good.GetKeyId()); ok {
+	if _, ok := f.resolveOperatorKeyLocked(good.GetKeyId()); ok {
 		t.Fatal("the valid key from a refused seed batch was installed anyway")
 	}
 }
@@ -143,8 +143,8 @@ func TestSeedRejectsAKeyWhoseIDLiesAboutItsBytes(t *testing.T) {
 	if !errors.Is(err, capability.ErrOperatorKeyMalformed) {
 		t.Fatalf("seed with a lying key id = %v, want ErrOperatorKeyMalformed", err)
 	}
-	if f.OperatorKeyCount() != 0 {
-		t.Fatalf("a refused seed installed %d keys", f.OperatorKeyCount())
+	if f.OperatorKeyCountLocal() != 0 {
+		t.Fatalf("a refused seed installed %d keys", f.OperatorKeyCountLocal())
 	}
 }
 
@@ -167,8 +167,8 @@ func TestApplyDispatchesTheSeedCommand(t *testing.T) {
 	}).(error); err != nil {
 		t.Fatalf("apply seed entry: %v", err)
 	}
-	if f.OperatorKeyCount() != 1 {
-		t.Fatalf("registry holds %d keys after the log entry, want 1", f.OperatorKeyCount())
+	if f.OperatorKeyCountLocal() != 1 {
+		t.Fatalf("registry holds %d keys after the log entry, want 1", f.OperatorKeyCountLocal())
 	}
 }
 
@@ -187,13 +187,13 @@ func TestSeedCommandWithMismatchedPayloadIsRefused(t *testing.T) {
 	if err == nil {
 		t.Fatal("a SEED command with a mismatched oneof payload was accepted")
 	}
-	if f.OperatorKeyCount() != 0 {
-		t.Fatalf("a refused seed installed %d keys", f.OperatorKeyCount())
+	if f.OperatorKeyCountLocal() != 0 {
+		t.Fatalf("a refused seed installed %d keys", f.OperatorKeyCountLocal())
 	}
 }
 
 // TestResolveOperatorKeyReturnsACopy pins the defensive copy in
-// resolveOperatorKey. Without this test the copy is unenforced: delete
+// resolveOperatorKeyLocked. Without this test the copy is unenforced: delete
 // the append and every other test still passes. It matters because
 // Task 4 passes this result into signature verification, and anything
 // that wrote through the returned slice would corrupt the registered
@@ -209,21 +209,21 @@ func TestResolveOperatorKeyReturnsACopy(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	got, ok := f.resolveOperatorKey(root.GetKeyId())
+	got, ok := f.resolveOperatorKeyLocked(root.GetKeyId())
 	if !ok {
-		t.Fatalf("resolveOperatorKey(%s) did not resolve", root.GetKeyId())
+		t.Fatalf("resolveOperatorKeyLocked(%s) did not resolve", root.GetKeyId())
 	}
 	// Scribble on what the caller was handed.
 	for i := range got {
 		got[i] ^= 0xff
 	}
 
-	again, ok := f.resolveOperatorKey(root.GetKeyId())
+	again, ok := f.resolveOperatorKeyLocked(root.GetKeyId())
 	if !ok {
 		t.Fatal("key vanished from the registry after a caller mutated its copy")
 	}
 	if !bytes.Equal(again, root.GetPublicKey()) {
-		t.Fatal("mutating the resolved key changed FSM state; resolveOperatorKey must return a copy")
+		t.Fatal("mutating the resolved key changed FSM state; resolveOperatorKeyLocked must return a copy")
 	}
 }
 
@@ -236,7 +236,7 @@ func TestRegistrySurvivesSnapshotRestore(t *testing.T) {
 	}).(error); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	_, wantSerial := f.OperatorKeys()
+	_, wantSerial := f.OperatorKeysLocal()
 
 	snap, err := f.Snapshot()
 	if err != nil {
@@ -251,7 +251,7 @@ func TestRegistrySurvivesSnapshotRestore(t *testing.T) {
 	if err := restored.Restore(io.NopCloser(bytes.NewReader(sink.Bytes()))); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
-	keys, serial := restored.OperatorKeys()
+	keys, serial := restored.OperatorKeysLocal()
 	if len(keys) != 2 {
 		t.Fatalf("restored registry holds %d keys, want 2", len(keys))
 	}
@@ -260,12 +260,12 @@ func TestRegistrySurvivesSnapshotRestore(t *testing.T) {
 	if serial != wantSerial {
 		t.Fatalf("restored serial = %d, want %d", serial, wantSerial)
 	}
-	if _, ok := restored.resolveOperatorKey(k1.GetKeyId()); !ok {
+	if _, ok := restored.resolveOperatorKeyLocked(k1.GetKeyId()); !ok {
 		t.Fatalf("restored registry cannot resolve %s", k1.GetKeyId())
 	}
 
 	// Counting keys and resolving an id are both blind to the key
-	// MATERIAL. resolveOperatorKey returns (nil, true) for a record with
+	// MATERIAL. resolveOperatorKeyLocked returns (nil, true) for a record with
 	// no public key, so a Snapshot/Restore pair that carried ids and
 	// dropped bytes would satisfy every assertion above. That failure is
 	// not hypothetical: every node joining past the trailing-log window
@@ -281,9 +281,9 @@ func TestRegistrySurvivesSnapshotRestore(t *testing.T) {
 	)).(error); cerr != nil {
 		t.Fatalf("a change authorized by a restored key was refused: %v", cerr)
 	}
-	if restored.OperatorKeyCount() != 3 {
+	if restored.OperatorKeyCountLocal() != 3 {
 		t.Fatalf("restored registry holds %d keys after the add, want 3",
-			restored.OperatorKeyCount())
+			restored.OperatorKeyCountLocal())
 	}
 }
 
@@ -322,8 +322,8 @@ func TestRestoreRefusesAKeyWhoseIDLiesAboutItsBytes(t *testing.T) {
 		if !errors.Is(err, capability.ErrOperatorKeyMalformed) {
 			t.Fatalf("restore of a lying key id = %v, want ErrOperatorKeyMalformed", err)
 		}
-		if f.OperatorKeyCount() != 0 {
-			t.Fatalf("a refused restore installed %d key(s)", f.OperatorKeyCount())
+		if f.OperatorKeyCountLocal() != 0 {
+			t.Fatalf("a refused restore installed %d key(s)", f.OperatorKeyCountLocal())
 		}
 	})
 
@@ -341,8 +341,8 @@ func TestRestoreRefusesAKeyWhoseIDLiesAboutItsBytes(t *testing.T) {
 		if err == nil {
 			t.Fatal("restore accepted a key filed under another key's id")
 		}
-		if f.OperatorKeyCount() != 0 {
-			t.Fatalf("a refused restore installed %d key(s)", f.OperatorKeyCount())
+		if f.OperatorKeyCountLocal() != 0 {
+			t.Fatalf("a refused restore installed %d key(s)", f.OperatorKeyCountLocal())
 		}
 	})
 }

@@ -21,7 +21,7 @@ import (
 // standing in for the QUIC transport supervisor.go wires in
 // production. It exists only so unit tests in this package can build a
 // real *consensus.Consensus: the DIV-015 fail-closed gate
-// (requireOperatorRegistry in authorize.go) reads OperatorKeyCount()
+// (requireOperatorRegistry in authorize.go) reads OperatorKeyCountLocal()
 // off that concrete type, so a handful of pre-existing authorize/RPC
 // unit tests need a genuinely populated registry to reach the behavior
 // they were written to exercise. A single-node Raft never dials

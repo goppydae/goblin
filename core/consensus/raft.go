@@ -232,16 +232,44 @@ func (c *Consensus) IsTombstoned(instanceID string) bool {
 	return c.fsm.IsTombstoned(instanceID)
 }
 
-// OperatorKeys returns the replicated operator key registry and its
-// serial (GOBLIN-DIV-015 piece 1).
-func (c *Consensus) OperatorKeys() ([]*goblinv1.OperatorKey, uint64) {
-	return c.fsm.OperatorKeys()
+// OperatorKeysVerified returns the operator key registry and its serial
+// only if this node is the leader with a live quorum (GOBLIN-DIV-044).
+//
+// This is the accessor for anything that AUTHORIZES from key material.
+// The unverified reads below answer from whatever this replica happens
+// to have applied, and a follower that has not applied an
+// OPERATOR_KEY_CHANGE remove still resolves the removed key - so a
+// consumer that says yes on a successful lookup would mint for a revoked
+// operator by asking a lagging replica. VerifyLeader is what makes that
+// unreachable: a follower cannot answer at all, and a leader that lost
+// quorum cannot either.
+//
+// It is a refusal, not a forward. Routing to the leader is the caller's
+// policy decision; this surface's job is only that a stale reader cannot
+// say yes.
+func (c *Consensus) OperatorKeysVerified() ([]*goblinv1.OperatorKey, uint64, error) {
+	if err := c.VerifyLeader(); err != nil {
+		return nil, 0, fmt.Errorf("operator key registry read refused: %w", err)
+	}
+	keys, serial := c.fsm.OperatorKeysLocal()
+	return keys, serial, nil
 }
 
-// OperatorKeyCount reports how many operator keys are registered. Zero
-// is the fail-closed condition: no key, no mutation.
-func (c *Consensus) OperatorKeyCount() int {
-	return c.fsm.OperatorKeyCount()
+// OperatorKeysLocal returns THIS NODE's applied operator key registry
+// and its serial (GOBLIN-DIV-015 piece 1). It performs no leadership
+// check, so the answer may predate a committed change. Use
+// OperatorKeysVerified for anything that authorizes; use this only where
+// a stale answer cannot produce a yes, and say so at the call site.
+func (c *Consensus) OperatorKeysLocal() ([]*goblinv1.OperatorKey, uint64) {
+	return c.fsm.OperatorKeysLocal()
+}
+
+// OperatorKeyCountLocal reports how many operator keys THIS NODE has
+// applied. Zero is the fail-closed condition: no key, no mutation. No
+// leadership check, deliberately - see OperatorKeyCountLocal on the FSM
+// for why staleness can only move this answer toward refusal.
+func (c *Consensus) OperatorKeyCountLocal() int {
+	return c.fsm.OperatorKeyCountLocal()
 }
 
 // Stats returns Raft statistics

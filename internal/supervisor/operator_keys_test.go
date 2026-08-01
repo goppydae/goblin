@@ -65,8 +65,8 @@ func (r *fakeRegistry) setLeader(v bool) {
 	r.leader = v
 }
 
-func (r *fakeRegistry) OperatorKeys() ([]*goblinv1.OperatorKey, uint64) {
-	return r.fsm.OperatorKeys()
+func (r *fakeRegistry) OperatorKeysLocal() ([]*goblinv1.OperatorKey, uint64) {
+	return r.fsm.OperatorKeysLocal()
 }
 
 func (r *fakeRegistry) ApplyWithResponse(data []byte, _ time.Duration) (interface{}, error) {
@@ -103,7 +103,7 @@ func TestSeederInstallsConfiguredKeysWhenLeader(t *testing.T) {
 		quietLogger(), 10*time.Millisecond); err != nil {
 		t.Fatalf("seeder: %v", err)
 	}
-	keys, _ := reg.OperatorKeys()
+	keys, _ := reg.OperatorKeysLocal()
 	if len(keys) != 1 || keys[0].GetKeyId() != key.GetKeyId() {
 		t.Fatalf("registry = %v, want the configured key %s", keys, key.GetKeyId())
 	}
@@ -125,7 +125,7 @@ func TestSeederWaitsForLeadership(t *testing.T) {
 	}()
 
 	time.Sleep(50 * time.Millisecond)
-	if reg.fsm.OperatorKeyCount() != 0 {
+	if reg.fsm.OperatorKeyCountLocal() != 0 {
 		t.Fatal("the seeder proposed without leadership")
 	}
 	reg.setLeader(true)
@@ -133,8 +133,8 @@ func TestSeederWaitsForLeadership(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatalf("seeder after leadership: %v", err)
 	}
-	if reg.fsm.OperatorKeyCount() != 1 {
-		t.Fatalf("registry holds %d keys, want 1", reg.fsm.OperatorKeyCount())
+	if reg.fsm.OperatorKeyCountLocal() != 1 {
+		t.Fatalf("registry holds %d keys, want 1", reg.fsm.OperatorKeyCountLocal())
 	}
 }
 

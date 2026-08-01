@@ -50,8 +50,20 @@ func (s *SchedulerRPC) authorize(verb capability.Verb, subject []byte) (*gapiv1.
 // A nil consensus is treated as no registry and therefore refused: a
 // surface with nothing to read the registry from cannot show that any
 // key was ever registered.
+//
+// The LOCAL read is a deliberate choice, not an oversight
+// (GOBLIN-DIV-044). This gate asks only "does the cluster have a root of
+// trust", and staleness can move that answer in exactly one direction:
+// a replica behind the seed reads zero and refuses, and a seeded
+// registry can never return to empty because the FSM refuses to remove
+// the last key. So a stale read here can only over-refuse, never
+// over-permit. Routing it through OperatorKeysVerified would trade that
+// for a quorum round trip on every mutating verb and would make every
+// follower refuse - a liveness cost buying no safety. Any gate that
+// starts asking WHICH key, rather than whether there is one, must move
+// to the verified accessor.
 func operatorRegistryGate(c *consensus.Consensus, op string) error {
-	if c == nil || c.OperatorKeyCount() == 0 {
+	if c == nil || c.OperatorKeyCountLocal() == 0 {
 		return fmt.Errorf("%w: %s refused", consensus.ErrOperatorRegistryEmpty, op)
 	}
 	return nil
