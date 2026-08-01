@@ -63,7 +63,7 @@ github.com/google/btree
 # github.com/google/uuid v1.6.0
 ## explicit
 github.com/google/uuid
-# github.com/goppydae/gapi v0.1.0-proto2b
+# github.com/goppydae/gapi v0.1.0-proto2c
 ## explicit; go 1.26.0
 github.com/goppydae/gapi/core/adk/meta
 github.com/goppydae/gapi/core/agentmgr

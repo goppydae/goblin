@@ -13,6 +13,33 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// RequirePidfd reports whether this kernel can pin a process with
+// pidfd_open, by opening a pidfd on this process and closing it again.
+//
+// It exists because gapi's signal safety is INHERITED rather than
+// asserted (GAPI-DIV-016). os.Process signals through
+// pidfd_send_signal against a handle os/exec bound at fork, which is a
+// stronger guarantee than this package's epoch check - a handle cannot
+// refer to a recycled PID at all. But if the kernel has no pidfd,
+// os/exec silently falls back to a raw kill by PID and nothing
+// anywhere notices. A supervisor that signals the wrong process
+// because the kernel was older than it assumed should refuse to boot,
+// not discover it during a stop.
+//
+// Probing self is deliberate: it needs no target to exist and no
+// privilege beyond signalling ourselves, so a false negative cannot
+// come from the target rather than the kernel.
+func RequirePidfd() error {
+	fd, err := unix.PidfdOpen(os.Getpid(), 0)
+	if err != nil {
+		return fmt.Errorf("%w: pidfd_open(self): %w", ErrPidfdUnsupported, err)
+	}
+	if cerr := unix.Close(fd); cerr != nil {
+		return fmt.Errorf("procsig: closing probe pidfd: %w", cerr)
+	}
+	return nil
+}
+
 // StartEpoch returns the process's start time in clock ticks since
 // boot (/proc/<pid>/stat field 22). Recorded at spawn, it uniquely
 // identifies a PID incarnation on one boot of one node.

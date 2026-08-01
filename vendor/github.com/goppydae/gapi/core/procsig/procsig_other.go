@@ -4,6 +4,12 @@ package procsig
 
 import "syscall"
 
+// RequirePidfd refuses off Linux: pidfd is a Linux facility, so there
+// is nothing here that could satisfy the requirement.
+func RequirePidfd() error {
+	return ErrPidfdUnsupported
+}
+
 // StartEpoch is unavailable off Linux: there is no /proc start-time
 // source, and the epoch guard is only sound with pidfd semantics.
 func StartEpoch(pid int) (uint64, error) {

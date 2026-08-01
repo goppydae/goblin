@@ -19,6 +19,11 @@ var (
 	ErrProcessGone = errors.New("procsig: process gone")
 	// ErrUnsupported: signal delivery is Linux-only.
 	ErrUnsupported = errors.New("procsig: signal delivery is linux-only")
+	// ErrPidfdUnsupported: the kernel does not offer pidfd_open, so
+	// neither this package nor the os/exec handle path can pin a
+	// process. Signal delivery would silently degrade to kill-by-PID,
+	// which is the PID-recycling hazard itself (GAPI-DIV-016).
+	ErrPidfdUnsupported = errors.New("procsig: kernel does not support pidfd_open")
 )
 
 // ProcessIdentity is the mutable runtime locator of a process: the PID

@@ -11,6 +11,7 @@ import (
 	"github.com/goppydae/gapi/core/logging"
 	"github.com/goppydae/gapi/core/mounts"
 	"github.com/goppydae/gapi/core/pid1"
+	"github.com/goppydae/gapi/core/procsig"
 	"github.com/goppydae/gapi/core/shutdown"
 	"github.com/goppydae/gapi/core/subreaper"
 	"github.com/goppydae/gapi/core/watchdog"
@@ -51,7 +52,8 @@ func (s *Supervisor) EnablePid1(ctx context.Context) (func(action shutdown.Actio
 
 	skipMounts := s.cfg.Supervisor.NoEarlyMounts
 	if err := RunPhase0(ctx, Phase0Deps{
-		Subreaper: subreaper.BecomeSubreaper,
+		RequirePidfd: procsig.RequirePidfd,
+		Subreaper:    subreaper.BecomeSubreaper,
 		Mount: func(specs []mounts.MountSpec) error {
 			return mounts.MountEarly(mounts.SysMounter{}, specs)
 		},

@@ -56,6 +56,15 @@ type GoAgent struct {
 	// for it; it reparents to the supervisor's subreaper and its exit
 	// arrives through the reap loop rather than cmd.Wait.
 	adoptedPid int
+	// adoptedEpoch is that process's start epoch, captured at adopt
+	// time (GAPI-DIV-046). It is the only thing that distinguishes the
+	// adopted process from a later occupant of the same PID, so Stop
+	// signals through procsig with it rather than by bare PID.
+	adoptedEpoch uint64
+	// adoptedWatch expires that claim when the process goes, the way
+	// cmd.Wait returning does for a spawned child (GAPI-DIV-048).
+	// Guarded by mu; joined by Stop, Reset and a re-adopt.
+	adoptedWatch *adoptedWatch
 
 	mu   sync.RWMutex
 	ctrl *lifecycle.Controller
@@ -324,6 +333,13 @@ func (a *GoAgent) Start(ctx context.Context) error {
 		return nil
 	}
 
+	// Parsed before anything is allocated or spawned - see PythonAgent's
+	// Start and cgroups.ParseResourceSpec (GAPI-DIV-049).
+	limits, lerr := cgroups.ParseResourceSpec(a.cpuLimit, a.memLimit)
+	if lerr != nil {
+		return fmt.Errorf("agent %s: %w", a.id, lerr)
+	}
+
 	var extraFiles []*os.File
 	if a.listenSpec != "" {
 		socketFile, err := a.ensureListenerLocked()
@@ -385,19 +401,7 @@ func (a *GoAgent) Start(ctx context.Context) error {
 		return fmt.Errorf("cmd.Start: %w", err)
 	}
 
-	// Apply Resource Limits
-	if a.cpuLimit != "" || a.memLimit != "" {
-		spec := parseLimits(a.cpuLimit, a.memLimit)
-		cgName := fmt.Sprintf("gapid-%s", a.id)
-		path, err := cgroups.Create(cgName, spec)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[gapid] failed to create cgroup for %s: %v\n", a.id, err)
-		} else {
-			if err := cgroups.Add(path, a.cmd.Process.Pid); err != nil {
-				fmt.Fprintf(os.Stderr, "[gapid] failed to add pid to cgroup for %s: %v\n", a.id, err)
-			}
-		}
-	}
+	attachCgroup(a.id, limits, a.cmd.Process.Pid)
 
 	// Oneshot behavior: wait for completion. Mirrors PythonAgent.Start -
 	// the lock is released around Wait so the stream handlers (which take
@@ -456,7 +460,17 @@ func (a *GoAgent) Stop(ctx context.Context) error {
 	a.mu.Lock()
 
 	if a.cmd == nil || a.cmd.Process == nil {
+		// A CRIU-restored process has no exec.Cmd, but it is running:
+		// returning nil here told the caller "stopped" about a live
+		// process (GAPI-DIV-046).
+		if a.adoptedPid != 0 {
+			return a.stopAdoptedLocked(ctx)
+		}
+		// No claim, so the exit watcher may have already cleared it.
+		// Join it (nil-safe) so Stop never leaves one behind.
+		w := a.takeAdoptedWatchLocked()
 		a.mu.Unlock()
+		w.stop()
 		return nil
 	}
 
@@ -565,8 +579,10 @@ func (a *GoAgent) Reload(ctx context.Context) error {
 
 func (a *GoAgent) Reset() {
 	a.mu.Lock()
-	defer a.mu.Unlock()
+	w := a.dropAdoptedLocked() // joined below, unlocked: it takes a.mu
 	a.cleanupAfterExit()
+	a.mu.Unlock()
+	w.stop()
 }
 
 func (a *GoAgent) streamControl(r io.Reader) {

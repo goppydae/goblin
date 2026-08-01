@@ -90,6 +90,9 @@ func ParseScheduleAt(s string, now, boot time.Time) (Schedule, error) {
 
 	// Raw duration, e.g. "5s".
 	if dur, err := time.ParseDuration(s); err == nil {
+		if err := usableInterval(dur, s); err != nil {
+			return nil, err
+		}
 		return &IntervalSchedule{interval: dur}, nil
 	}
 
@@ -99,7 +102,26 @@ func ParseScheduleAt(s string, now, boot time.Time) (Schedule, error) {
 		return nil, fmt.Errorf("invalid schedule format: %w (expected systemd-style like 'OnUnitActiveSec=5s', duration like '5s', or cron expression like '*/5 * * * *')", err)
 	}
 
+	// No advance-check on the cron branch: robfig's Every() clamps any
+	// duration below one second UP to one second (constantdelay.go:15),
+	// so "@every -1s" is a one-second interval, not a negative one. A
+	// probe here could never fire, and a check that cannot fail is worse
+	// than no check - the next reader would trust it.
 	return &CronSchedule{schedule: schedule}, nil
+}
+
+// usableInterval rejects a repeating interval that cannot advance. The
+// run loop clamps a non-positive delay to zero, so such a schedule does
+// not fire late - it spins, firing continuously with no diagnostic.
+//
+// This is deliberately NOT applied to the one-shot forms. An elapse
+// point already in the past is legitimate there: OnBootSec=5s on a host
+// up for a week is late, not cancelled, and it fires exactly once.
+func usableInterval(d time.Duration, raw string) error {
+	if d <= 0 {
+		return fmt.Errorf("repeating interval %q must be positive, got %s", raw, d)
+	}
+	return nil
 }
 
 // systemdPrefixes maps each accepted prefix to how its duration is
@@ -137,6 +159,9 @@ func parseSystemdSchedule(s string, now, boot time.Time) (Schedule, error) {
 			return nil, fmt.Errorf("invalid duration in schedule: %s (%w)", durStr, err)
 		}
 		if p.repeating {
+			if err := usableInterval(d, durStr); err != nil {
+				return nil, err
+			}
 			return &IntervalSchedule{interval: d}, nil
 		}
 		// An elapse point already in the past still fires, once, as soon

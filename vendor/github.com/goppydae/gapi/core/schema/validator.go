@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/goppydae/gapi/core/cgroups"
 )
 
 // Version represents a semantic version
@@ -152,57 +154,45 @@ func validateType(typ string) error {
 
 // ValidateCPULimit validates CPU limit format
 // Accepts: "0.5", "500m", "1", "1.5"
+//
+// It does not implement the format. It asks cgroups.ParseResourceSpec -
+// the same function that converts the string for cgroups.Create at
+// start - and accepts exactly what that function can represent as a
+// POSITIVE quantity. Acceptance therefore means the limit will actually
+// be applied, which is a property nothing enforced while the two sides
+// were separate implementations (GAPI-DIV-049).
+//
+// The cycle noted in ValidateSchedule below is schema -> agentmgr and
+// does not apply here: core/cgroups imports only internal/safeio.
 func ValidateCPULimit(limit string) error {
-	limit = strings.TrimSpace(limit)
-
-	// Check for millicpu format (e.g., "500m")
-	if strings.HasSuffix(limit, "m") {
-		millis := strings.TrimSuffix(limit, "m")
-		val, err := strconv.ParseFloat(millis, 64)
-		if err != nil || val <= 0 {
-			return fmt.Errorf("invalid millicpu value: %s", limit)
-		}
-		return nil
+	spec, err := cgroups.ParseResourceSpec(limit, "")
+	if err != nil {
+		return fmt.Errorf("%w (use format: 0.5, 500m, or 1)", err)
 	}
-
-	// Check for decimal format (e.g., "0.5", "1.5")
-	val, err := strconv.ParseFloat(limit, 64)
-	if err != nil || val <= 0 {
-		return fmt.Errorf("invalid cpu limit: %s (use format: 0.5, 500m, or 1)", limit)
+	// A blank limit parses without error and means "no limit". As a
+	// validated FIELD it is still wrong: the caller only reaches here
+	// when the manifest set cpu_limit to something.
+	if spec.CPU <= 0 {
+		return fmt.Errorf("invalid cpu limit: %q (use format: 0.5, 500m, or 1)", limit)
 	}
-
 	return nil
 }
 
 // ValidateMemoryLimit validates memory limit format
-// Accepts: "100MB", "1GB", "512M", "1G"
+// Accepts: "100MB", "1GB", "512M", "1G", "1024B"
+//
+// Delegates to cgroups.ParseResourceSpec for the same reason
+// ValidateCPULimit does: the accepted set and the representable set
+// must be one set. The overflow rejection GAPI-DIV-042 added lives
+// there now, next to the multiplication that overflows.
 func ValidateMemoryLimit(limit string) error {
-	limit = strings.TrimSpace(strings.ToUpper(limit))
-
-	validUnits := []string{"GB", "MB", "KB", "B", "G", "M", "K"}
-
-	// Extract number and unit
-	var num string
-	var unit string
-
-	for _, u := range validUnits {
-		if strings.HasSuffix(limit, u) {
-			num = strings.TrimSuffix(limit, u)
-			unit = u
-			break
-		}
+	spec, err := cgroups.ParseResourceSpec("", limit)
+	if err != nil {
+		return fmt.Errorf("%w (use format: 100MB, 1GB, etc.)", err)
 	}
-
-	if unit == "" {
-		return fmt.Errorf("invalid memory limit: %s (use format: 100MB, 1GB, etc.)", limit)
+	if spec.Memory <= 0 {
+		return fmt.Errorf("invalid memory limit: %q (use format: 100MB, 1GB, etc.)", limit)
 	}
-
-	// Parse the number part
-	val, err := strconv.ParseInt(num, 10, 64)
-	if err != nil || val <= 0 {
-		return fmt.Errorf("invalid memory value: %s", limit)
-	}
-
 	return nil
 }
 
