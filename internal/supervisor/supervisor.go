@@ -244,6 +244,22 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 			tlsCfg.RootCAs = caPool
 			slog.Default().LogAttrs(ctx, slog.LevelInfo, "raft mtls enabled")
 		} else {
+			// GOBLIN-DIV-043: without a CA there is no client
+			// certificate to verify, so ClientAuth stays NoClientCert
+			// and the shared listener admits any peer that can complete
+			// a handshake. On the raft plane that peer can send
+			// InstallSnapshot, and FSM.Restore installs the operator key
+			// registry straight from the payload without passing through
+			// Apply - so an unauthenticated peer could seed itself as the
+			// cluster's root of trust in one step.
+			//
+			// mTLS being AVAILABLE is not mTLS being REQUIRED, and this
+			// branch was the difference: a warning that production could
+			// run past.
+			if s.cfg.ProductionMode {
+				return fmt.Errorf("production mode requires mTLS: configure ca-file so raft peers " +
+					"present verified client certificates (GOBLIN-DIV-043)")
+			}
 			slog.Default().LogAttrs(ctx, slog.LevelWarn, "tls enabled but no ca provided, mtls disabled")
 		}
 	} else {
