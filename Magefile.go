@@ -28,6 +28,37 @@ var toolchain = magelib.DoctorConfig{
 	SharedTools:    []string{"buf", "golangci-lint", "gosec", "govulncheck", "mage", "goimports", "mkdocs", "pandoc", "criu"},
 }
 
+// fileLengthWaivers is DEBT: hand-written files the 500-line rule applies
+// to and that violate it today. The gate measures every one of them, and
+// it FAILS once a file comes back at or under the limit, naming the
+// waiver to delete - so this list can only ever shrink. Adding a line to
+// this list is a decision to carry a violation, not to exempt a file.
+//
+// Line count when the gate landed, for anyone judging progress:
+// supervisor.go 1200 - 140 percent over the limit and the single largest
+// hand-written violation in the silo. It is entangled with
+// GOBLIN-DIV-038 (Supervisor.Run has no ordered shutdown, and the
+// documented boot-phase model does not match the code), so the split is
+// a cohesion question to settle with the startup/teardown ordering, not
+// a line-count exercise. See GOBLIN-DIV-046.
+var fileLengthWaivers = []string{
+	"internal/supervisor/supervisor.go",
+}
+
+// fileLengthSkips is EXEMPTION, not debt: paths the 500-line rule does
+// not reach at all. They are never measured, so they are never reported
+// and never expected to shrink. A path may be a waiver or a skip, never
+// both; the gate rejects claiming both as a config error.
+//
+// The list is EMPTY on purpose, not by oversight: this repo has no Go
+// file the rule fails to reach. Everything generated here is protoc
+// output under proto/, which carries the standard
+// "// Code generated ... DO NOT EDIT." header that magelib's marker
+// already recognises, so those files need no declaration; and nothing
+// gitignored or vendored outside vendor/ lands a .go file in the walk.
+// gapi needs an entry only because gopy stamps a non-standard header.
+var fileLengthSkips = []string{}
+
 // versionLdflags stamps the resolved version into internal/version, the
 // shared injection point read by both binaries (VERSION file is the source
 // of version truth).
@@ -253,6 +284,14 @@ func checkTerminology() error {
 		"divergence.jsonl", "deprecation.jsonl")
 }
 
+// checkFileLength enforces the manifesto's 500-line limit on hand-written
+// Go. The two lists it passes make opposite promises - see their
+// declarations above - and keeping them apart is what lets the waiver
+// list function as a burndown rather than a permanent carve-out.
+func checkFileLength() error {
+	return magelib.CheckFileLength(fileLengthWaivers, fileLengthSkips...)
+}
+
 // All runs fmt, tidy, build, and test
 func All() error {
 	mg.Deps(Fmt, Tidy, Build, Test)
@@ -326,7 +365,7 @@ func TestUnit() error {
 //     generator whose path segments are validated (nodeIDPattern) and
 //     joined under a constant certDir.
 func Lint() error {
-	mg.Deps(checkHermetic, checkTerminology)
+	mg.Deps(checkHermetic, checkTerminology, checkFileLength)
 	return magelib.Lint("G402", "G404", "G304")
 }
 
