@@ -52,7 +52,9 @@ let
     # goblind is launched by the test script, so the unit stays off.
     services.goblin.enable = false;
 
-    environment.systemPackages = [ pkgs.criu bins ];
+    # openssl generates the operator key below; the guests have no Go
+    # toolchain to run the crypto package's own keygen.
+    environment.systemPackages = [ pkgs.criu pkgs.openssl bins ];
     virtualisation.memorySize = 3072;
     virtualisation.cores = 2;
     networking.firewall.enable = false;
@@ -91,6 +93,34 @@ pkgs.testers.runNixOSTest {
     assert ip1 != ip2, f"both guests are {ip1}; they are not on a shared network"
     print(f"node1={ip1} node2={ip2}")
 
+    # An operator key, on every node, BEFORE any mutating verb.
+    #
+    # Without one the registry stays empty and goblind refuses
+    # agent.register with PERMISSION_DENIED - which is the operator key
+    # registry (GOBLIN-DIV-015 piece 1) working as designed, and which
+    # goblind warns about at startup naming this exact remedy. This test
+    # predates the registry and went stale the day it landed; nothing
+    # caught that because no workflow ran the check (GOBLIN-DIV-037).
+    #
+    # core/crypto.SavePublic writes the hex of a raw Ed25519 public key
+    # with no trailing newline, and LoadPublic hex-decodes the file
+    # whole, so a newline here would be a decode error. The last 32
+    # bytes of an Ed25519 SubjectPublicKeyInfo DER are that raw key.
+    def write_operator_key(machine, hexkey):
+        machine.succeed(f"printf %s {hexkey} > /tmp/operator.pub")
+
+    node1.succeed("openssl genpkey -algorithm ed25519 -out /tmp/operator.key")
+    operator_hex = node1.succeed(
+        "openssl pkey -in /tmp/operator.key -pubout -outform DER "
+        "| tail -c 32 | od -An -tx1 | tr -d ' \\n'"
+    ).strip()
+    assert len(operator_hex) == 64, f"operator key is {len(operator_hex)} hex chars, want 64: {operator_hex!r}"
+    # Both nodes get the SAME key, as the Go harness does: the registry
+    # is replicated, so this seeds one identity rather than two.
+    write_operator_key(node1, operator_hex)
+    write_operator_key(node2, operator_hex)
+    print(f"operator key seeded on both guests: {operator_hex[:16]}...")
+
     def start_goblind(machine, node_id, ip, join=None):
         join_arg = f"--join {join}:29000" if join else ""
         machine.succeed("mkdir -p /var/lib/goblin")
@@ -108,6 +138,7 @@ pkgs.testers.runNixOSTest {
             # hostname and exit with "no such host".
             f"--listen-addr 0.0.0.0:29000 --advertise-addr {ip} "
             f"--data /var/lib/goblin/raft --log-format json --log-level debug "
+            f"--operator-key /tmp/operator.pub "
             f"{join_arg}"
         )
 

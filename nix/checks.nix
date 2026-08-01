@@ -14,4 +14,5 @@ pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
   module-hardening = import ./tests/module-hardening.nix { inherit pkgs self; };
   criu-migration = import ./tests/criu-migration.nix { inherit pkgs self; };
   cluster-migration = import ./tests/cluster-migration.nix { inherit pkgs self; };
+  cluster-criu-migration = import ./tests/cluster-criu-migration.nix { inherit pkgs self; };
 }
