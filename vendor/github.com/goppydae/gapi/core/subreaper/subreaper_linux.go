@@ -26,13 +26,30 @@ func BecomeSubreaper() error {
 // to notify with its true wait status; the agent manager decides
 // whether it was a known agent or an adopted orphan.
 func ReapLoop(ctx context.Context, sigchld <-chan os.Signal, notify func(pid int, ws syscall.WaitStatus)) {
+	ReapLoopWithObserver(ctx, sigchld, notify, nil)
+}
+
+// ReapLoopWithObserver is ReapLoop with a diagnostic seam: observe, when
+// non-nil, is called synchronously with every Wait4 outcome, including
+// the ones the loop itself discards.
+//
+// It exists for GAPI-DIV-043, whose exit requires the Wait4 errno to be
+// read out of a CI log rather than reproduced locally. observe is called
+// on the loop's goroutine and must not block; a nil observer leaves the
+// loop's control flow identical to what it was before the seam existed,
+// which is deliberate - instrumentation that perturbs the timing of an
+// intermittent failure can spend the failure without explaining it.
+func ReapLoopWithObserver(ctx context.Context, sigchld <-chan os.Signal, notify func(pid int, ws syscall.WaitStatus), observe func(DrainEvent)) {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
-	drain := func() {
+	drain := func(trigger DrainTrigger) {
 		for {
 			var ws syscall.WaitStatus
 			pid, err := syscall.Wait4(-1, &ws, syscall.WNOHANG, nil)
+			if observe != nil {
+				observe(DrainEvent{Trigger: trigger, Pid: pid, Status: ws, Err: err})
+			}
 			if err != nil || pid <= 0 {
 				// ECHILD (no children) or no zombies right now.
 				return
@@ -41,15 +58,15 @@ func ReapLoop(ctx context.Context, sigchld <-chan os.Signal, notify func(pid int
 		}
 	}
 
-	drain()
+	drain(DrainStartup)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-sigchld:
-			drain()
+			drain(DrainSigchld)
 		case <-ticker.C:
-			drain()
+			drain(DrainTick)
 		}
 	}
 }

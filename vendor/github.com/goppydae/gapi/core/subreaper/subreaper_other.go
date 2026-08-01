@@ -16,3 +16,9 @@ func BecomeSubreaper() error { return ErrUnsupported }
 func ReapLoop(ctx context.Context, sigchld <-chan os.Signal, notify func(pid int, ws syscall.WaitStatus)) {
 	<-ctx.Done()
 }
+
+// ReapLoopWithObserver is a no-op off Linux; observe is never called
+// because no wait ever happens.
+func ReapLoopWithObserver(ctx context.Context, sigchld <-chan os.Signal, notify func(pid int, ws syscall.WaitStatus), observe func(DrainEvent)) {
+	<-ctx.Done()
+}

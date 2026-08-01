@@ -6,7 +6,7 @@ toolchain go1.26.5
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/goppydae/gapi v0.1.0-proto2b
+	github.com/goppydae/gapi v0.1.0-proto2c
 	github.com/goppydae/magelib v0.5.0
 	github.com/hashicorp/go-hclog v1.6.2
 	github.com/hashicorp/go-metrics v0.5.4

@@ -8,7 +8,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/goppydae/gapi/internal/safeio"
 	"github.com/zeebo/blake3"
@@ -72,6 +71,11 @@ func HashFile(path string) (string, error) {
 // SavePrivate saves the private key to a PEM file in PKCS#8 form ("PRIVATE KEY"
 // block), the same format PEMNS.EncodePrivateKey produces, so a key written here
 // can be loaded through either code path.
+//
+// The file is replaced, not written through, so the key is never on disk at a
+// mode the operator did not choose - see safeio.ReplaceOwnerOnly. The mode is
+// not left to the caller: every caller of this function is writing a secret,
+// and a caller that forgets leaks the key silently.
 func (k *KeyPair) SavePrivate(path string) error {
 	der, err := x509.MarshalPKCS8PrivateKey(k.Private)
 	if err != nil {
@@ -81,15 +85,11 @@ func (k *KeyPair) SavePrivate(path string) error {
 		Type:  pemTypePKCS8,
 		Bytes: der,
 	}
-	f, err := safeio.Create(path)
-	if err != nil {
-		return err
+	encoded := pem.EncodeToMemory(block)
+	if encoded == nil {
+		return fmt.Errorf("encode private key pem")
 	}
-	err = pem.Encode(f, block)
-	if cerr := f.Close(); cerr != nil && err == nil {
-		err = cerr
-	}
-	return err
+	return safeio.ReplaceOwnerOnly(path, encoded)
 }
 
 // LoadPrivate loads a private key from a PEM file. It accepts the canonical
@@ -135,9 +135,14 @@ func LoadPrivate(path string) (*KeyPair, error) {
 	return &KeyPair{Private: priv, Public: pub}, nil
 }
 
-// SavePublic saves the public key to a hex file (simple format for now)
+// SavePublic saves the public key to a hex file (simple format for now).
+//
+// A public key is not a secret, but this has always been written owner-only and
+// tightening or loosening that is a separate decision; routing it through the
+// same helper preserves the mode and keeps ReplaceOwnerOnly the only thing in
+// this package that decides a file mode.
 func (k *KeyPair) SavePublic(path string) error {
-	return os.WriteFile(path, []byte(hex.EncodeToString(k.Public)), 0600)
+	return safeio.ReplaceOwnerOnly(path, []byte(hex.EncodeToString(k.Public)))
 }
 
 // LoadPublic loads a public key from a hex file

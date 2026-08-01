@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"os"
 
 	"filippo.io/age"
 	"github.com/goppydae/gapi/internal/safeio"
@@ -72,10 +71,15 @@ func DecryptAge(identityPath string, data []byte) ([]byte, error) {
 }
 
 // WriteAgeIdentity writes an identity to a file in standard format.
+//
+// The identity is a secret, so the file is replaced rather than written
+// through - see safeio.ReplaceOwnerOnly. os.WriteFile's perm argument would
+// apply only when creating the file, leaving an overwrite at whatever mode the
+// destination already had.
 func WriteAgeIdentity(path string, id *age.X25519Identity) error {
 	content := fmt.Sprintf("# public key: %s\n%s\n",
 		id.Recipient().String(),
 		id.String(),
 	)
-	return os.WriteFile(path, []byte(content), 0600)
+	return safeio.ReplaceOwnerOnly(path, []byte(content))
 }

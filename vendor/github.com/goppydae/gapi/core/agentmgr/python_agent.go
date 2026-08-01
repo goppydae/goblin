@@ -11,7 +11,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -77,6 +76,13 @@ type PythonAgent struct {
 	// adoptedPid holds a CRIU-restored process (parity with GoAgent,
 	// GOBLIN-DIV-018). Not a child of this program, so no exec.Cmd.
 	adoptedPid int
+	// adoptedEpoch is that process's start epoch, captured at adopt
+	// time so Stop can signal it through procsig's guard rather than by
+	// bare PID (parity with GoAgent, GAPI-DIV-046).
+	adoptedEpoch uint64
+	// adoptedWatch expires that claim when the process goes (parity with
+	// GoAgent, GAPI-DIV-048). Guarded by mu; joined by Stop and Reset.
+	adoptedWatch *adoptedWatch
 }
 
 // Pid returns the running agent process id, or false when no process
@@ -342,6 +348,16 @@ func (a *PythonAgent) Start(ctx context.Context) error {
 		return nil
 	}
 
+	// Limits are parsed BEFORE anything is allocated or spawned. A limit
+	// the kernel cannot be given is a containment failure, not a
+	// formatting nit, so the start fails rather than running the agent
+	// unbounded; failing here costs nothing, while failing after exec
+	// would leave a live child to unwind (GAPI-DIV-049).
+	limits, lerr := cgroups.ParseResourceSpec(a.cpuLimit, a.memLimit)
+	if lerr != nil {
+		return fmt.Errorf("agent %s: %w", a.id, lerr)
+	}
+
 	var extraFiles []*os.File
 	if a.listenSpec != "" {
 		socketFile, err := a.ensureListenerLocked()
@@ -428,19 +444,7 @@ func (a *PythonAgent) Start(ctx context.Context) error {
 		return fmt.Errorf("cmd.Start: %w", err)
 	}
 
-	// Apply Resource Limits
-	if a.cpuLimit != "" || a.memLimit != "" {
-		spec := parseLimits(a.cpuLimit, a.memLimit)
-		cgName := fmt.Sprintf("gapid-%s", a.id)
-		path, err := cgroups.Create(cgName, spec)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[gapid] failed to create cgroup for %s: %v\n", a.id, err)
-		} else {
-			if err := cgroups.Add(path, a.cmd.Process.Pid); err != nil {
-				fmt.Fprintf(os.Stderr, "[gapid] failed to add pid to cgroup for %s: %v\n", a.id, err)
-			}
-		}
-	}
+	attachCgroup(a.id, limits, a.cmd.Process.Pid)
 
 	// Oneshot behavior: Wait for completion
 	if a.typ == "oneshot" {
@@ -498,7 +502,15 @@ func (a *PythonAgent) Stop(ctx context.Context) error {
 	a.mu.Lock()
 
 	if a.cmd == nil || a.cmd.Process == nil {
+		// A CRIU-restored process has no exec.Cmd but is still running
+		// (parity with GoAgent, GAPI-DIV-046).
+		if a.adoptedPid != 0 {
+			return a.stopAdoptedLocked(ctx)
+		}
+		// Join any watcher that already cleared the claim (GAPI-DIV-048).
+		w := a.takeAdoptedWatchLocked()
 		a.mu.Unlock()
+		w.stop()
 		return nil
 	}
 
@@ -594,8 +606,10 @@ func (a *PythonAgent) Reload(ctx context.Context) error {
 
 func (a *PythonAgent) Reset() {
 	a.mu.Lock()
-	defer a.mu.Unlock()
+	w := a.dropAdoptedLocked() // joined below, unlocked: it takes a.mu
 	a.cleanupAfterExit()
+	a.mu.Unlock()
+	w.stop()
 }
 
 func (a *PythonAgent) streamControl(r io.Reader) {
@@ -745,47 +759,29 @@ func getString(m map[string]any, key string) (string, bool) {
 	}
 }
 
-func parseLimits(cpu, mem string) cgroups.ResourceSpec {
-	spec := cgroups.ResourceSpec{}
-
-	// CPU: "0.5" or "500m" -> float64
-	if cpu != "" {
-		if strings.HasSuffix(cpu, "m") {
-			if v, err := strconv.Atoi(strings.TrimSuffix(cpu, "m")); err == nil {
-				spec.CPU = float64(v) / 1000.0
-			}
-		} else {
-			if v, err := strconv.ParseFloat(cpu, 64); err == nil {
-				spec.CPU = v
-			}
-		}
+// attachCgroup places pid under the agent's cgroup with spec applied.
+// Shared by both runners, which contain their children identically.
+//
+// Failures here are logged, not fatal. By the time a pid exists the
+// child is running, and killing a started agent because the host has no
+// delegated cgroup2 tree would be a worse outcome than a supervised but
+// unbounded process. The failure this does NOT have to cover is an
+// unrepresentable limit string: Start rejects that before the process
+// exists (GAPI-DIV-049), so reaching here with a positive field means
+// the only thing left that can fail is the kernel interface.
+func attachCgroup(id string, spec cgroups.ResourceSpec, pid int) {
+	if spec.CPU <= 0 && spec.Memory <= 0 {
+		return
 	}
-
-	// Mem: "100MB", "1G", "1024" -> bytes
-	if mem != "" {
-		upper := strings.ToUpper(mem)
-		var mult int64 = 1
-		var numStr = upper
-		if strings.HasSuffix(upper, "KB") || strings.HasSuffix(upper, "K") {
-			mult = 1024
-			numStr = strings.TrimRight(upper, "KB")
-			numStr = strings.TrimRight(numStr, "K")
-		} else if strings.HasSuffix(upper, "MB") || strings.HasSuffix(upper, "M") {
-			mult = 1024 * 1024
-			numStr = strings.TrimRight(upper, "MB")
-			numStr = strings.TrimRight(numStr, "M")
-		} else if strings.HasSuffix(upper, "GB") || strings.HasSuffix(upper, "G") {
-			mult = 1024 * 1024 * 1024
-			numStr = strings.TrimRight(upper, "GB")
-			numStr = strings.TrimRight(numStr, "G")
-		}
-
-		if v, err := strconv.ParseInt(numStr, 10, 64); err == nil {
-			spec.Memory = v * mult
-		}
+	cgName := fmt.Sprintf("gapid-%s", id)
+	path, err := cgroups.Create(cgName, spec)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[gapid] failed to create cgroup for %s: %v\n", id, err)
+		return
 	}
-
-	return spec
+	if err := cgroups.Add(path, pid); err != nil {
+		fmt.Fprintf(os.Stderr, "[gapid] failed to add pid to cgroup for %s: %v\n", id, err)
+	}
 }
 
 // SetEnabled records whether this agent should be started

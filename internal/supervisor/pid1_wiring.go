@@ -10,6 +10,7 @@ import (
 	gapilogging "github.com/goppydae/gapi/core/logging"
 	gapimounts "github.com/goppydae/gapi/core/mounts"
 	gapipid1 "github.com/goppydae/gapi/core/pid1"
+	gapiprocsig "github.com/goppydae/gapi/core/procsig"
 	gapishutdown "github.com/goppydae/gapi/core/shutdown"
 	gapisubreaper "github.com/goppydae/gapi/core/subreaper"
 	gapisupervisor "github.com/goppydae/gapi/core/supervisor"
@@ -54,7 +55,14 @@ func (s *Supervisor) enablePid1(ctx context.Context, runCancel context.CancelFun
 
 	skipMounts := s.cfg.NoEarlyMounts
 	err := gapisupervisor.RunPhase0(ctx, gapisupervisor.Phase0Deps{
-		Subreaper: gapisubreaper.BecomeSubreaper,
+		// goblind supervises agents through the same gapi agent manager
+		// gapid does, so it inherits the same dependency on os/exec
+		// binding a pidfd at fork. The field is nil-skippable, so
+		// leaving it out is silent: Phase 0 would simply never check,
+		// and signal delivery would degrade to kill-by-PID on a kernel
+		// without pidfd exactly as it did before GAPI-DIV-016.
+		RequirePidfd: gapiprocsig.RequirePidfd,
+		Subreaper:    gapisubreaper.BecomeSubreaper,
 		Mount: func(specs []gapimounts.MountSpec) error {
 			return gapimounts.MountEarly(gapimounts.SysMounter{}, specs)
 		},
