@@ -133,16 +133,31 @@ func sameKeySet(a, b map[string]*goblinv1.OperatorKey) bool {
 	return true
 }
 
-// resolveOperatorKey maps a key id to its public key. Callers hold f.mu.
+// resolveOperatorKeyLocked maps a key id to its public key. It takes NO
+// lock; the caller must already hold f.mu. The name carries that because
+// a comment cannot fail a build and this one is load-bearing: the map
+// read here races FSM Apply on any goroutine that has not taken the
+// lock, and a torn read of the trust root is not a bug that announces
+// itself.
+//
+// The lock cannot be taken here. The one permitted caller,
+// applyOperatorKeyChange, runs inside FSM.Apply under f.mu.Lock(), and
+// sync.RWMutex is not reentrant: RLock while the same goroutine holds
+// Lock deadlocks. A read path that wants this data must go through
+// Consensus.OperatorKeysVerified (leadership-checked) or, when a stale
+// answer is provably safe, OperatorKeysLocal - not through here.
+// TestResolveOperatorKeyLockedHasExactlyOneCaller enforces that
+// mechanically.
+//
 // It is the resolver the signed-change path verifies against, so it must
 // read replicated state and nothing else.
 //
-// The key is copied, for the same reason OperatorKeys and
+// The key is copied, for the same reason OperatorKeysLocal and
 // MigrationInFlight copy: a caller that could write through this slice
 // would corrupt the registry on one replica only, and a divergent
 // registry means divergent accept/reject verdicts on signed changes -
 // the exact failure this design exists to prevent.
-func (f *FSM) resolveOperatorKey(keyID string) (ed25519.PublicKey, bool) {
+func (f *FSM) resolveOperatorKeyLocked(keyID string) (ed25519.PublicKey, bool) {
 	k, ok := f.operatorKeys[keyID]
 	if !ok {
 		return nil, false
@@ -150,10 +165,16 @@ func (f *FSM) resolveOperatorKey(keyID string) (ed25519.PublicKey, bool) {
 	return ed25519.PublicKey(append([]byte(nil), k.GetPublicKey()...)), true
 }
 
-// OperatorKeys returns the registry sorted by key id, plus the current
-// serial. Read path for goblinctl, the fail-closed gate, and the change
-// proposer (which needs the serial to sign against).
-func (f *FSM) OperatorKeys() ([]*goblinv1.OperatorKey, uint64) {
+// OperatorKeysLocal returns THIS REPLICA's applied registry sorted by
+// key id, plus the current serial. The Local suffix is the contract, not
+// decoration: an FSM knows only what it has applied, so a follower that
+// has not yet applied an OPERATOR_KEY_CHANGE answers from the registry
+// as it was before the change - including a remove. Callers for whom a
+// stale yes is wrong (anything that authorizes on key material, e.g. a
+// mint path) must use Consensus.OperatorKeysVerified instead. Callers
+// for whom a stale answer can only fail closed may use this and must say
+// at the call site why.
+func (f *FSM) OperatorKeysLocal() ([]*goblinv1.OperatorKey, uint64) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
@@ -171,9 +192,13 @@ func (f *FSM) OperatorKeys() ([]*goblinv1.OperatorKey, uint64) {
 	return out, f.operatorSerial
 }
 
-// OperatorKeyCount reports how many operator keys are registered. Zero
-// is the fail-closed condition every mutating verb checks.
-func (f *FSM) OperatorKeyCount() int {
+// OperatorKeyCountLocal reports how many operator keys THIS REPLICA has
+// applied. Zero is the fail-closed condition every mutating verb checks,
+// and the count is the one reading that is safe to take locally: a
+// replica behind the seed reads zero and refuses, and a seeded registry
+// can never return to empty because removing the last key is refused. So
+// this can be stale only in the direction that refuses.
+func (f *FSM) OperatorKeyCountLocal() int {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	return len(f.operatorKeys)
@@ -196,7 +221,7 @@ func (f *FSM) applyOperatorKeyChange(chg *goblinv1.OperatorKeyChange) interface{
 	}
 
 	payload, err := capability.VerifyOperatorKeyChange(chg,
-		capability.OperatorKeyResolver(f.resolveOperatorKey))
+		capability.OperatorKeyResolver(f.resolveOperatorKeyLocked))
 	if err != nil {
 		return fmt.Errorf("OPERATOR_KEY_CHANGE rejected: %w", err)
 	}

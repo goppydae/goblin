@@ -56,9 +56,14 @@ var ErrOperatorConfigStale = errors.New("operator key config is stale: the clust
 // *consensus.Consensus satisfies it. Declared narrowly here for the
 // same reason voter.go declares its own: the seeder is testable against
 // a real FSM without standing up Raft.
+//
+// It names the LOCAL read on purpose (GOBLIN-DIV-044). The seeder's two
+// readers are both correct on stale state, and one of them is only ever
+// correct on stale state - see driftedKeys. Widening this interface to
+// the verified accessor would break the drift check outright.
 type operatorRegistry interface {
 	IsLeader() bool
-	OperatorKeys() ([]*goblinv1.OperatorKey, uint64)
+	OperatorKeysLocal() ([]*goblinv1.OperatorKey, uint64)
 	ApplyWithResponse(data []byte, timeout time.Duration) (interface{}, error)
 }
 
@@ -137,7 +142,11 @@ func runOperatorKeySeeder(ctx context.Context, reg operatorRegistry,
 				metrics.OperatorKeyConfigDrift.Set(1)
 				return fmt.Errorf("%w: operator key seed refused: %w", ErrOperatorConfigStale, applyErr)
 			} else {
-				registered, serial := reg.OperatorKeys()
+				// Local read, and safe: this branch runs on the node that
+				// just committed the seed, so its own FSM has applied it by
+				// construction. The values are a log line, not an
+				// authorization decision.
+				registered, serial := reg.OperatorKeysLocal()
 				logger.LogAttrs(ctx, slog.LevelInfo, "operator key registry seeded",
 					slog.Int("keys", len(registered)),
 					slog.Uint64("serial", serial))
@@ -166,8 +175,17 @@ func runOperatorKeySeeder(ctx context.Context, reg operatorRegistry,
 // driftedKeys lists configured key ids missing from a populated
 // registry. An empty registry reports no drift: it has not been seeded
 // yet, which is a race, not a disagreement.
+//
+// The read MUST be local (GOBLIN-DIV-044). Its only caller is the
+// non-leader branch of the seeder, so the verified accessor would refuse
+// every time and the drift check would never run - it exists precisely
+// to report from a follower. The check is advisory and non-fatal in
+// effect: it authorizes nothing, it sets a gauge and returns a
+// non-fatal ErrOperatorConfigStale. A stale read here costs at worst a
+// spurious drift report during catch-up, which is the failure direction
+// this check is allowed to have.
 func driftedKeys(reg operatorRegistry, configured []*goblinv1.OperatorKey) []string {
-	registered, _ := reg.OperatorKeys()
+	registered, _ := reg.OperatorKeysLocal()
 	if len(registered) == 0 {
 		return nil
 	}

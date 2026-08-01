@@ -41,7 +41,7 @@ func signedChange(t *testing.T, op goblinv1.OperatorKeyOp, key *goblinv1.Operato
 
 func TestAddAuthorizedByARegisteredKeySucceeds(t *testing.T) {
 	f, root, priv := seeded(t)
-	_, serial := f.OperatorKeys()
+	_, serial := f.OperatorKeysLocal()
 	second, _ := opKey(t, "second")
 
 	if err, _ := f.applyOperatorKeyChange(signedChange(t,
@@ -49,7 +49,7 @@ func TestAddAuthorizedByARegisteredKeySucceeds(t *testing.T) {
 	)).(error); err != nil {
 		t.Fatalf("authorized add: %v", err)
 	}
-	keys, newSerial := f.OperatorKeys()
+	keys, newSerial := f.OperatorKeysLocal()
 	if len(keys) != 2 {
 		t.Fatalf("registry holds %d keys after the add, want 2", len(keys))
 	}
@@ -60,7 +60,7 @@ func TestAddAuthorizedByARegisteredKeySucceeds(t *testing.T) {
 
 func TestAddAuthorizedByAnUnregisteredKeyIsRefused(t *testing.T) {
 	f, _, _ := seeded(t)
-	_, serial := f.OperatorKeys()
+	_, serial := f.OperatorKeysLocal()
 	stranger, strangerPriv := opKey(t, "stranger")
 	victim, _ := opKey(t, "victim")
 
@@ -74,14 +74,14 @@ func TestAddAuthorizedByAnUnregisteredKeyIsRefused(t *testing.T) {
 	if !errors.Is(err, capability.ErrOperatorKeyUnknown) {
 		t.Fatalf("add signed by an unregistered key = %v, want ErrOperatorKeyUnknown", err)
 	}
-	if f.OperatorKeyCount() != 1 {
-		t.Fatalf("a refused add changed the registry (now %d keys)", f.OperatorKeyCount())
+	if f.OperatorKeyCountLocal() != 1 {
+		t.Fatalf("a refused add changed the registry (now %d keys)", f.OperatorKeyCountLocal())
 	}
 }
 
 func TestAddWithAForgedSignatureIsRefused(t *testing.T) {
 	f, root, _ := seeded(t)
-	_, serial := f.OperatorKeys()
+	_, serial := f.OperatorKeysLocal()
 	_, wrongPriv := opKey(t, "wrong")
 	second, _ := opKey(t, "second")
 
@@ -93,14 +93,14 @@ func TestAddWithAForgedSignatureIsRefused(t *testing.T) {
 	if !errors.Is(err, capability.ErrOperatorKeySignature) {
 		t.Fatalf("add with a forged signature = %v, want ErrOperatorKeySignature", err)
 	}
-	if f.OperatorKeyCount() != 1 {
-		t.Fatalf("a refused add changed the registry (now %d keys)", f.OperatorKeyCount())
+	if f.OperatorKeyCountLocal() != 1 {
+		t.Fatalf("a refused add changed the registry (now %d keys)", f.OperatorKeyCountLocal())
 	}
 }
 
 func TestReplayedChangeIsRefused(t *testing.T) {
 	f, root, priv := seeded(t)
-	_, serial := f.OperatorKeys()
+	_, serial := f.OperatorKeysLocal()
 	second, _ := opKey(t, "second")
 	chg := signedChange(t, goblinv1.OperatorKeyOp_OPERATOR_KEY_OP_ADD,
 		second, serial, root.GetKeyId(), priv)
@@ -117,14 +117,14 @@ func TestReplayedChangeIsRefused(t *testing.T) {
 
 func TestRemoveAuthorizedByARegisteredKeySucceeds(t *testing.T) {
 	f, root, priv := seeded(t)
-	_, serial := f.OperatorKeys()
+	_, serial := f.OperatorKeysLocal()
 	second, _ := opKey(t, "second")
 	if err, _ := f.applyOperatorKeyChange(signedChange(t,
 		goblinv1.OperatorKeyOp_OPERATOR_KEY_OP_ADD, second, serial, root.GetKeyId(), priv,
 	)).(error); err != nil {
 		t.Fatalf("add: %v", err)
 	}
-	_, serial = f.OperatorKeys()
+	_, serial = f.OperatorKeysLocal()
 
 	if err, _ := f.applyOperatorKeyChange(signedChange(t,
 		goblinv1.OperatorKeyOp_OPERATOR_KEY_OP_REMOVE,
@@ -132,17 +132,17 @@ func TestRemoveAuthorizedByARegisteredKeySucceeds(t *testing.T) {
 	)).(error); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
-	if f.OperatorKeyCount() != 1 {
-		t.Fatalf("registry holds %d keys after the remove, want 1", f.OperatorKeyCount())
+	if f.OperatorKeyCountLocal() != 1 {
+		t.Fatalf("registry holds %d keys after the remove, want 1", f.OperatorKeyCountLocal())
 	}
-	if _, ok := f.resolveOperatorKey(second.GetKeyId()); ok {
+	if _, ok := f.resolveOperatorKeyLocked(second.GetKeyId()); ok {
 		t.Fatalf("removed key %s still resolves", second.GetKeyId())
 	}
 }
 
 func TestRemovingTheLastKeyIsRefused(t *testing.T) {
 	f, root, priv := seeded(t)
-	_, serial := f.OperatorKeys()
+	_, serial := f.OperatorKeysLocal()
 
 	// This is the invariant that makes "an empty registry may be seeded"
 	// safe: no log entry can drive a populated registry back to empty,
@@ -154,14 +154,14 @@ func TestRemovingTheLastKeyIsRefused(t *testing.T) {
 	if !errors.Is(err, ErrOperatorLastKey) {
 		t.Fatalf("removing the last key = %v, want ErrOperatorLastKey", err)
 	}
-	if f.OperatorKeyCount() != 1 {
-		t.Fatalf("registry emptied itself (now %d keys)", f.OperatorKeyCount())
+	if f.OperatorKeyCountLocal() != 1 {
+		t.Fatalf("registry emptied itself (now %d keys)", f.OperatorKeyCountLocal())
 	}
 }
 
 func TestChangeWithUnspecifiedOpIsRefused(t *testing.T) {
 	f, root, priv := seeded(t)
-	_, serial := f.OperatorKeys()
+	_, serial := f.OperatorKeysLocal()
 	second, _ := opKey(t, "second")
 
 	err, _ := f.applyOperatorKeyChange(signedChange(t,
@@ -171,8 +171,8 @@ func TestChangeWithUnspecifiedOpIsRefused(t *testing.T) {
 	if err == nil {
 		t.Fatal("a change with an unspecified op was applied; want a refusal")
 	}
-	if f.OperatorKeyCount() != 1 {
-		t.Fatalf("a refused change altered the registry (now %d keys)", f.OperatorKeyCount())
+	if f.OperatorKeyCountLocal() != 1 {
+		t.Fatalf("a refused change altered the registry (now %d keys)", f.OperatorKeyCountLocal())
 	}
 }
 
@@ -196,7 +196,7 @@ func TestChangeAgainstAnEmptyRegistryIsRefused(t *testing.T) {
 // a second one that does the same thing.
 func TestApplyDispatchesTheChangeCommand(t *testing.T) {
 	f, root, priv := seeded(t)
-	_, serial := f.OperatorKeys()
+	_, serial := f.OperatorKeysLocal()
 	second, _ := opKey(t, "second")
 
 	if err, _ := mustApply(t, f, &goblinv1.LogEntry{
@@ -209,8 +209,8 @@ func TestApplyDispatchesTheChangeCommand(t *testing.T) {
 	}).(error); err != nil {
 		t.Fatalf("apply change entry: %v", err)
 	}
-	if f.OperatorKeyCount() != 2 {
-		t.Fatalf("registry holds %d keys after the log entry, want 2", f.OperatorKeyCount())
+	if f.OperatorKeyCountLocal() != 2 {
+		t.Fatalf("registry holds %d keys after the log entry, want 2", f.OperatorKeyCountLocal())
 	}
 }
 
@@ -232,8 +232,8 @@ func TestChangeCommandWithMismatchedPayloadIsRefused(t *testing.T) {
 	if err, _ := resp.(error); err == nil {
 		t.Fatal("a CHANGE command with a mismatched oneof payload was accepted")
 	}
-	if f.OperatorKeyCount() != 1 {
-		t.Fatalf("a refused change altered the registry (now %d keys)", f.OperatorKeyCount())
+	if f.OperatorKeyCountLocal() != 1 {
+		t.Fatalf("a refused change altered the registry (now %d keys)", f.OperatorKeyCountLocal())
 	}
 }
 
@@ -245,14 +245,14 @@ func TestChangeCommandWithMismatchedPayloadIsRefused(t *testing.T) {
 // key via removal is not treated any differently.
 func TestRegistryCannotBeEmptiedByRepeatedRemoval(t *testing.T) {
 	f, root, priv := seeded(t)
-	_, serial := f.OperatorKeys()
+	_, serial := f.OperatorKeysLocal()
 	second, _ := opKey(t, "second")
 	if err, _ := f.applyOperatorKeyChange(signedChange(t,
 		goblinv1.OperatorKeyOp_OPERATOR_KEY_OP_ADD, second, serial, root.GetKeyId(), priv,
 	)).(error); err != nil {
 		t.Fatalf("add: %v", err)
 	}
-	_, serial = f.OperatorKeys()
+	_, serial = f.OperatorKeysLocal()
 
 	// Remove down to one. Allowed.
 	if err, _ := f.applyOperatorKeyChange(signedChange(t,
@@ -261,7 +261,7 @@ func TestRegistryCannotBeEmptiedByRepeatedRemoval(t *testing.T) {
 	)).(error); err != nil {
 		t.Fatalf("remove second: %v", err)
 	}
-	_, serial = f.OperatorKeys()
+	_, serial = f.OperatorKeysLocal()
 
 	// Now remove the survivor. This is the attack: an empty registry can be
 	// re-seeded with anyone's key, so it must be unreachable.
@@ -272,8 +272,8 @@ func TestRegistryCannotBeEmptiedByRepeatedRemoval(t *testing.T) {
 	if !errors.Is(err, ErrOperatorLastKey) {
 		t.Fatalf("removing the survivor = %v, want ErrOperatorLastKey", err)
 	}
-	if f.OperatorKeyCount() != 1 {
-		t.Fatalf("registry reached %d keys; it must never be emptiable", f.OperatorKeyCount())
+	if f.OperatorKeyCountLocal() != 1 {
+		t.Fatalf("registry reached %d keys; it must never be emptiable", f.OperatorKeyCountLocal())
 	}
 }
 
@@ -284,7 +284,7 @@ func TestRegistryCannotBeEmptiedByRepeatedRemoval(t *testing.T) {
 func TestSeededRegistryCannotBeReSeededByEmptyingIt(t *testing.T) {
 	f, root, priv := seeded(t)
 	attacker, _ := opKey(t, "attacker")
-	_, serial := f.OperatorKeys()
+	_, serial := f.OperatorKeysLocal()
 
 	// Step 1: try to empty it. Must fail.
 	if err, _ := f.applyOperatorKeyChange(signedChange(t,
@@ -302,17 +302,17 @@ func TestSeededRegistryCannotBeReSeededByEmptyingIt(t *testing.T) {
 	if !errors.Is(err, ErrOperatorRegistrySeeded) {
 		t.Fatalf("re-seeding a populated registry = %v, want ErrOperatorRegistrySeeded", err)
 	}
-	if _, ok := f.resolveOperatorKey(attacker.GetKeyId()); ok {
+	if _, ok := f.resolveOperatorKeyLocked(attacker.GetKeyId()); ok {
 		t.Fatal("the attacker's key entered the registry")
 	}
-	if _, ok := f.resolveOperatorKey(root.GetKeyId()); !ok {
+	if _, ok := f.resolveOperatorKeyLocked(root.GetKeyId()); !ok {
 		t.Fatal("the original root key was displaced")
 	}
 }
 
 func TestAddedKeyCanItselfAuthorizeAChange(t *testing.T) {
 	f, root, rootPriv := seeded(t)
-	_, serial := f.OperatorKeys()
+	_, serial := f.OperatorKeysLocal()
 	second, secondPriv := opKey(t, "second")
 
 	if err, _ := f.applyOperatorKeyChange(signedChange(t,
@@ -320,7 +320,7 @@ func TestAddedKeyCanItselfAuthorizeAChange(t *testing.T) {
 	)).(error); err != nil {
 		t.Fatalf("add second: %v", err)
 	}
-	_, serial = f.OperatorKeys()
+	_, serial = f.OperatorKeysLocal()
 
 	// The point of an ADD is that the installed key WORKS. Counting keys
 	// does not prove that - an ADD that stored an empty record would keep
@@ -338,21 +338,21 @@ func TestAddedKeyCanItselfAuthorizeAChange(t *testing.T) {
 	)).(error); err != nil {
 		t.Fatalf("a change authorized by the newly added key was refused: %v", err)
 	}
-	if f.OperatorKeyCount() != 3 {
-		t.Fatalf("registry holds %d keys, want 3", f.OperatorKeyCount())
+	if f.OperatorKeyCountLocal() != 3 {
+		t.Fatalf("registry holds %d keys, want 3", f.OperatorKeyCountLocal())
 	}
 }
 
 func TestRemoveBumpsTheSerial(t *testing.T) {
 	f, root, priv := seeded(t)
-	_, serial := f.OperatorKeys()
+	_, serial := f.OperatorKeysLocal()
 	second, _ := opKey(t, "second")
 	if err, _ := f.applyOperatorKeyChange(signedChange(t,
 		goblinv1.OperatorKeyOp_OPERATOR_KEY_OP_ADD, second, serial, root.GetKeyId(), priv,
 	)).(error); err != nil {
 		t.Fatalf("add: %v", err)
 	}
-	_, afterAdd := f.OperatorKeys()
+	_, afterAdd := f.OperatorKeysLocal()
 
 	if err, _ := f.applyOperatorKeyChange(signedChange(t,
 		goblinv1.OperatorKeyOp_OPERATOR_KEY_OP_REMOVE,
@@ -366,7 +366,7 @@ func TestRemoveBumpsTheSerial(t *testing.T) {
 	// bump. Assert it directly: without it, a change captured at afterAdd
 	// stays valid once the remove has landed, and "valid at exactly one
 	// serial" is no longer true.
-	_, afterRemove := f.OperatorKeys()
+	_, afterRemove := f.OperatorKeysLocal()
 	if afterRemove != afterAdd+1 {
 		t.Fatalf("serial = %d after remove, want %d", afterRemove, afterAdd+1)
 	}
@@ -374,14 +374,14 @@ func TestRemoveBumpsTheSerial(t *testing.T) {
 
 func TestRemovingAnUnregisteredKeyIsRefused(t *testing.T) {
 	f, root, priv := seeded(t)
-	_, serial := f.OperatorKeys()
+	_, serial := f.OperatorKeysLocal()
 	second, _ := opKey(t, "second")
 	if err, _ := f.applyOperatorKeyChange(signedChange(t,
 		goblinv1.OperatorKeyOp_OPERATOR_KEY_OP_ADD, second, serial, root.GetKeyId(), priv,
 	)).(error); err != nil {
 		t.Fatalf("add: %v", err)
 	}
-	_, serial = f.OperatorKeys()
+	_, serial = f.OperatorKeysLocal()
 	stranger, _ := opKey(t, "stranger")
 
 	// Without the exists guard this falls through to a delete that removes
@@ -394,17 +394,17 @@ func TestRemovingAnUnregisteredKeyIsRefused(t *testing.T) {
 	if err == nil {
 		t.Fatal("removing an unregistered key was accepted")
 	}
-	if f.OperatorKeyCount() != 2 {
-		t.Fatalf("registry holds %d keys after a refused remove, want 2", f.OperatorKeyCount())
+	if f.OperatorKeyCountLocal() != 2 {
+		t.Fatalf("registry holds %d keys after a refused remove, want 2", f.OperatorKeyCountLocal())
 	}
-	if _, after := f.OperatorKeys(); after != serial {
+	if _, after := f.OperatorKeysLocal(); after != serial {
 		t.Fatalf("a refused remove bumped the serial to %d, want %d", after, serial)
 	}
 }
 
 func TestAddingAMalformedKeyIsRefused(t *testing.T) {
 	f, root, priv := seeded(t)
-	_, serial := f.OperatorKeys()
+	_, serial := f.OperatorKeysLocal()
 	bad, _ := opKey(t, "bad")
 	bad.KeyId = "0000000000000000000000000000000000000000000000000000000000000000"
 
@@ -419,17 +419,17 @@ func TestAddingAMalformedKeyIsRefused(t *testing.T) {
 	if !errors.Is(err, capability.ErrOperatorKeyMalformed) {
 		t.Fatalf("adding a key whose id lies about its bytes = %v, want ErrOperatorKeyMalformed", err)
 	}
-	if f.OperatorKeyCount() != 1 {
-		t.Fatalf("a refused add installed a key (now %d)", f.OperatorKeyCount())
+	if f.OperatorKeyCountLocal() != 1 {
+		t.Fatalf("a refused add installed a key (now %d)", f.OperatorKeyCountLocal())
 	}
-	if _, after := f.OperatorKeys(); after != serial {
+	if _, after := f.OperatorKeysLocal(); after != serial {
 		t.Fatalf("a refused add bumped the serial to %d, want %d", after, serial)
 	}
 }
 
 func TestReAddingARegisteredKeyIsANoOpThatDoesNotBumpTheSerial(t *testing.T) {
 	f, root, priv := seeded(t)
-	_, serial := f.OperatorKeys()
+	_, serial := f.OperatorKeysLocal()
 
 	// key_id is derived from the bytes, so a matching id guarantees
 	// matching bytes - this is a true no-op, not a silent key swap. It must
@@ -440,10 +440,10 @@ func TestReAddingARegisteredKeyIsANoOpThatDoesNotBumpTheSerial(t *testing.T) {
 	)).(error); err != nil {
 		t.Fatalf("re-adding a registered key: %v", err)
 	}
-	if f.OperatorKeyCount() != 1 {
-		t.Fatalf("registry holds %d keys after a no-op add, want 1", f.OperatorKeyCount())
+	if f.OperatorKeyCountLocal() != 1 {
+		t.Fatalf("registry holds %d keys after a no-op add, want 1", f.OperatorKeyCountLocal())
 	}
-	if _, after := f.OperatorKeys(); after != serial {
+	if _, after := f.OperatorKeysLocal(); after != serial {
 		t.Fatalf("a no-op add bumped the serial from %d to %d", serial, after)
 	}
 }
