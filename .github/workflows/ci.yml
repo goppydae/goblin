@@ -1,5 +1,16 @@
 name: Continuous Integration
 
+# Every target runs under mage -v so the log names each dependency as it
+# fires. Without it the run is silent about whether checkHermetic,
+# checkTerminology or checkFileLength gated anything - three gates whose
+# presence is otherwise indistinguishable from their absence, since a
+# wired dependency and a deleted one produce the same green.
+#
+# This makes the wiring VISIBLE, not enforced. Nothing asserts on the
+# line, so removing an mg.Deps still goes green; the log merely records
+# what happened instead of staying silent. That residual is recorded in
+# GOBLIN-DIV-045 and GOBLIN-DIV-046.
+
 on:
   push:
     branches: [ main ]
@@ -39,7 +50,7 @@ jobs:
 
       - name: Compile System Binaries
         working-directory: goblin
-        run: nix develop -c mage build
+        run: nix develop -c mage -v build
 
       # The Magefile has carried a govulncheck target since the build
       # library landed, but no workflow ever called it, so CVE drift
@@ -48,7 +59,7 @@ jobs:
       # vulnerability this code actually reaches.
       - name: Audit Dependencies for Reachable CVEs
         working-directory: goblin
-        run: nix develop -c mage vuln
+        run: nix develop -c mage -v vuln
 
       # Was 'go test -v ./...', which silently dropped the -race flag the
       # mage target carries (GOBLIN-DIV-035). GOBLIN-DIV-002 records
@@ -56,7 +67,7 @@ jobs:
       # the raw tool put that back out of reach.
       - name: Execute System Tests
         working-directory: goblin
-        run: nix develop -c mage test
+        run: nix develop -c mage -v test
 
   no-replace-module-resolution:
     # Proves the ledger exit for the first tagged release: the module
@@ -145,7 +156,7 @@ jobs:
             echo "::warning::schema-reset label present: buf breaking SKIPPED for this operator-approved wire break"
             export PROTO_BREAKING_SKIP=1
           fi
-          nix develop -c mage proto
+          nix develop -c mage -v proto
 
       # 'mage proto' regenerates into proto/. If the committed output
       # differs from what the pinned plugins produce, the tree is stale
@@ -208,17 +219,17 @@ jobs:
       # against it in the divergence ledger.
       - name: Validate Dev Shell Against Ecosystem Pins
         working-directory: goblin
-        run: nix develop -c mage doctor
+        run: nix develop -c mage -v doctor
 
       - name: Detect Tool Skew Across Sibling Shells
         working-directory: goblin
-        run: nix develop -c mage envcheck
+        run: nix develop -c mage -v envcheck
 
       # Needs ../magelib for the shared golangci-lint config, which is why
       # it is here and not in ecosystem-gates.
       - name: Lint Gate (gofmt, golangci-lint, gosec)
         working-directory: goblin
-        run: nix develop -c mage lint
+        run: nix develop -c mage -v lint
 
   cluster-e2e:
     # The 3-node e2e sits behind the 'cluster' build tag, so 'mage test'
@@ -260,4 +271,4 @@ jobs:
 
       - name: Execute 3-Node Cluster E2E
         working-directory: goblin
-        run: nix develop -c mage testCluster
+        run: nix develop -c mage -v testCluster
