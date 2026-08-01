@@ -1,0 +1,91 @@
+name: VM Checks
+
+# The privileged gate, deliberately OFF the pull-request path.
+#
+# These suites need CAP_CHECKPOINT_RESTORE and a real kernel, so they run
+# in NixOS guests (GOBLIN-DIV-037). They are also the slowest thing this
+# repo builds - roughly ten minutes against three for everything else -
+# and while they gated pull requests they set the floor on merge latency
+# for every change, including ones that cannot possibly affect them.
+#
+# WHY TWO TRIGGERS, not just a nightly. A nightly alone lets a regression
+# sit for up to a day and then implicates every commit merged since; a
+# push-to-main run catches it minutes after the merge that caused it,
+# attributable to one squashed commit and cheap to revert under linear
+# history. The nightly adds what push-to-main cannot: repetition. Both
+# defects this gate has found so far - GOBLIN-DIV-048 and
+# GOBLIN-DIV-049 - are races, and races are found by sampling, not by one
+# run per merge.
+#
+# WHAT THIS COSTS, stated rather than discovered. A defect can now merge
+# and be caught afterwards instead of being blocked at review. That is a
+# real weakening, accepted for latency, and it means a green pull request
+# no longer implies the VM suites passed. It also means "Privileged VM
+# Checks" must NOT be a required status check: a required context that
+# never reports on a pull request blocks it forever.
+on:
+  push:
+    branches: [ main ]
+  schedule:
+    # 06:00 UTC daily. GitHub disables scheduled workflows on a repository
+    # with no activity for 60 days, so a long quiet period silently stops
+    # this - which is the failure mode this whole file exists to avoid,
+    # recorded here so a future reader checks it rather than assumes.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  vm-checks:
+    name: Privileged VM Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Workspace (Goblin)
+        uses: actions/checkout@v4
+
+      # No sibling checkout: the flake builds through vendor/ with
+      # GOWORK=off, the same resolution the no-replace job proves.
+
+      - name: Synchronize Environment (Nix)
+        uses: cachix/install-nix-action@v24
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      # GitHub's Linux runners ship /dev/kvm but leave it owned by a group
+      # the runner user is not in, so QEMU falls back to software
+      # emulation and the guests take minutes instead of seconds.
+      - name: Open /dev/kvm to the Runner
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
+      # --max-jobs 1 serializes the guests. nix builds derivations in
+      # parallel and each of these boots a VM: on a 4-vCPU runner two
+      # guests starting at once oversubscribes the host with its own
+      # hypervisor. Measured on runs 30721840066 and 30722901095 -
+      # TestClusterEndToEnd took 61.8s contended against 2.1s serialized,
+      # against a 5s placement target.
+      #
+      # pipefail because tee would otherwise swallow a nonzero exit and
+      # report a failing suite as green.
+      - name: Execute NixOS VM Checks
+        run: |
+          set -o pipefail
+          nix flake check --print-build-logs --max-jobs 1 2>&1 | tee vm-checks.log
+
+      # Uploaded on success as well as failure, and this is not
+      # belt-and-braces. Re-running a failed job REPLACES its conclusion,
+      # so a failure that is rerun before anyone reads it leaves no trace
+      # in the run history at all - GAPI-DIV-043 documented that and this
+      # repo then demonstrated it twice in one day. Nobody is watching at
+      # 06:00, so the log has to survive without a reader. The passing
+      # runs are kept as the baseline to diff a failure against.
+      - name: Preserve the VM check log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vm-checks-${{ github.run_id }}-${{ github.run_attempt }}
+          path: vm-checks.log
+          retention-days: 30
