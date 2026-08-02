@@ -24,6 +24,12 @@ import (
 
 const migrationTarget = 90 * time.Second
 
+// readinessTarget bounds the wait for a destination to apply the
+// operator key registry. Generous against a loaded CI guest, but
+// bounded: a destination that never catches up is a defect, and the
+// timeout's message names the raft indices that say which one.
+const readinessTarget = 30 * time.Second
+
 // migrateInstance drives the operator-facing verb through the leader.
 func (c *testCluster) migrateInstance(node *clusterNode, instanceID, toNode string) (*goblinv1.MigrateInstanceResponse, error) {
 	c.t.Helper()
@@ -87,6 +93,17 @@ func TestTwoNodeLiveMigration(t *testing.T) {
 		t.Fatalf("no second node to migrate to; instance is on %s", sourceNode)
 	}
 	t.Logf("migrating instance %s: %s -> %s", instanceID, sourceNode, destNode)
+
+	// The destination must have APPLIED the operator key registry, not
+	// merely joined. waitLeader is satisfied by serf membership plus an
+	// election, and the registry arrives through the raft log; without
+	// this the test raced a ~300ms replication window and failed on a
+	// refusal that was CORRECT (GOBLIN-DIV-059).
+	ready, err := c.waitMigrationReady(c.nodes[destNode], instanceID, readinessTarget)
+	if err != nil {
+		t.Fatalf("destination not ready before migrating: %v", err)
+	}
+	t.Logf("%s ready to accept in %s", destNode, ready)
 
 	resp, err := c.migrateInstance(leader, instanceID, destNode)
 	if err != nil {
