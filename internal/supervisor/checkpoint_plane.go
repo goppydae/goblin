@@ -30,7 +30,8 @@ import (
 // is the entire address space of a running process. It fails closed on
 // every path: no token, unverifiable token, wrong right, or a token
 // minted for a different subject.
-func checkpointAuthorizer(resolver gapicrypto.KeyResolver, log *slog.Logger) migration.Authorizer {
+func checkpointAuthorizer(resolver gapicrypto.KeyResolver, revocations *capability.Revocations,
+	log *slog.Logger) migration.Authorizer {
 	return func(token, instanceUUID []byte) error {
 		if len(token) == 0 {
 			return fmt.Errorf("checkpoint fetch: no capability token presented")
@@ -47,6 +48,21 @@ func checkpointAuthorizer(resolver gapicrypto.KeyResolver, log *slog.Logger) mig
 		payload, err := gapicrypto.VerifyCapabilityToken(&tok, resolver, time.Now(), right)
 		if err != nil {
 			return fmt.Errorf("checkpoint fetch: %w", err)
+		}
+
+		// Revocation, checked HERE because this is the only path where a
+		// capability token crosses a trust boundary: the token arrives
+		// from the destination node, where signal_rpc and authorize both
+		// mint one locally and inspect it a line later. A freshly minted
+		// UUIDv7 can never be in the filter, so those two checks are
+		// inert by construction and this one is not (GOBLIN-DIV-015).
+		//
+		// It runs before subject binding on purpose. A revoked token has
+		// no business being considered for any subject, and ordering the
+		// cheap categorical test first keeps the expensive comparison off
+		// tokens already known bad.
+		if revocations != nil && revocations.IsRevoked(payload.GetTokenId()) {
+			return fmt.Errorf("checkpoint fetch: capability token %x is revoked", payload.GetTokenId())
 		}
 
 		// Subject binding. Without this a token legitimately issued to

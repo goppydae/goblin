@@ -8,10 +8,14 @@ import (
 	"strings"
 	"time"
 
+	"log/slog"
+
 	gapicrypto "github.com/goppydae/gapi/core/crypto"
 	"github.com/goppydae/goblin/internal/ident"
 	goblinv1 "github.com/goppydae/goblin/proto"
 	"github.com/hashicorp/serf/serf"
+
+	"github.com/goppydae/goblin/internal/logattr"
 )
 
 // memberTagLister is the slice of membership the signal path needs;
@@ -46,13 +50,17 @@ func (s *SchedulerRPC) SignalAgentInstance(req *goblinv1.SignalAgentInstanceRequ
 	if err != nil {
 		return err
 	}
-	tok, tokenID, err := s.issuer.Issue(instUUID, right, 0)
+	tok, _, err := s.issuer.Issue(instUUID, right, 0)
 	if err != nil {
 		return fmt.Errorf("issue capability token: %w", err)
 	}
-	if s.revocations.IsRevoked(tokenID) {
-		return fmt.Errorf("capability token %s is revoked", ident.String(tokenID))
-	}
+	// Revocation is deliberately NOT consulted here. This token was
+	// minted on the line above, so its UUIDv7 cannot be in the
+	// filter; a check would be inert by construction and would
+	// suggest to a reader that revocation is enforced on this path.
+	// It is enforced where a token actually crosses a trust
+	// boundary - checkpointAuthorizer, which receives one from
+	// another node (GOBLIN-DIV-015).
 	payload, err := gapicrypto.VerifyCapabilityToken(tok, s.capabilityKeyResolver(), time.Now(), right)
 	if err != nil {
 		return fmt.Errorf("verify capability token: %w", err)
@@ -66,6 +74,26 @@ func (s *SchedulerRPC) SignalAgentInstance(req *goblinv1.SignalAgentInstanceRequ
 	})
 	if err != nil {
 		return fmt.Errorf("signal authorization: %w", err)
+	}
+
+	// The gossiped locator is consulted here as a DIAGNOSTIC, not as a
+	// routing decision. Raft is authoritative for placement and stays
+	// so; the locator is the observed runtime identity, and the two
+	// disagreeing means one of them is stale - which is exactly the
+	// question an operator asks when a signal goes nowhere.
+	//
+	// It deliberately does NOT enforce the incarnation. That guard
+	// already exists and is better placed: procsig.Signal rechecks the
+	// start epoch while holding a pidfd pin, on the owning node, against
+	// its own tracker - authoritative local state rather than
+	// eventually-consistent gossip (GOBLIN-DIV-015).
+	if loc, ok := s.scheduler.LookupLocator(instanceID); ok && loc.NodeID != "" && loc.NodeID != nodeID {
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn,
+			"placement and observed locator disagree; signalling the placement node",
+			logattr.AgentID(instanceID),
+			slog.String("raft_node", nodeID),
+			slog.String("observed_node", loc.NodeID),
+			slog.Uint64("observed_start_epoch", loc.StartEpoch))
 	}
 
 	if err := s.scheduler.SignalOnNode(context.Background(), nodeID, instanceID, signum); err != nil {

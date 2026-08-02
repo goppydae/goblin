@@ -142,13 +142,17 @@ func (s *SchedulerRPC) authorizeToken(verb capability.Verb, subject []byte) (*ga
 		return nil, nil, err
 	}
 
-	tok, tokenID, err := s.issuer.Issue(subject, right, 0)
+	tok, _, err := s.issuer.Issue(subject, right, 0)
 	if err != nil {
 		return nil, nil, fmt.Errorf("issue capability token for %s: %w", verb, err)
 	}
-	if s.revocations.IsRevoked(tokenID) {
-		return nil, nil, fmt.Errorf("capability token %s is revoked", ident.String(tokenID))
-	}
+	// Revocation is deliberately NOT consulted here. This token was
+	// minted on the line above, so its UUIDv7 cannot be in the
+	// filter; a check would be inert by construction and would
+	// suggest to a reader that revocation is enforced on this path.
+	// It is enforced where a token actually crosses a trust
+	// boundary - checkpointAuthorizer, which receives one from
+	// another node (GOBLIN-DIV-015).
 
 	payload, err := gapicrypto.VerifyCapabilityToken(tok, s.capabilityKeyResolver(), time.Now(), right)
 	if err != nil {
