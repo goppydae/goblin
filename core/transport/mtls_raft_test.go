@@ -125,6 +125,29 @@ func mtlsListener(t *testing.T, ca *certAuthority) *transport.SharedListener {
 	return l
 }
 
+// The two waits are deliberately asymmetric, and the asymmetry is the
+// whole point.
+//
+// admitWait bounds an event that MUST happen, so a generous budget costs
+// nothing when the code is correct and only delays reporting a genuine
+// break. Five seconds was not generous enough: this test failed on CI
+// (run 30725365624) on a 4-vCPU runner under -race, where quic-go also
+// warns it could not raise the UDP receive buffer past 2 MiB. Thirty
+// never hides a defect - a listener that refuses a valid peer refuses it
+// at any timeout.
+//
+// refuseWait bounds a NON-event, so it cannot be generous: every second
+// spent proving nothing arrived is a second added to a passing run. It
+// is short on purpose, and the cost is that a refusal test would also
+// pass against a listener that is merely very slow. That gap is covered
+// by the admit test proving the routing path works at all in the same
+// package - which is why the admit test going flaky mattered more than
+// its own failure.
+const (
+	admitWait  = 30 * time.Second
+	refuseWait = 2 * time.Second
+)
+
 // dialRaft attempts a raft-plane connection. Its error is reported for
 // diagnostics only and is deliberately NOT the assertion: a QUIC client
 // can complete its handshake, open a stream and write, all buffered
@@ -134,7 +157,7 @@ func mtlsListener(t *testing.T, ca *certAuthority) *transport.SharedListener {
 // reachedRaftPlane.
 func dialRaft(t *testing.T, addr string, ca *certAuthority, client *tls.Certificate) error {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), admitWait)
 	defer cancel()
 
 	cfg := &tls.Config{
@@ -190,7 +213,7 @@ func TestSharedListener_RefusesRaftPeerWithoutClientCert(t *testing.T) {
 	}
 
 	t.Logf("dial without client cert returned: %v", dialRaft(t, l.Addr().String(), ca, nil))
-	if reachedRaftPlane(raftCh, 2*time.Second) {
+	if reachedRaftPlane(raftCh, refuseWait) {
 		t.Fatal("a peer presenting no client certificate reached the raft plane; " +
 			"it could send InstallSnapshot and seed the operator key registry " +
 			"through FSM.Restore, which does not pass through Apply (GOBLIN-DIV-043)")
@@ -211,7 +234,7 @@ func TestSharedListener_RefusesRaftPeerWithForeignCert(t *testing.T) {
 	foreign := newCertAuthority(t)
 	cert := foreign.issue(t, "attacker")
 	t.Logf("dial with foreign cert returned: %v", dialRaft(t, l.Addr().String(), ca, &cert))
-	if reachedRaftPlane(raftCh, 2*time.Second) {
+	if reachedRaftPlane(raftCh, refuseWait) {
 		t.Fatal("a peer with a certificate from an unrelated CA reached the raft plane")
 	}
 }
@@ -230,7 +253,7 @@ func TestSharedListener_AdmitsRaftPeerWithIssuedCert(t *testing.T) {
 	if err := dialRaft(t, l.Addr().String(), ca, &cert); err != nil {
 		t.Fatalf("a peer with a CA-issued client certificate was refused: %v", err)
 	}
-	if !reachedRaftPlane(raftCh, 5*time.Second) {
+	if !reachedRaftPlane(raftCh, admitWait) {
 		t.Fatal("a peer with a CA-issued client certificate never reached the raft plane")
 	}
 }
