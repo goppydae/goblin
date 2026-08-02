@@ -124,12 +124,19 @@ pkgs.testers.runNixOSTest {
     def start_goblind(machine, node_id, ip, join=None):
         join_arg = f"--join {join}:29000" if join else ""
         machine.succeed("mkdir -p /var/lib/goblin")
+        # GOBLIN_AGENT_PATH fences discovery to the fixture dir. The name
+        # follows goblind's PRODUCT identity (GOBLIN-DIV-055); it carried
+        # the kernel's own namespace before that. Nix
+        # cannot compose it through the kernel the way the Go harness
+        # does, so nix_env_names_test.go asserts this literal against the
+        # composed name - without that, this file is the one fence site
+        # no PR-path job executes.
         machine.succeed(
-            "RUNTIME_AGENT_PATH=${bins}/agents "
+            "GOBLIN_AGENT_PATH=${bins}/agents "
             # criu on PATH, for the same reason the module sets it: a
             # transient unit does not inherit a login shell's PATH, and
             # goblind resolves criu with exec.LookPath.
-            f"systemd-run --unit=goblind-{node_id} --setenv=RUNTIME_AGENT_PATH=${bins}/agents "
+            f"systemd-run --unit=goblind-{node_id} --setenv=GOBLIN_AGENT_PATH=${bins}/agents "
             f"--setenv=PATH=${pkgs.criu}/bin:/run/current-system/sw/bin "
             f"${bins}/bin/goblind start --id {node_id} "
             # --advertise-addr is a bare HOST: the port comes from

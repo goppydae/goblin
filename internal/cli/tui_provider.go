@@ -57,7 +57,7 @@ func (c *ClusterController) FetchStatus(ctx context.Context) (_ []tui.AgentStatu
 }
 
 func (c *ClusterController) Lifecycle(ctx context.Context, id, action string) (bool, error) {
-	return false, fmt.Errorf("lifecycle operations not supported in cluster mode - use GAPI CLI for agent management")
+	return false, fmt.Errorf("lifecycle operations are not supported in cluster mode - use `goblinctl agent` for node-local agent management")
 }
 
 func (c *ClusterController) GetLogs(ctx context.Context, id string) (<-chan string, error) {

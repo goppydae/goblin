@@ -4,31 +4,40 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/goppydae/gapi/core/product"
 )
 
 // AgentSearchPaths returns the ordered list of directories to search for agents.
 // Paths are searched in order, with earlier paths taking precedence.
 //
-// Priority order (highest to lowest):
-//  1. Development paths (GAPI_DEV_AGENTS, ./agents)
-//  2. User paths (XDG_DATA_HOME/gapi/agents, ~/.local/share/gapi/agents, ~/.gapi/agents)
-//  3. System paths (/usr/local/lib/gapi/agents, /usr/lib/gapi/agents)
+// Every directory below is namespaced by the PRODUCT rather than by the
+// kernel (GAPI-DIV-061): gapid searches /usr/lib/gapi/agents, goblind
+// searches /usr/lib/goblin/agents. This function is reached inside
+// goblind through agentmgr's discovery, so it is one of the four kernel
+// surfaces an operator who has never heard of gapi would otherwise meet.
+//
+// Priority order (highest to lowest), with <p> the product name:
+//  1. Development paths (<PREFIX>_DEV_AGENTS, ./agents)
+//  2. User paths (XDG_DATA_HOME/<p>/agents, ~/.local/share/<p>/agents, ~/.<p>/agents)
+//  3. System paths (/usr/local/lib/<p>/agents, /usr/lib/<p>/agents, /etc/<p>/agents)
 //
 // Environment variable overrides:
-//   - GAPI_AGENT_PATH: Replaces entire search path (colon-separated)
-//   - GAPI_DEV_AGENTS: Adds development path (highest priority)
-//   - GAPI_SKIP_SYSTEM_AGENTS: Skip system paths if set to "1" or "true"
+//   - <PREFIX>_AGENT_PATH: Replaces entire search path (colon-separated)
+//   - <PREFIX>_DEV_AGENTS: Adds development path (highest priority)
+//   - <PREFIX>_SKIP_SYSTEM_AGENTS: Skip system paths if set to "1" or "true"
 func AgentSearchPaths() []string {
-	// If RUNTIME_AGENT_PATH is set, use it exclusively
-	if customPath := os.Getenv("RUNTIME_AGENT_PATH"); customPath != "" {
+	// If <PREFIX>_AGENT_PATH is set, use it exclusively
+	if customPath := os.Getenv(product.EnvKey("AGENT_PATH")); customPath != "" {
 		return strings.Split(customPath, ":")
 	}
 
 	var paths []string
-	skipSystem := os.Getenv("RUNTIME_SKIP_SYSTEM_AGENTS") == "1" || os.Getenv("RUNTIME_SKIP_SYSTEM_AGENTS") == "true"
+	skipSystem := os.Getenv(product.EnvKey("SKIP_SYSTEM_AGENTS")) == "1" ||
+		os.Getenv(product.EnvKey("SKIP_SYSTEM_AGENTS")) == "true"
 
 	// 1. Development paths (highest priority)
-	if devPath := os.Getenv("RUNTIME_DEV_AGENTS"); devPath != "" {
+	if devPath := os.Getenv(product.EnvKey("DEV_AGENTS")); devPath != "" {
 		paths = append(paths, devPath)
 	}
 
@@ -47,18 +56,18 @@ func AgentSearchPaths() []string {
 	}
 
 	// 2. User paths
-	// XDG_DATA_HOME/gapi/agents
+	// XDG_DATA_HOME/<product>/agents
 	if xdgData := os.Getenv("XDG_DATA_HOME"); xdgData != "" {
-		paths = append(paths, filepath.Join(xdgData, "gapi", "agents"))
+		paths = append(paths, filepath.Join(xdgData, product.Name(), "agents"))
 	} else if home := os.Getenv("HOME"); home != "" {
-		// Fallback: ~/.local/share/gapi/agents
-		paths = append(paths, filepath.Join(home, ".local", "share", "gapi", "agents"))
+		// Fallback: ~/.local/share/<product>/agents
+		paths = append(paths, filepath.Join(home, ".local", "share", product.Name(), "agents"))
 	}
 
-	// Legacy fallback: ~/.gapi/agents. os.UserHomeDir (not raw $HOME) so
-	// the probed path is anchored at the platform home directory.
+	// Legacy fallback: ~/.<product>/agents. os.UserHomeDir (not raw $HOME)
+	// so the probed path is anchored at the platform home directory.
 	if home, err := os.UserHomeDir(); err == nil {
-		legacyPath := filepath.Join(home, ".gapi", "agents")
+		legacyPath := filepath.Join(home, "."+product.Name(), "agents")
 		if _, err := os.Stat(legacyPath); err == nil {
 			paths = append(paths, legacyPath)
 		}
@@ -66,18 +75,27 @@ func AgentSearchPaths() []string {
 
 	// 3. System paths (lowest priority)
 	if !skipSystem {
-		paths = append(paths,
-			"/usr/local/lib/gapi/agents",
-			"/usr/lib/gapi/agents",
-		)
+		paths = append(paths, systemAgentDirs()...)
 
-		// Optional: /etc/gapi/agents
-		if _, err := os.Stat("/etc/gapi/agents"); err == nil {
-			paths = append(paths, "/etc/gapi/agents")
+		// Optional: /etc/<product>/agents
+		etcAgents := filepath.Join(product.ConfigDir(), "agents")
+		if _, err := os.Stat(etcAgents); err == nil {
+			paths = append(paths, etcAgents)
 		}
 	}
 
 	return paths
+}
+
+// systemAgentDirs are the package-manager-owned agent directories, in
+// search order. Shared with ClassifyPath so the set a path is CLASSIFIED
+// against cannot drift from the set that is SEARCHED - they were two
+// literal lists that disagreed about /etc before GAPI-DIV-061.
+func systemAgentDirs() []string {
+	return []string{
+		filepath.Join("/usr/local/lib", product.Name(), "agents"),
+		filepath.Join("/usr/lib", product.Name(), "agents"),
+	}
 }
 
 // PathType represents the type of agent path
@@ -103,18 +121,14 @@ func ClassifyPath(path string) PathType {
 		}
 	}
 
-	if devPath := os.Getenv("RUNTIME_DEV_AGENTS"); devPath != "" {
+	if devPath := os.Getenv(product.EnvKey("DEV_AGENTS")); devPath != "" {
 		if strings.HasPrefix(absPath, devPath) {
 			return PathTypeDevelopment
 		}
 	}
 
 	// Check if it's a system path
-	systemPrefixes := []string{
-		"/usr/lib/gapi/agents",
-		"/usr/local/lib/gapi/agents",
-		"/etc/gapi/agents",
-	}
+	systemPrefixes := append(systemAgentDirs(), filepath.Join(product.ConfigDir(), "agents"))
 
 	for _, prefix := range systemPrefixes {
 		if strings.HasPrefix(absPath, prefix) {

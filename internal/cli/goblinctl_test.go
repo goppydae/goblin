@@ -28,7 +28,7 @@ import (
 // run and would make a later assertion pass for the wrong reason.
 func freshRoot() *cobra.Command {
 	root, _ := gapicli.NewControlRoot(
-		"goblinctl", version.Version, "Goblin distributed supervisor control")
+		"goblin", "goblinctl", version.Version, "Goblin distributed supervisor control")
 	return root
 }
 

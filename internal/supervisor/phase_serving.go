@@ -130,7 +130,7 @@ func (s *Supervisor) startRPC(ctx context.Context, st *runState) error {
 	}
 	gapiConns, err := st.sharedLn.Register(transport.ALPNGapiQUIC)
 	if err != nil {
-		return fmt.Errorf("register gapi plane: %w", err)
+		return fmt.Errorf("register agent event plane: %w", err)
 	}
 	// Checkpoint image transfer. Registering the ALPN in the registry
 	// only advertises it; without an adapter the router refuses the
@@ -163,7 +163,7 @@ func (s *Supervisor) startRPC(ctx context.Context, st *runState) error {
 			}
 		}
 	})
-	s.loops.spawn(tierRun, "gapi-accept", func() {
+	s.loops.spawn(tierRun, "agent-event-accept", func() {
 		for {
 			select {
 			case <-ctx.Done():
@@ -176,7 +176,7 @@ func (s *Supervisor) startRPC(ctx context.Context, st *runState) error {
 			}
 		}
 	})
-	slog.Default().LogAttrs(ctx, slog.LevelInfo, "rpc and gapi planes attached to control-plane listener")
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "rpc and agent event planes attached to control-plane listener")
 	return nil
 }
 

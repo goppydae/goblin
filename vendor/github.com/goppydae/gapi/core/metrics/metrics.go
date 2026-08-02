@@ -21,12 +21,21 @@ func Handler() http.Handler {
 	return promhttp.HandlerFor(Registry, promhttp.HandlerOpts{})
 }
 
+// The gapi_ metric NAMES below are deliberately not product-namespaced,
+// and this is an exclusion rather than an oversight (GAPI-DIV-061).
+//
+// A metric name is scraped: it is referenced by dashboards, recording
+// rules and alerts that live outside this repo, so renaming one breaks
+// consumers exactly the way renaming an ALPN or a protobuf package
+// would. They belong to the WIRE class. The HELP text next to them does
+// not - nobody alerts on help text - which is why the two lines that
+// spelled the vendor there now name the role instead.
 var (
 	// Build Info
 	BuildInfo = factory.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "gapi_build_info",
-			Help: "GAPI build information",
+			Help: "Supervisor build information",
 		},
 		[]string{"version", "commit", "go_version"},
 	)
@@ -35,7 +44,7 @@ var (
 	SupervisorUptime = factory.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "gapi_supervisor_uptime_seconds",
-			Help: "GAPI supervisor uptime in seconds",
+			Help: "Supervisor uptime in seconds",
 		},
 	)
 

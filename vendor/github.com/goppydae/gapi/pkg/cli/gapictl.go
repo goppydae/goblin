@@ -12,6 +12,7 @@ import (
 
 	"github.com/goppydae/gapi/core/client"
 	"github.com/goppydae/gapi/core/config"
+	"github.com/goppydae/gapi/core/product"
 	"github.com/goppydae/gapi/core/tui"
 	"github.com/goppydae/gapi/core/version"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
@@ -19,19 +20,30 @@ import (
 
 // rootCmd is the process-wide gapictl root. It is a singleton because
 // GetRoot() hands it to the orchestrator for embedding, but it is BUILT
-// by NewControlRoot rather than declared as a literal - so a test can
-// construct an independent one and compare the two flag sets.
+// by the shared constructor rather than declared as a literal - so a
+// test can construct an independent one and compare the two flag sets.
 // Package-level initialization rather than init(): Go orders variable
 // initializers before any init() in the package, so the subcommand
 // registrations below cannot run against a nil root. Two init()s in one
 // file would have worked only by source order.
-var rootCmd, controlFlags = NewGapictlRoot()
+//
+// It goes through newControlTree, which does NOT claim the process's
+// product identity. This initializer runs inside goblind and goblinctl
+// too - they import this package - and setting "gapi" there would give
+// every embedder a working default for a value that is required to have
+// none (GAPI-DIV-061). gapictl declares itself in Execute() instead.
+var rootCmd, controlFlags = newControlTree(
+	"gapictl", version.BinaryVersion(), "Supervision kernel control CLI")
 
-// NewGapictlRoot builds a fresh gapictl root. Exported so the parity
-// test - and the orchestrator, which embeds this tree - can construct
-// one without depending on package initialization order.
+// NewGapictlRoot builds a fresh gapictl root, declaring the product.
+// Exported so the parity test can construct one without depending on
+// package initialization order.
+//
+// The orchestrator embeds this tree through GetRoot(), NOT through this
+// constructor: goblinctl mounting the kernel's verbs under `agent` is
+// not goblinctl becoming gapi.
 func NewGapictlRoot() (*cobra.Command, *ControlFlags) {
-	return NewControlRoot("gapictl", version.BinaryVersion(), "Runtime Control CLI")
+	return NewControlRoot("gapi", "gapictl", version.BinaryVersion(), "Supervision kernel control CLI")
 }
 
 // controlConfig loads configuration and applies the control root's
@@ -70,7 +82,14 @@ func applyControlFlags(cfg *config.Config) {
 
 // Execute runs the root command. Bare invocation prints help and
 // returns ErrNoCommand so the process exits non-zero (cli-contract.md).
+//
+// This is where gapictl declares its product, because this is where
+// gapictl's PROCESS begins - package initialization is not that point,
+// since goblinctl runs it too. Set before RunRoot: every control verb
+// resolves config through controlConfig(), which reads the environment
+// namespace and the search path (GAPI-DIV-061).
 func Execute() error {
+	product.Set("gapi")
 	return RunRoot(rootCmd, os.Args[1:])
 }
 
@@ -82,7 +101,7 @@ func GetRoot() *cobra.Command {
 // ping
 var pingCmd = &cobra.Command{
 	Use:   "ping",
-	Short: "Ping gapid",
+	Short: "Ping the daemon",
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg, _ := controlConfig()
 		c, err := client.New(cfg)

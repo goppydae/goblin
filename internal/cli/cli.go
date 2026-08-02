@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
@@ -22,8 +23,12 @@ import (
 // It also supplies the identity surface: `version`, `--version` and `-v`
 // all render core/version.Summary(), and the block names the binary
 // rather than printing cobra's anonymous one-liner (GOBLIN-DIV-052).
+// The leading "goblin" is the product this process belongs to, and the
+// control binary must agree with its daemon about it: goblinctl resolves
+// the same environment namespace and the same config search path that
+// goblind writes (GOBLIN-DIV-055).
 var RootCmd, controlFlags = gapicli.NewControlRoot(
-	"goblinctl", version.Version, "Goblin distributed supervisor control")
+	"goblin", "goblinctl", version.Version, "Goblin distributed supervisor control")
 
 // defaultAPIAddr is goblind's default listen address, and it lives here
 // because the shared --api-addr default is EMPTY.
@@ -117,18 +122,19 @@ func init() {
 	// control binary and not its peer is what the shared registrar
 	// exists to prevent.
 
-	// Create agent subcommand for GAPI operations
+	// Node-local agent verbs, supplied by the embedded kernel.
 	agentCmd := &cobra.Command{
 		Use:   "agent",
 		Short: "Local agent management operations",
 	}
 	RootCmd.AddCommand(agentCmd)
 
-	// Mount GAPI Commands under agent subcommand
+	// Mount the kernel's agent verbs under `agent`.
 	for _, cmd := range gapicli.GetRoot().Commands() {
 		if cmd.Name() == "agent" {
 			// Flatten GAPI's agent namespace into Goblin's agent namespace
 			for _, sub := range cmd.Commands() {
+				rebrandMounted(sub)
 				agentCmd.AddCommand(sub)
 			}
 			continue
@@ -153,6 +159,7 @@ func init() {
 			// one output is a surface to keep in step for no benefit.
 			continue
 		}
+		rebrandMounted(cmd)
 		agentCmd.AddCommand(cmd)
 	}
 }
@@ -375,4 +382,28 @@ var tuiCmd = &cobra.Command{
 		ctrl := NewUnifiedController(controlAddr(), controlAddr())
 		return tui.Run(ctrl)
 	},
+}
+
+// rebrandMounted rewrites a mounted command's help so its examples name
+// the binary the operator actually invoked.
+//
+// The kernel's verbs carry examples written for gapictl - "gapictl agent
+// build ...". Mounted here they run as "goblinctl agent build ...", so
+// printed verbatim they instruct an operator to use a binary that is not
+// part of their installation, and the example does not work as written
+// (GOBLIN-DIV-056).
+//
+// Rewriting at MOUNT time rather than fixing the strings in the kernel is
+// what makes this correct in both products: gapictl keeps examples that
+// name gapictl, goblinctl shows examples that name goblinctl, from one
+// definition. The flattening in the loop above lines the paths up
+// exactly - the kernel's `agent build` becomes goblinctl's `agent build`
+// - so substituting the binary name is the whole transformation.
+func rebrandMounted(cmd *cobra.Command) {
+	const from, to = "gapictl ", "goblinctl "
+	cmd.Long = strings.ReplaceAll(cmd.Long, from, to)
+	cmd.Example = strings.ReplaceAll(cmd.Example, from, to)
+	for _, sub := range cmd.Commands() {
+		rebrandMounted(sub)
+	}
 }

@@ -3,6 +3,8 @@ package logging
 import (
 	"fmt"
 	"os"
+
+	"github.com/goppydae/gapi/core/product"
 )
 
 // kmsg priorities (syslog levels used by /dev/kmsg).
@@ -35,7 +37,10 @@ func NewKmsg(path string) *Kmsg {
 
 // Log writes one prioritized line, truncated to the kmsg limit.
 func (k *Kmsg) Log(priority int, msg string) {
-	line := fmt.Sprintf("<%d>gapid: %s", priority, msg)
+	// The tag follows the DAEMON, not the kernel: an operator running
+	// `goblind --pid1` reads "goblind:" in dmesg, not the name of a
+	// library they were never told about (GAPI-DIV-061).
+	line := fmt.Sprintf("<%d>%s: %s", priority, product.Daemon(), msg)
 	if len(line) > kmsgLineLimit {
 		line = line[:kmsgLineLimit]
 	}

@@ -135,7 +135,7 @@ func NewPythonAgent(
 			// We can't return error here easily, but we can log or set state to Error via controller later?
 			// For now, let's just log to stdout/stderr (discovery logs it)
 			// Or better, let Start() handle the error if it persists, but we try to bind now.
-			fmt.Fprintf(os.Stderr, "[gapi] agent %s: failed to eager bind %s: %v\n", id, listenStream, err)
+			fmt.Fprintf(os.Stderr, "[supervisor] agent %s: failed to eager bind %s: %v\n", id, listenStream, err)
 		}
 	}
 
@@ -276,7 +276,7 @@ func (a *PythonAgent) watchLoop(ctx context.Context, f *os.File) {
 	// Get raw FD
 	rawConn, err := f.SyscallConn()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[gapid] watchLoop SyscallConn error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[supervisor] watchLoop SyscallConn error: %v\n", err)
 		return
 	}
 
@@ -286,7 +286,7 @@ func (a *PythonAgent) watchLoop(ctx context.Context, f *os.File) {
 	})
 
 	if fd < 0 || fd > math.MaxInt32 {
-		fmt.Fprintf(os.Stderr, "[gapid] watchLoop: fd %d out of int32 range\n", fd)
+		fmt.Fprintf(os.Stderr, "[supervisor] watchLoop: fd %d out of int32 range\n", fd)
 		return
 	}
 	pollFd := []unix.PollFd{
@@ -306,7 +306,7 @@ func (a *PythonAgent) watchLoop(ctx context.Context, f *os.File) {
 			if err == unix.EINTR {
 				continue
 			}
-			fmt.Fprintf(os.Stderr, "[gapid] watchLoop Poll error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "[supervisor] watchLoop Poll error: %v\n", err)
 			return // Should we retry?
 		}
 
@@ -397,11 +397,11 @@ func (a *PythonAgent) Start(ctx context.Context) error {
 	cmd.Env = os.Environ() // start with env
 
 	if a.nextRunID != "" {
-		cmd.Env = append(cmd.Env, "RUNTIME_RUN_ID="+a.nextRunID)
+		cmd.Env = append(cmd.Env, EnvRunID+"="+a.nextRunID)
 	}
 
 	if a.productionMode {
-		cmd.Env = append(cmd.Env, "RUNTIME_REJECT_DUMMY_ADK=1")
+		cmd.Env = append(cmd.Env, EnvRejectDummy+"=1")
 	}
 
 	if len(extraFiles) > 0 {
@@ -563,7 +563,7 @@ func (a *PythonAgent) Stop(ctx context.Context) error {
 
 func (a *PythonAgent) cleanupAfterExit() {
 	if a.cpuLimit != "" || a.memLimit != "" {
-		cgName := fmt.Sprintf("gapid-%s", a.id)
+		cgName := cgroups.AgentCgroup(a.id)
 		_ = cgroups.Cleanup(cgName)
 	}
 	if a.stdout != nil {
@@ -594,7 +594,7 @@ func (a *PythonAgent) Reload(ctx context.Context) error {
 		"--module", a.path, "--id", a.id, "--type", a.typ, "--reload",
 	)
 	if a.nextRunID != "" {
-		cmd.Env = append(os.Environ(), "RUNTIME_RUN_ID="+a.nextRunID)
+		cmd.Env = append(os.Environ(), EnvRunID+"="+a.nextRunID)
 	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -775,14 +775,14 @@ func attachCgroup(id string, spec cgroups.ResourceSpec, pid int) {
 	if spec.CPU <= 0 && spec.Memory <= 0 {
 		return
 	}
-	cgName := fmt.Sprintf("gapid-%s", id)
+	cgName := cgroups.AgentCgroup(id)
 	path, err := cgroups.Create(cgName, spec)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[gapid] failed to create cgroup for %s: %v\n", id, err)
+		fmt.Fprintf(os.Stderr, "[supervisor] failed to create cgroup for %s: %v\n", id, err)
 		return
 	}
 	if err := cgroups.Add(path, pid); err != nil {
-		fmt.Fprintf(os.Stderr, "[gapid] failed to add pid to cgroup for %s: %v\n", id, err)
+		fmt.Fprintf(os.Stderr, "[supervisor] failed to add pid to cgroup for %s: %v\n", id, err)
 	}
 }
 

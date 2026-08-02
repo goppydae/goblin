@@ -59,8 +59,14 @@ type GoblindStartFlags struct {
 // - the same constraint the kernel's pkg/cli holds, and what makes the
 // root constructible by a test that must not boot a node.
 func NewGoblindRoot(start func(*cobra.Command, []string) error) (*cobra.Command, *gapicli.DaemonFlags, *GoblindStartFlags) {
+	// "goblin" is the PRODUCT, not the binary. Every host-namespaced
+	// resource the embedded kernel touches derives from it: GOBLIN_
+	// variables, /etc/goblin, /usr/lib/goblin/agents, goblind-<id>
+	// cgroups, and the "goblind:" tag an operator reads in dmesg under
+	// --pid1. Declaring it here is what makes the kernel invisible to a
+	// goblind operator (GOBLIN-DIV-055).
 	root, daemonFlags := gapicli.NewDaemonRoot(
-		"goblind", version.Version, "Goblin Distributed Supervisor Daemon", start)
+		"goblin", "goblind", version.Version, "Goblin Distributed Supervisor Daemon", start)
 
 	sf := &GoblindStartFlags{}
 	startCmd, _, err := root.Find([]string{"start"})
@@ -74,7 +80,7 @@ func NewGoblindRoot(start func(*cobra.Command, []string) error) (*cobra.Command,
 
 	// Cluster membership and control plane.
 	f.StringVar(&sf.ListenAddr, "listen-addr", "127.0.0.1:29000",
-		"Single control-plane bind address (QUIC; carries GAPI, RPC, Serf, and Raft via ALPN)")
+		"Single control-plane bind address (QUIC; carries agent events, RPC, Serf, and Raft via ALPN)")
 	f.StringVar(&sf.AdvertiseAddr, "advertise-addr", "", "Advertise address (if different from bind)")
 	f.StringVar(&sf.JoinAddr, "join", "", "Join existing cluster peer (host:port)")
 	f.IntVar(&sf.BootstrapExpect, "bootstrap-expect", 0,
@@ -92,7 +98,7 @@ func NewGoblindRoot(start func(*cobra.Command, []string) error) (*cobra.Command,
 
 	// Security.
 	f.StringVar(&sf.AgentVerifyKey, "agent-verify-key", "",
-		"Path to the Ed25519 public key for agent signature verification (falls back to $RUNTIME_VERIFY_KEY)")
+		"Path to the Ed25519 public key for agent signature verification (falls back to $GOBLIN_VERIFY_KEY)")
 	f.BoolVar(&sf.ProductionMode, "production", false,
 		"Restrict agent discovery to binaries with verified signatures")
 	f.StringArrayVar(&sf.OperatorKeyFiles, "operator-key", nil,

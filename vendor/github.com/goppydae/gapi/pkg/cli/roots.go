@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/goppydae/gapi/core/product"
 	"github.com/goppydae/gapi/core/version"
 )
 
@@ -127,7 +128,18 @@ func RegisterControlFlags(cmd *cobra.Command) *ControlFlags {
 // start is passed in rather than defined here so this package never
 // imports core/supervisor. That keeps the CLI shape importable by a test
 // - and by the orchestrator, which supplies its own start action.
-func NewDaemonRoot(name, version, short string, start func(*cobra.Command, []string) error) (*cobra.Command, *DaemonFlags) {
+//
+// productName is the PRODUCT this daemon belongs to - "gapi", "goblin" -
+// not the binary name. It is a required parameter rather than something
+// the kernel assumes, because every host-namespaced resource the
+// embedded kernel touches derives from it: the environment prefix,
+// /etc/<product>, the agent search paths, the log path, the cgroup
+// names, and the dmesg tag under --pid1 (GAPI-DIV-061). Taking it here
+// is the compile-time half of that guarantee - an embedder cannot build
+// a daemon root without naming itself. core/product.Name()'s panic is
+// the other half, for an embedder that never calls this.
+func NewDaemonRoot(productName, name, version, short string, start func(*cobra.Command, []string) error) (*cobra.Command, *DaemonFlags) {
+	product.Set(productName)
 	root := newRoot(name, version, short)
 	flags := RegisterDaemonFlags(root)
 
@@ -142,10 +154,33 @@ func NewDaemonRoot(name, version, short string, start func(*cobra.Command, []str
 // NewControlRoot builds a control root: no RunE, a version surface, and
 // the persistent control flags. A control binary never starts a daemon,
 // so it gains no start verb here or anywhere.
-func NewControlRoot(name, version, short string) (*cobra.Command, *ControlFlags) {
+//
+// productName carries the same meaning and the same requirement as on
+// NewDaemonRoot: a control binary resolves the same config file and the
+// same environment namespace as its daemon, so it must agree about which
+// product it is.
+func NewControlRoot(productName, name, version, short string) (*cobra.Command, *ControlFlags) {
+	product.Set(productName)
+	return newControlTree(name, version, short)
+}
+
+// newControlTree builds a control root WITHOUT claiming the process's
+// product identity.
+//
+// It exists for exactly one caller, gapictl's package-level singleton,
+// and the reason is an ordering trap rather than taste. That singleton
+// is constructed during THIS package's initialization, which Go runs
+// inside every binary that imports pkg/cli - including goblind and
+// goblinctl. Had it gone through NewControlRoot, every such binary would
+// have had "gapi" set before its own main ran, and core/product's
+// panic-on-unset - the whole fail-loud half of GAPI-DIV-061 - would
+// never fire for anyone.
+//
+// gapictl declares itself in Execute(), which is the point its process
+// actually starts.
+func newControlTree(name, version, short string) (*cobra.Command, *ControlFlags) {
 	root := newRoot(name, version, short)
-	flags := RegisterControlFlags(root)
-	return root, flags
+	return root, RegisterControlFlags(root)
 }
 
 // newRoot builds the shape both roles share: identity, and no RunE.
@@ -207,7 +242,7 @@ type GapidStartFlags struct {
 // The start action is a parameter, so this package still never imports
 // core/supervisor.
 func NewGapidRoot(start func(*cobra.Command, []string) error) (*cobra.Command, *DaemonFlags, *GapidStartFlags) {
-	root, daemonFlags := NewDaemonRoot("gapid", version.BinaryVersion(), "GAPI Supervisor Daemon", start)
+	root, daemonFlags := NewDaemonRoot("gapi", "gapid", version.BinaryVersion(), "Supervision kernel daemon", start)
 
 	sf := &GapidStartFlags{}
 	startCmd, _, err := root.Find([]string{"start"})

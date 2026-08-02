@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/spf13/viper"
+
+	"github.com/goppydae/gapi/core/product"
 )
 
 type TransportConfig struct {
@@ -92,14 +94,23 @@ type Config struct {
 	Supervisor SupervisorConfig `mapstructure:"supervisor"`
 }
 
-// EnvPrefix is the prefix on every environment variable that overrides a
-// config key. It is RUNTIME, not GAPI.
-const EnvPrefix = "RUNTIME"
-
-// EnvKeyFor renders a dotted config path as the environment variable that
-// overrides it: "supervisor.pid1Mode" becomes "RUNTIME_SUPERVISOR_PID1MODE".
+// EnvKeyFor renders a dotted config path as the environment variable
+// that overrides it: under gapid, "supervisor.pid1Mode" becomes
+// GAPI_SUPERVISOR_PID1MODE; under goblind, GOBLIN_SUPERVISOR_PID1MODE.
+//
+// The prefix was the literal "RUNTIME" until GAPI-DIV-059 and the
+// literal "GAPI" until GAPI-DIV-061. Neither could be chosen by the
+// process embedding the kernel, so an operator of goblind - which links
+// this package as a library - had to configure it under a name belonging
+// to a component they are not meant to know exists. It now comes from
+// core/product, set once by the binary.
+//
+// Both renames are HARD - no fallback reads an old spelling, decided by
+// the operator. A deployed RUNTIME_CONFIG or, on goblind, a deployed
+// GAPI_CONFIG therefore yields default config rather than an error,
+// which is why each carries a release note.
 func EnvKeyFor(path string) string {
-	return EnvPrefix + "_" + strings.ToUpper(strings.ReplaceAll(path, ".", "_"))
+	return product.EnvPrefix() + "_" + strings.ToUpper(strings.ReplaceAll(path, ".", "_"))
 }
 
 // bindEnvOverrides walks the config struct by its mapstructure tags and
@@ -156,14 +167,14 @@ func Load() (*Config, error) {
 	// configuration bug reproduce only in the second test.
 	v := viper.New()
 
-	if env := os.Getenv("RUNTIME_CONFIG"); env != "" {
+	if env := os.Getenv(product.EnvKey("CONFIG")); env != "" {
 		v.SetConfigFile(env)
 	} else {
 		v.SetConfigName("config")
 		v.SetConfigType("yaml")
 		addDefaultPaths(v) // uses build tag-specific implementation
 	}
-	v.SetEnvPrefix(EnvPrefix)
+	v.SetEnvPrefix(product.EnvPrefix())
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 	bindEnvOverrides(v, reflect.TypeOf(Config{}), "")
@@ -179,7 +190,7 @@ func Load() (*Config, error) {
 	v.SetDefault("logging.level", "info")
 	v.SetDefault("logging.format", "json")
 	v.SetDefault("logging.file.enabled", false)
-	v.SetDefault("logging.file.path", "/var/log/gapi/gapi.log")
+	v.SetDefault("logging.file.path", product.DefaultLogPath())
 	v.SetDefault("logging.file.maxSize", 100) // MB
 	v.SetDefault("logging.file.maxBackups", 3)
 	v.SetDefault("logging.file.maxAge", 28) // days

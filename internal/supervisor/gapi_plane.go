@@ -43,7 +43,7 @@ func handleQUICConn(conn *quic.Conn, bus eventbus.EventBus, m *cluster.Membershi
 func handleQUICStream(stream *quic.Stream, bus eventbus.EventBus, m *cluster.Membership) {
 	defer func() {
 		if err := stream.Close(); err != nil {
-			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "close gapi stream failed", logattr.Err(err))
+			slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "close agent event stream failed", logattr.Err(err))
 		}
 	}()
 
@@ -56,19 +56,19 @@ func handleQUICStream(stream *quic.Stream, bus eventbus.EventBus, m *cluster.Mem
 	l := binary.BigEndian.Uint32(lenBuf[:])
 
 	if l > gapiMaxEnvelope {
-		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "gapi message too large", logattr.Bytes(int(l)))
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "agent event message too large", logattr.Bytes(int(l)))
 		return
 	}
 
 	data := make([]byte, l)
 	if _, err := io.ReadFull(stream, data); err != nil {
-		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "failed to read gapi payload", logattr.Err(err))
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "failed to read agent event payload", logattr.Err(err))
 		return
 	}
 
 	var env protopkg.Envelope
 	if err := proto.Unmarshal(data, &env); err != nil {
-		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "failed to unmarshal gapi envelope", logattr.Err(err))
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "failed to unmarshal agent event envelope", logattr.Err(err))
 		return
 	}
 
@@ -80,7 +80,7 @@ func handleQUICStream(stream *quic.Stream, bus eventbus.EventBus, m *cluster.Mem
 		topic = env.Topic[i+1:]
 	}
 
-	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "gapi event received", logattr.Topic(env.Topic), logattr.Scope(scope), logattr.Source(env.Source))
+	slog.Default().LogAttrs(context.Background(), slog.LevelInfo, "agent event received", logattr.Topic(env.Topic), logattr.Scope(scope), logattr.Source(env.Source))
 
 	if env.Type == "event" {
 		// Convert proto payload to map for EventBus

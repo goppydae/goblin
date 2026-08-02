@@ -23,8 +23,8 @@ var templatesFS embed.FS
 
 var agentCmd = &cobra.Command{
 	Use:   "agent",
-	Short: "Manage GAPI agents",
-	Long:  "Build, sign, and manage GAPI agents across Python and Go.",
+	Short: "Manage agents",
+	Long:  "Build, sign, and manage agents across Python and Go.",
 }
 
 var agentBuildCmd = &cobra.Command{
@@ -35,7 +35,7 @@ var agentBuildCmd = &cobra.Command{
 Examples:
   gapictl agent build agents/go/foundational/init/
   gapictl agent build --watch agents/go/coordination/cluster_join/
-  gapictl agent build --sign --key=~/.gapi/signing.key agents/go/foundational/init/`,
+  gapictl agent build --sign --key=agent-signing.key agents/go/foundational/init/`,
 	Args: cobra.ExactArgs(1),
 	RunE: runAgentBuild,
 }

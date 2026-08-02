@@ -69,7 +69,7 @@ type Config struct {
 	// with verified signatures (review R20).
 	ProductionMode bool
 	// AgentVerifyKey is the path to the Ed25519 public key that verifies
-	// agent-binary signatures; falls back to $RUNTIME_VERIFY_KEY.
+	// agent-binary signatures; falls back to $GOBLIN_VERIFY_KEY.
 	AgentVerifyKey string
 	// OperatorKeyFiles are paths to hex-encoded Ed25519 public keys that
 	// bootstrap the cluster's operator registry (GOBLIN-DIV-015 piece 1).
