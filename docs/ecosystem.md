@@ -115,11 +115,11 @@ Local agent management is always on - `goblind` embeds the kernel, so
 there is no flag to enable it.
 
 ```bash
-goblind --id node1 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.1
+goblind start --id node1 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.1
 ```
 
 ```bash
-goblind --id node2 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.2 --join 10.0.0.1:29000
+goblind start --id node2 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.2 --join 10.0.0.1:29000
 ```
 
 ```bash
@@ -135,7 +135,7 @@ gapid --runtime-addr 127.0.0.1:14242
 ```
 
 ```bash
-goblind --id node1 --listen-addr 0.0.0.0:29000
+goblind start --id node1 --listen-addr 0.0.0.0:29000
 ```
 
 `goblind` still embeds its own kernel; running `gapid` alongside is for

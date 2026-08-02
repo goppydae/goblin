@@ -15,7 +15,7 @@ How to run Goblin. For the full flag and command surface, see the
 ## Single node
 
 ```bash
-./bin/goblind
+./bin/goblind start
 ```
 
 Uses the hostname as the node ID and binds `127.0.0.1:29000`. With no
@@ -27,15 +27,15 @@ Each node needs its own port and its own data directory. `--join`
 points at the first node's control-plane address.
 
 ```bash
-./bin/goblind --id node1 --listen-addr 127.0.0.1:29000 --data ./data/node1
+./bin/goblind start --id node1 --listen-addr 127.0.0.1:29000 --data ./data/node1
 ```
 
 ```bash
-./bin/goblind --id node2 --listen-addr 127.0.0.1:29001 --data ./data/node2 --join 127.0.0.1:29000
+./bin/goblind start --id node2 --listen-addr 127.0.0.1:29001 --data ./data/node2 --join 127.0.0.1:29000
 ```
 
 ```bash
-./bin/goblind --id node3 --listen-addr 127.0.0.1:29002 --data ./data/node3 --join 127.0.0.1:29000
+./bin/goblind start --id node3 --listen-addr 127.0.0.1:29002 --data ./data/node3 --join 127.0.0.1:29000
 ```
 
 ## Multi-node cluster across machines
@@ -45,11 +45,11 @@ Bind to all interfaces and advertise the address peers should dial.
 address.
 
 ```bash
-./bin/goblind --id node1 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.1 --data /var/lib/goblin/raft
+./bin/goblind start --id node1 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.1 --data /var/lib/goblin/raft
 ```
 
 ```bash
-./bin/goblind --id node2 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.2 --data /var/lib/goblin/raft --join 10.0.0.1:29000
+./bin/goblind start --id node2 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.2 --data /var/lib/goblin/raft --join 10.0.0.1:29000
 ```
 
 For a fixed set of seeds, `--bootstrap-expect N` on every seed makes

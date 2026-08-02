@@ -93,28 +93,28 @@ refuses to start in that state.
 Single node, development:
 
 ```bash
-goblind --id node-1
+goblind start --id node-1
 ```
 
 Three-node cluster. Every node advertises the one address its peers
 dial:
 
 ```bash
-goblind --id node-1 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.1 --data /var/lib/goblin/raft
+goblind start --id node-1 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.1 --data /var/lib/goblin/raft
 ```
 
 ```bash
-goblind --id node-2 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.2 --data /var/lib/goblin/raft --join 10.0.0.1:29000
+goblind start --id node-2 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.2 --data /var/lib/goblin/raft --join 10.0.0.1:29000
 ```
 
 ```bash
-goblind --id node-3 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.3 --data /var/lib/goblin/raft --join 10.0.0.1:29000
+goblind start --id node-3 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.3 --data /var/lib/goblin/raft --join 10.0.0.1:29000
 ```
 
 With TLS:
 
 ```bash
-goblind --id node-1 --tls-cert /etc/goblin/node.crt --tls-key /etc/goblin/node.key --tls-ca /etc/goblin/ca.crt
+goblind start --id node-1 --tls-cert /etc/goblin/node.crt --tls-key /etc/goblin/node.key --tls-ca /etc/goblin/ca.crt
 ```
 
 ### Agent discovery
@@ -290,9 +290,9 @@ flags only. The variables that are actually read:
 
 ```bash
 # three-node cluster
-goblind --id node-1 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.1
-goblind --id node-2 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.2 --join 10.0.0.1:29000
-goblind --id node-3 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.3 --join 10.0.0.1:29000
+goblind start --id node-1 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.1
+goblind start --id node-2 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.2 --join 10.0.0.1:29000
+goblind start --id node-3 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.3 --join 10.0.0.1:29000
 
 # inspect
 goblinctl cluster status --api-addr 10.0.0.1:29000
