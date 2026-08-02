@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"google.golang.org/protobuf/types/known/anypb"
@@ -18,6 +19,7 @@ import (
 	gapicrypto "github.com/goppydae/gapi/core/crypto"
 	gapieventbus "github.com/goppydae/gapi/core/eventbus"
 	gapilifecycle "github.com/goppydae/gapi/core/lifecycle"
+	gapiproduct "github.com/goppydae/gapi/core/product"
 	"github.com/goppydae/goblin/core/capability"
 	"github.com/goppydae/goblin/core/transport"
 	"github.com/goppydae/goblin/internal/logattr"
@@ -271,15 +273,18 @@ func (s *Supervisor) localRuntime(ctx context.Context, st *runState) error {
 	st.localBus = gapieventbus.NewInprocBus[*anypb.Any]()
 	st.lifecycleBus = (*gapilifecycle.TypedBus)(st.localBus)
 
-	pyRunnerPath := os.Getenv("RUNTIME_PY_RUNNER")
+	// Composed through the kernel's own registry rather than spelled
+	// here, so the name goblin READS cannot drift from the name the
+	// embedded kernel would read for the same key (GOBLIN-DIV-055).
+	pyRunnerPath := os.Getenv(gapiproduct.EnvKey("PY_RUNNER"))
 	if pyRunnerPath == "" {
-		pyRunnerPath = "/usr/local/bin/gapi-runner"
+		pyRunnerPath = defaultPyRunner()
 	}
 	// Verification key for production-mode signed discovery (review R20):
 	// config first, then env, mirroring the GAPI supervisor.
 	verifyKeyPath := s.cfg.AgentVerifyKey
 	if verifyKeyPath == "" {
-		verifyKeyPath = os.Getenv("RUNTIME_VERIFY_KEY")
+		verifyKeyPath = os.Getenv(gapiproduct.EnvKey("VERIFY_KEY"))
 	}
 	var verifyKey ed25519.PublicKey
 	if verifyKeyPath != "" {
@@ -303,4 +308,30 @@ func (s *Supervisor) localRuntime(ctx context.Context, st *runState) error {
 		slog.Default().LogAttrs(ctx, slog.LevelInfo, "local agent manager initialized", logattr.Count(len(discovered)))
 	}
 	return nil
+}
+
+// defaultPyRunner resolves the Python ADK runner when the environment
+// does not name one.
+//
+// It was the literal "/usr/local/bin/gapi-runner", which was wrong twice
+// over. It named the kernel to an operator installing Python agent
+// support (GOBLIN-DIV-056), and NOTHING provisions that path - not the
+// NixOS module, not the Magefile, not any document. A default nobody
+// satisfies is a mechanism built and never wired, so replacing it cannot
+// regress a working deployment: there were none resting on it.
+//
+// Resolution mirrors the kernel's own resolvePyRunner: beside the running
+// binary first, then relative to the working directory, which is what a
+// checkout looks like. Neither is guaranteed to exist, and that is
+// deliberate - the agent manager reports a missing runner when a Python
+// agent is actually started, which is the boundary where the failure is
+// attributable to something an operator did.
+func defaultPyRunner() string {
+	if exe, err := os.Executable(); err == nil {
+		cand := filepath.Join(filepath.Dir(exe), "adk", "python", "agent", "runner.py")
+		if _, err := os.Stat(cand); err == nil {
+			return cand
+		}
+	}
+	return filepath.Join("adk", "python", "agent", "runner.py")
 }

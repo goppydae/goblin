@@ -18,6 +18,7 @@ import (
 	"github.com/goppydae/gapi/core/eventbus"
 	"github.com/goppydae/gapi/core/lifecycle"
 	"github.com/goppydae/gapi/core/metrics"
+	"github.com/goppydae/gapi/core/product"
 	"github.com/goppydae/gapi/internal/logattr"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -190,7 +191,7 @@ func isInFlight(state string) bool {
 }
 
 func resolvePyRunner() string {
-	if v := os.Getenv("RUNTIME_PY_RUNNER"); v != "" {
+	if v := os.Getenv(product.EnvKey("PY_RUNNER")); v != "" {
 		return v
 	}
 	if exe, err := os.Executable(); err == nil {

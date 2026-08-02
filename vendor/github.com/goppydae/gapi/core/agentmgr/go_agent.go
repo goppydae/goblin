@@ -119,7 +119,7 @@ func NewGoAgent(
 	// Eager bind
 	if listenStream != "" {
 		if _, err := a.EnsureListener(); err != nil {
-			fmt.Fprintf(os.Stderr, "[gapi] agent %s: failed to eager bind %s: %v\n", id, listenStream, err)
+			fmt.Fprintf(os.Stderr, "[supervisor] agent %s: failed to eager bind %s: %v\n", id, listenStream, err)
 		}
 	}
 
@@ -271,7 +271,7 @@ func (a *GoAgent) watchLoop(ctx context.Context, f *os.File) {
 
 	rawConn, err := f.SyscallConn()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[gapid] watchLoop SyscallConn error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[supervisor] watchLoop SyscallConn error: %v\n", err)
 		return
 	}
 
@@ -281,7 +281,7 @@ func (a *GoAgent) watchLoop(ctx context.Context, f *os.File) {
 	})
 
 	if fd < 0 || fd > math.MaxInt32 {
-		fmt.Fprintf(os.Stderr, "[gapid] watchLoop: fd %d out of int32 range\n", fd)
+		fmt.Fprintf(os.Stderr, "[supervisor] watchLoop: fd %d out of int32 range\n", fd)
 		return
 	}
 	pollFd := []unix.PollFd{
@@ -300,7 +300,7 @@ func (a *GoAgent) watchLoop(ctx context.Context, f *os.File) {
 			if err == unix.EINTR {
 				continue
 			}
-			fmt.Fprintf(os.Stderr, "[gapid] watchLoop Poll error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "[supervisor] watchLoop Poll error: %v\n", err)
 			return
 		}
 
@@ -370,7 +370,7 @@ func (a *GoAgent) Start(ctx context.Context) error {
 
 	cmd.Env = os.Environ()
 	if a.nextRunID != "" {
-		cmd.Env = append(cmd.Env, "GAPI_RUN_ID="+a.nextRunID)
+		cmd.Env = append(cmd.Env, EnvRunID+"="+a.nextRunID)
 	}
 
 	if len(extraFiles) > 0 {
@@ -537,7 +537,7 @@ func ignoreStopSignalExit(err error) error {
 
 func (a *GoAgent) cleanupAfterExit() {
 	if a.cpuLimit != "" || a.memLimit != "" {
-		cgName := fmt.Sprintf("gapid-%s", a.id)
+		cgName := cgroups.AgentCgroup(a.id)
 		_ = cgroups.Cleanup(cgName)
 	}
 	if a.stdout != nil {

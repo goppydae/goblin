@@ -11,6 +11,7 @@ import (
 	gapimounts "github.com/goppydae/gapi/core/mounts"
 	gapipid1 "github.com/goppydae/gapi/core/pid1"
 	gapiprocsig "github.com/goppydae/gapi/core/procsig"
+	gapiproduct "github.com/goppydae/gapi/core/product"
 	gapishutdown "github.com/goppydae/gapi/core/shutdown"
 	gapisubreaper "github.com/goppydae/gapi/core/subreaper"
 	gapisupervisor "github.com/goppydae/gapi/core/supervisor"
@@ -36,7 +37,10 @@ type pid1Completion struct {
 // signals surface by cancelling runCancel; the returned completion runs
 // the local teardown after Run's cluster teardown has unwound.
 func (s *Supervisor) enablePid1(ctx context.Context, runCancel context.CancelFunc) (*pid1Completion, error) {
-	kmsg := gapilogging.NewKmsg(os.Getenv("GOBLIN_KMSG_PATH"))
+	// Was the literal "GOBLIN_KMSG_PATH" - correctly named, and still a
+	// second spelling of a name the kernel composes. Composing it here
+	// makes agreement structural (GOBLIN-DIV-055).
+	kmsg := gapilogging.NewKmsg(os.Getenv(gapiproduct.EnvKey("KMSG_PATH")))
 	kmsg.Log(gapilogging.KmsgInfo, "phase 0: pre-userspace (goblind)")
 
 	reapKick := make(chan os.Signal, 8)

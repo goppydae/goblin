@@ -20,6 +20,7 @@ import (
 	"github.com/goppydae/gapi/core/eventbus"
 	"github.com/goppydae/gapi/core/lifecycle"
 	"github.com/goppydae/gapi/core/metrics"
+	"github.com/goppydae/gapi/core/product"
 	shutdownpkg "github.com/goppydae/gapi/core/shutdown"
 	"github.com/goppydae/gapi/core/store"
 	"github.com/goppydae/gapi/core/transport"
@@ -47,7 +48,7 @@ type Supervisor struct {
 
 // New creates a new Supervisor instance.
 func New(cfg *config.Config) (*Supervisor, error) {
-	logger := slog.Default().With(logattr.Module("gapid"))
+	logger := slog.Default().With(logattr.Module("supervisor"))
 	host, _ := os.Hostname()
 
 	// Cgroups setup
@@ -72,7 +73,7 @@ func New(cfg *config.Config) (*Supervisor, error) {
 	// Check config first, then env
 	kp := cfg.Security.VerifyKey
 	if kp == "" {
-		kp = os.Getenv("RUNTIME_VERIFY_KEY")
+		kp = os.Getenv(product.EnvKey("VERIFY_KEY"))
 	}
 
 	if kp != "" {
@@ -150,7 +151,7 @@ func (s *Supervisor) Bus() *eventbus.EventBus[*anypb.Any] {
 // The original used `runSupervisor()` which blocked on signal.
 // We'll expose `Run()` which sets up handlers and blocks.
 func (s *Supervisor) Run(ctx context.Context) error {
-	s.logger.LogAttrs(context.Background(), slog.LevelInfo, "starting gapid supervisor")
+	s.logger.LogAttrs(context.Background(), slog.LevelInfo, "starting supervisor")
 
 	// Setup Agents
 	s.setupAgents()
@@ -211,8 +212,8 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	}
 
 	s.logger.LogAttrs(context.Background(), slog.LevelInfo, "lifecycle event",
-		logattr.Event("lifecycle"), logattr.Source("gapid"), logattr.Action("stop"),
-		logattr.AgentID("gapid"), logattr.Version(version.BinaryVersion()))
+		logattr.Event("lifecycle"), logattr.Source("supervisor"), logattr.Action("stop"),
+		logattr.AgentID("supervisor"), logattr.Version(version.BinaryVersion()))
 	s.logger.LogAttrs(context.Background(), slog.LevelInfo, "exited cleanly")
 	return nil
 }
@@ -377,8 +378,8 @@ func (s *Supervisor) registerHandlers() {
 	err := s.bus.SubscribePrefix("system", "", "ping", func(e eventbus.Event[*anypb.Any]) {
 		s.logger.LogAttrs(context.Background(), slog.LevelDebug, "received ping, preparing pong", logattr.Event("handling_ping"), logattr.EventID(e.ID))
 		s.logger.LogAttrs(context.Background(), slog.LevelInfo, "lifecycle event",
-			logattr.Event("lifecycle"), logattr.Source("gapid"), logattr.Action("handle_ping"),
-			logattr.AgentID("gapid"), logattr.Version(version.BinaryVersion()))
+			logattr.Event("lifecycle"), logattr.Source("supervisor"), logattr.Action("handle_ping"),
+			logattr.AgentID("supervisor"), logattr.Version(version.BinaryVersion()))
 
 		pong := &protopkg.PingStatus{Status: "pong"}
 		anyPayload, err := anypb.New(pong)
@@ -420,7 +421,7 @@ func (s *Supervisor) registerHandlers() {
 			// Collect metrics from cgroups if available
 			var cpuUsage float64
 			var memUsage uint64
-			cgName := fmt.Sprintf("gapid-%s", entry.ID)
+			cgName := cgroups.AgentCgroup(entry.ID)
 			if stats, err := cgroups.GetStats(cgName); err == nil {
 				cpuUsage = stats.CPUUsage
 				if stats.MemoryUsage > 0 {

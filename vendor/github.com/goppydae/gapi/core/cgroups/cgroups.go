@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/goppydae/gapi/core/product"
 	"github.com/goppydae/gapi/internal/safeio"
 )
 
@@ -17,8 +18,23 @@ type ResourceSpec struct {
 	Memory int64   // Bytes
 }
 
+// infraCgroup is the delegation root, named for the DAEMON that owns it
+// so an operator reading /sys/fs/cgroup can attribute it: gapid-infra
+// under gapid, goblind-infra under goblind (GAPI-DIV-061). A function
+// rather than a const because the product is not known at compile time.
+func infraCgroup() string { return product.Daemon() + "-infra" }
+
+// AgentCgroup names the per-agent cgroup for id.
+//
+// Exported and used by all five call sites - create, cleanup in both
+// agent types, and the two metrics collectors - because those were five
+// independent fmt.Sprintf("gapid-%s") literals. Five spellings of one
+// name is a cleanup that misses, or a stats read that finds nothing and
+// reports zero; composing them here makes agreement structural rather
+// than a thing to remember.
+func AgentCgroup(id string) string { return product.Daemon() + "-" + id }
+
 const (
-	infraCgroup    = "gapid-infra"
 	supervisorName = "supervisor"
 	subtreeControl = "cgroup.subtree_control"
 	cgroupProcs    = "cgroup.procs"
@@ -30,10 +46,10 @@ const (
 var serviceRoot string
 
 // Setup prepares the root cgroup for delegation.
-// It moves the current process (gapid) into 'gapid-infra/supervisor'.
-// Then it enables controllers (+cpu +memory) in 'gapid-infra'.
+// It moves the current process (the daemon) into '<daemon>-infra/supervisor'.
+// Then it enables controllers (+cpu +memory) in '<daemon>-infra'.
 func Setup() error {
-	if os.Getenv("RUNTIME_CGROUPS_DISABLE") != "" {
+	if os.Getenv(product.EnvKey("CGROUPS_DISABLE")) != "" {
 		return fmt.Errorf("cgroups disabled by configuration")
 	}
 
@@ -43,7 +59,7 @@ func Setup() error {
 	}
 
 	// 1. Create hierarchy
-	infraPath := filepath.Join(root, infraCgroup)
+	infraPath := filepath.Join(root, infraCgroup())
 	if err := os.MkdirAll(infraPath, 0750); err != nil {
 		return fmt.Errorf("failed to create infra cgroup: %w", err)
 	}

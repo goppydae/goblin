@@ -12,6 +12,7 @@ import (
 	"github.com/goppydae/gapi/core/mounts"
 	"github.com/goppydae/gapi/core/pid1"
 	"github.com/goppydae/gapi/core/procsig"
+	"github.com/goppydae/gapi/core/product"
 	"github.com/goppydae/gapi/core/shutdown"
 	"github.com/goppydae/gapi/core/subreaper"
 	"github.com/goppydae/gapi/core/watchdog"
@@ -30,7 +31,7 @@ const defaultShutdownGrace = 10 * time.Second
 // reboot is not permitted (containers), the completion returns and
 // the caller exits; for a container init, exiting IS poweroff.
 func (s *Supervisor) EnablePid1(ctx context.Context) (func(action shutdown.Action), error) {
-	kmsg := logging.NewKmsg(os.Getenv("GAPID_KMSG_PATH"))
+	kmsg := logging.NewKmsg(os.Getenv(product.EnvKey("KMSG_PATH")))
 	kmsg.Log(logging.KmsgInfo, "phase 0: pre-userspace")
 
 	reapKick := make(chan os.Signal, 8)

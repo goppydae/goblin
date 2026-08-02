@@ -16,6 +16,7 @@ import (
 	"time"
 
 	gapicrypto "github.com/goppydae/gapi/core/crypto"
+	gapiproduct "github.com/goppydae/gapi/core/product"
 	gapitransport "github.com/goppydae/gapi/core/transport"
 	"github.com/goppydae/goblin/internal/cli"
 	"github.com/goppydae/goblin/internal/ident"
@@ -210,7 +211,7 @@ func (c *testCluster) startNodeWithArgs(id, join string, extra ...string) *clust
 	// The embedded agent manager discovers the fixture dir exclusively;
 	// binaries resolve from the harness build, never from /bin (lessons:
 	// harness isolation + sandbox-masked FHS paths).
-	cmd.Env = append(os.Environ(), "RUNTIME_AGENT_PATH="+builtBinaries.agentsDir)
+	cmd.Env = append(os.Environ(), agentPathEnv())
 	// Process-group kill: instance processes spawned by the node must die
 	// with it, or go test's I/O watchdog hangs on inherited pipes.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -437,4 +438,27 @@ func dialALPNAddr(addr, alpn string) (*quic.Conn, error) {
 		InsecureSkipVerify: true, // harness nodes run ephemeral dev certs
 		NextProtos:         []string{alpn},
 	}, &quic.Config{EnableDatagrams: true})
+}
+
+// agentPathEnv is the environment assignment that fences a spawned
+// goblind's agent discovery to the harness fixture directory.
+//
+// It is COMPOSED through the kernel's own registry rather than spelled
+// as a literal, and that is the whole point. The variable carried the
+// kernel's pre-GAPI-DIV-059 namespace; that entry renamed it and
+// GAPI-DIV-061 made it derive from the product, so a hand-written name
+// here could disagree with the name the embedded kernel actually reads -
+// and the disagreement is SILENT. Discovery would simply stop being
+// fenced, fall back to the default search path, find no fixtures, and
+// the cluster tests would fail as a placement TIMEOUT: the same shape as
+// goblin's known intermittent main flake, and therefore the hardest
+// possible thing to attribute correctly.
+//
+// The child is goblind, so its product is "goblin"; the harness knows
+// that because it built the child. Setting the identity in this process
+// is what lets EnvKey compose, and it asserts nothing about this test
+// binary beyond which binary it is about to run.
+func agentPathEnv() string {
+	gapiproduct.Set("goblin")
+	return gapiproduct.EnvKey("AGENT_PATH") + "=" + builtBinaries.agentsDir
 }

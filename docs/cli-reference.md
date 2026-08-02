@@ -61,7 +61,7 @@ must not discard images an in-flight migration still needs.
 | `--tls-ca` | Path to the CA certificate for mTLS |
 | `--encrypt` | Base64-encoded 32-byte key for Serf encryption |
 | `--production` | Restrict agent discovery to binaries with verified signatures |
-| `--agent-verify-key` | Ed25519 public key for agent signature verification (falls back to `$RUNTIME_VERIFY_KEY`) |
+| `--agent-verify-key` | Ed25519 public key for agent signature verification (falls back to `$GOBLIN_VERIFY_KEY`) |
 
 Without `--tls-cert` and `--tls-key` the daemon generates an ephemeral
 self-signed certificate and does not verify peers. `--production`
@@ -120,7 +120,7 @@ goblind start --id node-1 --tls-cert /etc/goblin/node.crt --tls-key /etc/goblin/
 ### Agent discovery
 
 Local agents are discovered from the paths GAPI searches.
-`RUNTIME_AGENT_PATH` overrides the search root, so binaries resolve
+`GOBLIN_AGENT_PATH` overrides the search root, so binaries resolve
 from there rather than from the system `PATH`.
 
 ## `goblinctl` - Control CLI
@@ -282,8 +282,8 @@ flags only. The variables that are actually read:
 
 | Variable | Read by | Purpose |
 | -------- | ------- | ------- |
-| `RUNTIME_AGENT_PATH` | agent discovery | Override the agent search root |
-| `RUNTIME_VERIFY_KEY` | signature verification | Fallback for `--agent-verify-key` |
+| `GOBLIN_AGENT_PATH` | agent discovery | Override the agent search root |
+| `GOBLIN_VERIFY_KEY` | signature verification | Fallback for `--agent-verify-key` |
 | `GOBLIN_KMSG_PATH` | PID 1 mode | Override the kmsg device |
 
 ## Quick reference

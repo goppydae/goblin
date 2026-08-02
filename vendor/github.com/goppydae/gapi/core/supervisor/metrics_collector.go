@@ -2,7 +2,6 @@ package supervisor
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -51,7 +50,7 @@ func (s *Supervisor) collectMetrics(startTime time.Time) {
 		metrics.AgentState.WithLabelValues(agentID, agentType, currentState).Set(1)
 
 		// Collect resource metrics from cgroups
-		cgName := fmt.Sprintf("gapid-%s", agentID)
+		cgName := cgroups.AgentCgroup(agentID)
 		if stats, err := cgroups.GetStats(cgName); err == nil {
 			// Calculate uptime (placeholder - would need process start time tracking)
 			// For now, just use 0 if not available

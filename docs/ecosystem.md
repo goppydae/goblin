@@ -172,7 +172,7 @@ goblinctl cluster migrate-instance <instance-uuid> node-2
 - **Boundary**: process isolation and cgroups v2.
 - **Provenance**: agent binaries carry a BLAKE3 `.b3` digest and an
   Ed25519 `.sig`. Enforcement is `supervisor.productionMode` in
-  `gapid`'s config file, or `RUNTIME_SUPERVISOR_PRODUCTIONMODE` in its
+  `gapid`'s config file, or `GAPI_SUPERVISOR_PRODUCTIONMODE` in its
   environment. **`gapid` has no `--production` flag** - it accepts only
   `--runtime-addr`, `--log-level`, `--pid1` and `--no-early-mounts`.
   `--production` is `goblind`'s flag, and the two are not the same
