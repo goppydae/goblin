@@ -189,7 +189,7 @@ func transferImage(t *testing.T, source, dest *migration.Store, uuid []byte, epo
 	l, err := transport.NewSharedListener("127.0.0.1:0", &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS13,
-	})
+	}, alwaysReady)
 	if err != nil {
 		t.Fatalf("NewSharedListener: %v", err)
 	}

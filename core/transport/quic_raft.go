@@ -99,7 +99,7 @@ func (l *QUICStreamLayer) Dial(addr raft.ServerAddress, timeout time.Duration) (
 	// would let the shared listener negotiate some other plane.
 	clientTLS.NextProtos = []string{ALPNRaftQUIC}
 
-	conn, err := quic.DialAddr(ctx, string(addr), clientTLS, quicConf)
+	conn, err := dialWithClusterNotReadyRetry(ctx, string(addr), clientTLS, quicConf)
 	if err != nil {
 		return nil, err
 	}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/protobuf/types/known/anypb"
@@ -129,6 +130,22 @@ func New(cfg Config) *Supervisor {
 // model orders units by their declared dependencies, and it cannot
 // order what it cannot see.
 type runState struct {
+	// planesUp is set once the boot sequence has finished registering
+	// every plane. Until then, a cluster ALPN with no adapter means NOT
+	// YET; afterwards it means never (GOBLIN-DIV-051).
+	//
+	// Set after Phase 5 rather than Phase 4, and the difference is not
+	// pedantry: serf-quic and raft-quic register in Phase 4 but
+	// goblin-rpc registers in Phase 5, so a flag set at the end of Phase
+	// 4 would tell a peer dialling rpc "never" during the exact window it
+	// should still hear "not yet".
+	//
+	// atomic.Bool because the accept loop reads it on its own goroutine
+	// from the moment the listener binds in Phase 1, while boot writes it
+	// later. A plain bool here is a data race on the answer that decides
+	// whether a peer retries.
+	planesUp atomic.Bool
+
 	// Phase 1 - identity and transport
 	nodeID       string
 	secretKey    []byte
@@ -282,6 +299,10 @@ func (s *Supervisor) boot(ctx context.Context, st *runState, failFatal func(erro
 	if err := s.phaseServing(ctx, st); err != nil {
 		return err
 	}
+	// Every plane is registered. From here a cluster ALPN with no adapter
+	// is genuinely unserved rather than pending (GOBLIN-DIV-051).
+	st.planesUp.Store(true)
+
 	if err := s.reachTarget(ctx, st, TargetDistributed, applyStart); err != nil {
 		return err
 	}

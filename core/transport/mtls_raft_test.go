@@ -113,7 +113,7 @@ func mtlsListener(t *testing.T, ca *certAuthority) *transport.SharedListener {
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		RootCAs:      ca.pool,
 		MinVersion:   tls.VersionTLS13,
-	})
+	}, alwaysReady)
 	if err != nil {
 		t.Fatalf("NewSharedListener: %v", err)
 	}

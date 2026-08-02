@@ -37,7 +37,7 @@ func newHarness(t *testing.T, authorize migration.Authorizer) *harness {
 	l, err := transport.NewSharedListener("127.0.0.1:0", &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS13,
-	})
+	}, alwaysReady)
 	if err != nil {
 		t.Fatalf("NewSharedListener: %v", err)
 	}
@@ -207,3 +207,7 @@ func TestFetchRejectsMalformedUUID(t *testing.T) {
 		t.Fatalf("want ErrBadUUID for a 3-byte uuid, got %v", err)
 	}
 }
+
+// alwaysReady: these tests are about migration transfer, not about
+// phase-aware admission, so the listener behaves as a fully booted node.
+func alwaysReady() bool { return true }
