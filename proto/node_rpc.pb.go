@@ -688,6 +688,147 @@ func (x *NodePullCheckpointResponse) GetImageDir() string {
 	return ""
 }
 
+// NodeMigrationReadyRequest asks a prospective DESTINATION whether it
+// can accept a migration, before the source is stopped.
+//
+// GOBLIN-DIV-048: the coordinator used to find out at the pull, which is
+// step three - after the checkpoint has already killed the source
+// process. A destination that had joined gossip but not yet applied any
+// raft entry refused the pull, and the instance had to be rolled back
+// from its image. Serf membership is not consensus membership, and the
+// scheduler treated them as the same thing.
+//
+// The probe is sound rather than a narrower race because the predicate
+// is MONOTONIC: the operator key registry is seeded once and the FSM
+// refuses to remove the last key, so a destination that reports ready
+// cannot become unready before the pull.
+type NodeMigrationReadyRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// instance_id is carried for logging only; readiness is a property of
+	// the node, not of the instance being moved.
+	InstanceId    string `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NodeMigrationReadyRequest) Reset() {
+	*x = NodeMigrationReadyRequest{}
+	mi := &file_goblin_v1_node_rpc_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NodeMigrationReadyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NodeMigrationReadyRequest) ProtoMessage() {}
+
+func (x *NodeMigrationReadyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_node_rpc_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NodeMigrationReadyRequest.ProtoReflect.Descriptor instead.
+func (*NodeMigrationReadyRequest) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_node_rpc_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *NodeMigrationReadyRequest) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+// NodeMigrationReadyResponse reports the destination's own view of
+// itself. The fields are the ones GOBLIN-DIV-048 needed to tell "not
+// caught up" from "genuinely absent", so a refusal explains itself
+// instead of being reduced to a boolean.
+type NodeMigrationReadyResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Ready bool                   `protobuf:"varint,1,opt,name=ready,proto3" json:"ready,omitempty"`
+	// reason is empty when ready; otherwise it names what is missing.
+	Reason         string `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	RegistrySerial uint64 `protobuf:"varint,3,opt,name=registry_serial,json=registrySerial,proto3" json:"registry_serial,omitempty"`
+	AppliedIndex   uint64 `protobuf:"varint,4,opt,name=applied_index,json=appliedIndex,proto3" json:"applied_index,omitempty"`
+	CommitIndex    uint64 `protobuf:"varint,5,opt,name=commit_index,json=commitIndex,proto3" json:"commit_index,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *NodeMigrationReadyResponse) Reset() {
+	*x = NodeMigrationReadyResponse{}
+	mi := &file_goblin_v1_node_rpc_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NodeMigrationReadyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NodeMigrationReadyResponse) ProtoMessage() {}
+
+func (x *NodeMigrationReadyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_node_rpc_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NodeMigrationReadyResponse.ProtoReflect.Descriptor instead.
+func (*NodeMigrationReadyResponse) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_node_rpc_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *NodeMigrationReadyResponse) GetReady() bool {
+	if x != nil {
+		return x.Ready
+	}
+	return false
+}
+
+func (x *NodeMigrationReadyResponse) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *NodeMigrationReadyResponse) GetRegistrySerial() uint64 {
+	if x != nil {
+		return x.RegistrySerial
+	}
+	return 0
+}
+
+func (x *NodeMigrationReadyResponse) GetAppliedIndex() uint64 {
+	if x != nil {
+		return x.AppliedIndex
+	}
+	return 0
+}
+
+func (x *NodeMigrationReadyResponse) GetCommitIndex() uint64 {
+	if x != nil {
+		return x.CommitIndex
+	}
+	return 0
+}
+
 var File_goblin_v1_node_rpc_proto protoreflect.FileDescriptor
 
 const file_goblin_v1_node_rpc_proto_rawDesc = "" +
@@ -740,7 +881,16 @@ const file_goblin_v1_node_rpc_proto_rawDesc = "" +
 	"sourceAddr\x12\x14\n" +
 	"\x05token\x18\x05 \x01(\fR\x05token\"9\n" +
 	"\x1aNodePullCheckpointResponse\x12\x1b\n" +
-	"\timage_dir\x18\x01 \x01(\tR\bimageDirB+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
+	"\timage_dir\x18\x01 \x01(\tR\bimageDir\"<\n" +
+	"\x19NodeMigrationReadyRequest\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\tR\n" +
+	"instanceId\"\xbb\x01\n" +
+	"\x1aNodeMigrationReadyResponse\x12\x14\n" +
+	"\x05ready\x18\x01 \x01(\bR\x05ready\x12\x16\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\x12'\n" +
+	"\x0fregistry_serial\x18\x03 \x01(\x04R\x0eregistrySerial\x12#\n" +
+	"\rapplied_index\x18\x04 \x01(\x04R\fappliedIndex\x12!\n" +
+	"\fcommit_index\x18\x05 \x01(\x04R\vcommitIndexB+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
 
 var (
 	file_goblin_v1_node_rpc_proto_rawDescOnce sync.Once
@@ -754,7 +904,7 @@ func file_goblin_v1_node_rpc_proto_rawDescGZIP() []byte {
 	return file_goblin_v1_node_rpc_proto_rawDescData
 }
 
-var file_goblin_v1_node_rpc_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_goblin_v1_node_rpc_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_goblin_v1_node_rpc_proto_goTypes = []any{
 	(*NodeStartAgentInstanceRequest)(nil),       // 0: goblin.v1.NodeStartAgentInstanceRequest
 	(*NodeStartAgentInstanceResponse)(nil),      // 1: goblin.v1.NodeStartAgentInstanceResponse
@@ -768,11 +918,13 @@ var file_goblin_v1_node_rpc_proto_goTypes = []any{
 	(*NodeRestoreAgentInstanceResponse)(nil),    // 9: goblin.v1.NodeRestoreAgentInstanceResponse
 	(*NodePullCheckpointRequest)(nil),           // 10: goblin.v1.NodePullCheckpointRequest
 	(*NodePullCheckpointResponse)(nil),          // 11: goblin.v1.NodePullCheckpointResponse
-	(*AgentSpec)(nil),                           // 12: goblin.v1.AgentSpec
+	(*NodeMigrationReadyRequest)(nil),           // 12: goblin.v1.NodeMigrationReadyRequest
+	(*NodeMigrationReadyResponse)(nil),          // 13: goblin.v1.NodeMigrationReadyResponse
+	(*AgentSpec)(nil),                           // 14: goblin.v1.AgentSpec
 }
 var file_goblin_v1_node_rpc_proto_depIdxs = []int32{
-	12, // 0: goblin.v1.NodeStartAgentInstanceRequest.spec:type_name -> goblin.v1.AgentSpec
-	12, // 1: goblin.v1.NodeRestoreAgentInstanceRequest.spec:type_name -> goblin.v1.AgentSpec
+	14, // 0: goblin.v1.NodeStartAgentInstanceRequest.spec:type_name -> goblin.v1.AgentSpec
+	14, // 1: goblin.v1.NodeRestoreAgentInstanceRequest.spec:type_name -> goblin.v1.AgentSpec
 	2,  // [2:2] is the sub-list for method output_type
 	2,  // [2:2] is the sub-list for method input_type
 	2,  // [2:2] is the sub-list for extension type_name
@@ -792,7 +944,7 @@ func file_goblin_v1_node_rpc_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_goblin_v1_node_rpc_proto_rawDesc), len(file_goblin_v1_node_rpc_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

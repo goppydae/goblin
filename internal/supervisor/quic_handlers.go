@@ -221,6 +221,18 @@ func RegisterSchedulerHandlers(server *QUICRPCServer, rpc *SchedulerRPC) {
 
 // RegisterNodeHandlers registers node RPC methods.
 func RegisterNodeHandlers(server *QUICRPCServer, rpc *NodeRPC) {
+	server.RegisterHandler("NodeRPC.MigrationReady", func(payload []byte) ([]byte, error) {
+		var req goblinv1.NodeMigrationReadyRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
+		}
+		var resp goblinv1.NodeMigrationReadyResponse
+		if err := rpc.MigrationReady(&req, &resp); err != nil {
+			return nil, err
+		}
+		return proto.Marshal(&resp)
+	})
+
 	server.RegisterHandler("NodeRPC.StartAgentInstance", func(payload []byte) ([]byte, error) {
 		var req goblinv1.NodeStartAgentInstanceRequest
 		if err := proto.Unmarshal(payload, &req); err != nil {

@@ -109,3 +109,36 @@ message NodePullCheckpointRequest {
 message NodePullCheckpointResponse {
   string image_dir = 1;
 }
+
+// NodeMigrationReadyRequest asks a prospective DESTINATION whether it
+// can accept a migration, before the source is stopped.
+//
+// GOBLIN-DIV-048: the coordinator used to find out at the pull, which is
+// step three - after the checkpoint has already killed the source
+// process. A destination that had joined gossip but not yet applied any
+// raft entry refused the pull, and the instance had to be rolled back
+// from its image. Serf membership is not consensus membership, and the
+// scheduler treated them as the same thing.
+//
+// The probe is sound rather than a narrower race because the predicate
+// is MONOTONIC: the operator key registry is seeded once and the FSM
+// refuses to remove the last key, so a destination that reports ready
+// cannot become unready before the pull.
+message NodeMigrationReadyRequest {
+  // instance_id is carried for logging only; readiness is a property of
+  // the node, not of the instance being moved.
+  string instance_id = 1;
+}
+
+// NodeMigrationReadyResponse reports the destination's own view of
+// itself. The fields are the ones GOBLIN-DIV-048 needed to tell "not
+// caught up" from "genuinely absent", so a refusal explains itself
+// instead of being reduced to a boolean.
+message NodeMigrationReadyResponse {
+  bool ready = 1;
+  // reason is empty when ready; otherwise it names what is missing.
+  string reason = 2;
+  uint64 registry_serial = 3;
+  uint64 applied_index = 4;
+  uint64 commit_index = 5;
+}

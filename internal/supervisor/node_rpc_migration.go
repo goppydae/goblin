@@ -222,11 +222,12 @@ func (n *NodeRPC) PullCheckpoint(req *goblinv1.NodePullCheckpointRequest, resp *
 	if err := n.requireOperatorRegistry("node.pull"); err != nil {
 		return err
 	}
-	if n.images == nil {
-		return fmt.Errorf("checkpoint store not configured on this node")
-	}
-	if n.ckptTLS == nil {
-		return fmt.Errorf("checkpoint transport TLS not configured on this node")
+	// Same conditions the MigrationReady pre-flight tests, via the same
+	// helper. The pull keeps checking them because the probe is a
+	// pre-flight, not a promise: a caller that skips it must still be
+	// refused here rather than proceeding on an unconfigured node.
+	if reason, ok := n.migrationReadiness(); !ok {
+		return fmt.Errorf("%s", reason)
 	}
 	instanceID := req.GetInstanceId()
 	sourceAddr := req.GetSourceAddr()
@@ -275,3 +276,74 @@ func waitForPidRelease(pid int, timeout time.Duration) error {
 
 // Images is this node's checkpoint image store.
 func (n *NodeRPC) Images() *migration.Store { return n.images }
+
+// migrationReadiness reports whether this node can accept a migration,
+// and names what is missing when it cannot.
+//
+// It is shared with PullCheckpoint rather than duplicated: the whole
+// point of GOBLIN-DIV-048 is that the pull discovered these conditions
+// after the source was already dead, so the probe and the pull must
+// test the SAME conditions or the probe is decoration. If they drift,
+// the coordinator goes back to finding out too late.
+func (n *NodeRPC) migrationReadiness() (string, bool) {
+	if n.consensus == nil {
+		return "no consensus on this node", false
+	}
+	if n.consensus.OperatorKeyCountLocal() == 0 {
+		return "operator key registry has not been applied on this node", false
+	}
+	if n.images == nil {
+		return "checkpoint store not configured on this node", false
+	}
+	if n.ckptTLS == nil {
+		return "checkpoint transport TLS not configured on this node", false
+	}
+	return "", true
+}
+
+// MigrationReady is the pre-flight the coordinator runs against a
+// prospective destination BEFORE checkpointing the source
+// (GOBLIN-DIV-048).
+//
+// Not ready is reported as a populated response, not an error: an
+// unready node and an unreachable one are different facts and the
+// coordinator refuses differently for each. The raft indices ride along
+// because "not caught up" and "caught up but empty" want opposite
+// fixes, and a bare boolean cannot tell them apart - which is exactly
+// what cost this entry two rounds of inference.
+func (n *NodeRPC) MigrationReady(req *goblinv1.NodeMigrationReadyRequest, resp *goblinv1.NodeMigrationReadyResponse) error {
+	reason, ok := n.migrationReadiness()
+	resp.Ready = ok
+	resp.Reason = reason
+
+	if n.consensus != nil {
+		_, serial := n.consensus.OperatorKeysLocal()
+		resp.RegistrySerial = serial
+		stats := n.consensus.Stats()
+		resp.AppliedIndex = parseRaftIndex(stats["applied_index"])
+		resp.CommitIndex = parseRaftIndex(stats["commit_index"])
+	}
+
+	if !ok {
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn,
+			"refusing a migration before it starts: this node is not ready",
+			logattr.InstanceID(req.GetInstanceId()),
+			slog.String("reason", reason),
+			slog.Uint64("registry_serial", resp.RegistrySerial),
+			slog.Uint64("applied_index", resp.AppliedIndex),
+			slog.Uint64("commit_index", resp.CommitIndex))
+	}
+	return nil
+}
+
+// parseRaftIndex converts one of raft's string-valued stats. An
+// unparseable value reports zero rather than failing the probe: these
+// are diagnostics riding along with the verdict, and losing them must
+// not turn a ready node into an unready one.
+func parseRaftIndex(s string) uint64 {
+	v, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return v
+}

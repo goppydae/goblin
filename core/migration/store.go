@@ -29,6 +29,11 @@ var (
 	// ErrBadUUID: an instance UUID that is not 16 bytes. Rejected at the
 	// boundary rather than being hex-encoded into a nonsense path.
 	ErrBadUUID = errors.New("migration: instance uuid must be 16 bytes")
+	// ErrTargetNotReady: the destination cannot accept a migration and
+	// said so before anything was done to the source (GOBLIN-DIV-048).
+	// Distinct from every error below it, and the distinction is the
+	// point: this one means the instance is still running where it was.
+	ErrTargetNotReady = errors.New("migration: destination is not ready to accept")
 	// ErrTruncated: the transfer ended before the manifest was
 	// satisfied. Distinct from a read error: the image is incomplete
 	// but the key is still valid, so a retry is the right response.

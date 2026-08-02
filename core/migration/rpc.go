@@ -34,6 +34,7 @@ const (
 	MethodCheckpoint = "NodeRPC.CheckpointAgentInstance"
 	MethodRestore    = "NodeRPC.RestoreAgentInstance"
 	MethodPull       = "NodeRPC.PullCheckpoint"
+	MethodReady      = "NodeRPC.MigrationReady"
 )
 
 // Caller is the RPC surface the migration clients need. It mirrors the
@@ -92,6 +93,20 @@ func (r *RPCNodes) Checkpoint(ctx context.Context, nodeID, instanceID string, uu
 	}
 	var resp goblinv1.NodeCheckpointAgentInstanceResponse
 	return r.call(ctx, nodeID, MethodCheckpoint, req, &resp)
+}
+
+// Ready asks nodeID whether it can accept a migration, before anything
+// is done to the source (GOBLIN-DIV-048). A node that is unreachable
+// and a node that answers "not ready" are different failures and are
+// reported as such: the first is an error from the call, the second a
+// populated response the caller turns into a refusal.
+func (r *RPCNodes) Ready(ctx context.Context, nodeID, instanceID string) (string, bool, error) {
+	req := &goblinv1.NodeMigrationReadyRequest{InstanceId: instanceID}
+	var resp goblinv1.NodeMigrationReadyResponse
+	if err := r.call(ctx, nodeID, MethodReady, req, &resp); err != nil {
+		return "", false, err
+	}
+	return resp.GetReason(), resp.GetReady(), nil
 }
 
 // Restore asks nodeID to restore the instance from its local image.
