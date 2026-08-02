@@ -131,7 +131,7 @@ pkgs.testers.runNixOSTest {
             # goblind resolves criu with exec.LookPath.
             f"systemd-run --unit=goblind-{node_id} --setenv=RUNTIME_AGENT_PATH=${bins}/agents "
             f"--setenv=PATH=${pkgs.criu}/bin:/run/current-system/sw/bin "
-            f"${bins}/bin/goblind --id {node_id} "
+            f"${bins}/bin/goblind start --id {node_id} "
             # --advertise-addr is a bare HOST: the port comes from
             # AdvertisePort, which defaults to the listen port. Passing
             # host:port here made goblind resolve the whole string as a
