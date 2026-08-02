@@ -61,6 +61,17 @@ jobs:
         working-directory: goblin
         run: nix develop -c mage -v vuln
 
+      # The unit suite dials QUIC too - core/transport's shared-listener
+      # tests stand up real listeners - and quic-go warns it cannot raise
+      # the receive buffer past 2 MiB on a stock runner. The cluster job
+      # has raised these since its QUIC tests landed; this job was left
+      # out, and run 30725365624 failed here with a valid peer never
+      # reaching the raft plane while that warning sat in the log.
+      - name: Raise UDP Buffers for the QUIC Control Plane
+        run: |
+          sudo sysctl -w net.core.rmem_max=7500000
+          sudo sysctl -w net.core.wmem_max=7500000
+
       # Was 'go test -v ./...', which silently dropped the -race flag the
       # mage target carries (GOBLIN-DIV-035). GOBLIN-DIV-002 records
       # -race finding a real data race the moment it was enabled; running
