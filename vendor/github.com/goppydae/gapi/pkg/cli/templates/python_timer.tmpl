@@ -1,0 +1,41 @@
+"""{{.Description}}"""
+
+ID = "{{.ID}}"
+TYPE = "timer"
+VERSION = "1.0.0"
+DESCRIPTION = "{{.Description}}"
+ENABLED = True
+
+# SCHEDULE accepts a cron expression ("*/5 * * * *") or a systemd-style
+# monotonic form (OnUnitActiveSec=, OnBootSec=, OnStartupSec=). Discovery
+# substitutes this exact value when a timer declares no SCHEDULE, so
+# leaving it as-is is the documented default rather than a placeholder.
+SCHEDULE = "OnUnitActiveSec=60s"
+
+
+def initialize():
+    """Prepare state reused across firings."""
+    print(f"[{ID}] Initializing...")
+    # TODO: Add initialization logic
+
+
+def start():
+    """Run ONE firing, then return.
+
+    A timer's start() is called once per firing and the process is
+    expected to exit; the supervisor waits for that exit before
+    scheduling the next one. Looping forever here - which is what a
+    service's start() does - holds the timer inside a single run and
+    every later firing is skipped.
+
+    One firing is bounded by TimerFireTimeout (30s). Work that needs
+    longer must bound itself below that or be restructured as a service.
+    """
+    print(f"[{ID}] tick")
+    # TODO: Add the work this timer performs
+
+
+def stop():
+    """Release anything initialize() acquired."""
+    print(f"[{ID}] Stopping...")
+    # TODO: Add cleanup logic

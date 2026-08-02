@@ -1,0 +1,80 @@
+"""{{.Description}}"""
+
+import os
+import socket
+import threading
+
+ID = "{{.ID}}"
+TYPE = "socket"
+VERSION = "1.0.0"
+DESCRIPTION = "{{.Description}}"
+ENABLED = True
+
+# LISTEN_STREAM declares the address THE SUPERVISOR binds, not one this
+# agent binds. The supervisor creates and arms the listener, then passes
+# it down as an inherited descriptor - so do not bind this address here.
+LISTEN_STREAM = "127.0.0.1:8080"
+
+_server = None
+_stop = threading.Event()
+
+
+def _inherited_listener():
+    """Return the listener the supervisor passed down.
+
+    Passed descriptors begin at fd 3 and LISTEN_FDS is a COUNT, not a
+    descriptor number - 'fd + 3' is wrong for any count but the
+    accidental one. With a single socket passed, LISTEN_FDS is 1 and the
+    socket is fd 3.
+    """
+    if int(os.environ.get("LISTEN_FDS", "0")) < 1:
+        raise RuntimeError(
+            f"[{ID}] no inherited listener: LISTEN_FDS is unset or 0. "
+            "A socket agent is started by the supervisor, which binds "
+            "LISTEN_STREAM and passes the descriptor down."
+        )
+    return socket.socket(fileno=3)
+
+
+def start():
+    """Accept on the inherited listener.
+
+    start() must not block forever: readiness is observed from a live
+    non-daemon thread, so the accept loop runs in one (daemon=False) and
+    start() returns.
+    """
+    global _server
+    _server = _inherited_listener()
+
+    t = threading.Thread(target=_accept_loop, daemon=False)
+    t.start()
+    print(f"[{ID}] serving on the inherited listener")
+
+
+def _accept_loop():
+    while not _stop.is_set():
+        try:
+            conn, addr = _server.accept()
+        except OSError:
+            if _stop.is_set():
+                break
+            raise
+        threading.Thread(target=_handle, args=(conn, addr), daemon=True).start()
+
+
+def _handle(conn, addr):
+    with conn:
+        print(f"[{ID}] connection from {addr}")
+        while True:
+            data = conn.recv(1024)
+            if not data:
+                break
+            # TODO: Replace the echo with this agent's protocol
+            conn.sendall(data)
+
+
+def stop():
+    """Stop accepting and close the listener."""
+    _stop.set()
+    if _server:
+        _server.close()

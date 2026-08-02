@@ -124,19 +124,28 @@ pkgs.testers.runNixOSTest {
     def start_goblind(machine, node_id, ip, join=None):
         join_arg = f"--join {join}:29000" if join else ""
         machine.succeed("mkdir -p /var/lib/goblin")
-        # GOBLIN_AGENT_PATH fences discovery to the fixture dir. The name
-        # follows goblind's PRODUCT identity (GOBLIN-DIV-055); it carried
-        # the kernel's own namespace before that. Nix
-        # cannot compose it through the kernel the way the Go harness
-        # does, so nix_env_names_test.go asserts this literal against the
-        # composed name - without that, this file is the one fence site
+        # GOBLIN_AGENT_PATH names the fixture dir; GOBLIN_AGENT_PATH_EXCLUSIVE
+        # is what FENCES discovery to it. Up to gapi v0.1.0-proto2e naming
+        # a directory fenced as a side effect, because AGENT_PATH REPLACED
+        # the search path; proto2f made it additive and moved the fence
+        # behind the explicit switch. Without it the fixtures are still
+        # found, and found first, so this test PASSES while discovery also
+        # scans the user-scope tiers - it fails OPEN, not as a timeout.
+        #
+        # The names follow goblind's PRODUCT identity (GOBLIN-DIV-055);
+        # they carried the kernel's own namespace before that. Nix cannot
+        # compose them through the kernel the way the Go harness does, so
+        # internal/cli/envnames_test.go asserts these literals against the
+        # composed names - without that, this file is the one fence site
         # no PR-path job executes.
         machine.succeed(
             "GOBLIN_AGENT_PATH=${bins}/agents "
+            "GOBLIN_AGENT_PATH_EXCLUSIVE=1 "
             # criu on PATH, for the same reason the module sets it: a
             # transient unit does not inherit a login shell's PATH, and
             # goblind resolves criu with exec.LookPath.
             f"systemd-run --unit=goblind-{node_id} --setenv=GOBLIN_AGENT_PATH=${bins}/agents "
+            f"--setenv=GOBLIN_AGENT_PATH_EXCLUSIVE=1 "
             f"--setenv=PATH=${pkgs.criu}/bin:/run/current-system/sw/bin "
             f"${bins}/bin/goblind start --id {node_id} "
             # --advertise-addr is a bare HOST: the port comes from

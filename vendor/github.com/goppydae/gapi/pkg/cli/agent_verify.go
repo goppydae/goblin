@@ -30,9 +30,9 @@ Verification steps:
   3. Source hash (if --check-source and source available)
 
 Examples:
-  gapictl agent verify agents/build/go/my_service
-  gapictl agent verify agents/build/go/my_service --pubkey=key.pub
-  gapictl agent verify agents/build/go/my_service --check-source --source=agents/go/my_service`,
+  gapictl agent verify agents/my_service.go.service
+  gapictl agent verify agents/my_service.go.service --pubkey=key.pub
+  gapictl agent verify agents/my_service.go.service --check-source --source=src/agents/my_service.go.service`,
 	Args: cobra.ExactArgs(1),
 	RunE: runAgentVerify,
 }

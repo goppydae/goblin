@@ -211,7 +211,7 @@ func (c *testCluster) startNodeWithArgs(id, join string, extra ...string) *clust
 	// The embedded agent manager discovers the fixture dir exclusively;
 	// binaries resolve from the harness build, never from /bin (lessons:
 	// harness isolation + sandbox-masked FHS paths).
-	cmd.Env = append(os.Environ(), agentPathEnv())
+	cmd.Env = append(os.Environ(), agentPathEnv()...)
 	// Process-group kill: instance processes spawned by the node must die
 	// with it, or go test's I/O watchdog hangs on inherited pipes.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -454,11 +454,25 @@ func dialALPNAddr(addr, alpn string) (*quic.Conn, error) {
 // goblin's known intermittent main flake, and therefore the hardest
 // possible thing to attribute correctly.
 //
+// AGENT_PATH ALONE NO LONGER FENCES. Up to gapi v0.1.0-proto2e it
+// REPLACED the search path, so naming a directory fenced discovery as a
+// side effect. proto2f made it additive - it PREPENDS - and moved the
+// fence behind AGENT_PATH_EXCLUSIVE, which is why both are set here.
+// The new failure shape is the opposite of the old one and must not be
+// hunted for as a timeout: the fixtures are still found, and found
+// first, so the suite PASSES while discovery quietly also scans the
+// user-scope tiers. It fails OPEN. gapi hit the real cost of that in
+// GAPI-DIV-021, where the checkout's own agents starved a fixture's
+// state transitions.
+//
 // The child is goblind, so its product is "goblin"; the harness knows
 // that because it built the child. Setting the identity in this process
 // is what lets EnvKey compose, and it asserts nothing about this test
 // binary beyond which binary it is about to run.
-func agentPathEnv() string {
+func agentPathEnv() []string {
 	gapiproduct.Set("goblin")
-	return gapiproduct.EnvKey("AGENT_PATH") + "=" + builtBinaries.agentsDir
+	return []string{
+		gapiproduct.EnvKey("AGENT_PATH") + "=" + builtBinaries.agentsDir,
+		gapiproduct.EnvKey("AGENT_PATH_EXCLUSIVE") + "=1",
+	}
 }

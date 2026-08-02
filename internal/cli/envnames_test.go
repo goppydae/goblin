@@ -40,10 +40,11 @@ const productName = "goblin"
 // composedNames are the kernel-owned settings goblin or its fixtures pass
 // to a spawned goblind, mapped to the registry suffix that composes them.
 var composedNames = map[string]string{
-	"AGENT_PATH": "fences agent discovery to a fixture directory",
-	"VERIFY_KEY": "agent signing public key",
-	"PY_RUNNER":  "Python ADK runner path",
-	"KMSG_PATH":  "kmsg device override under --pid1",
+	"AGENT_PATH":           "names a fixture directory, PREPENDED to the search path",
+	"AGENT_PATH_EXCLUSIVE": "fences discovery to what AGENT_PATH names",
+	"VERIFY_KEY":           "agent signing public key",
+	"PY_RUNNER":            "Python ADK runner path",
+	"KMSG_PATH":            "kmsg device override under --pid1",
 }
 
 // oldPrefixRe is the namespace the kernel owned before GAPI-DIV-059.
@@ -133,7 +134,14 @@ func TestEnvNames_LiteralsAgreeWithTheKernel(t *testing.T) {
 	}
 
 	// Anything shaped like one of our settings but spelled differently.
-	suspect := regexp.MustCompile(`\b[A-Z][A-Z0-9]*_(?:AGENT_PATH|VERIFY_KEY|PY_RUNNER|KMSG_PATH)\b`)
+	// AGENT_PATH_EXCLUSIVE is listed before AGENT_PATH for readability
+	// only. The ordering is NOT load-bearing, which was worth confirming
+	// rather than assuming: a shorter alternative that matches and then
+	// fails the trailing \b does not mask the longer one, because Go's
+	// RE2 engine keeps every alternative alive rather than committing to
+	// the first. Checked by swapping the two with a deliberately wrong
+	// EXCLUSIVE literal in the tree - still red, both orderings.
+	suspect := regexp.MustCompile(`\b[A-Z][A-Z0-9]*_(?:AGENT_PATH_EXCLUSIVE|AGENT_PATH|VERIFY_KEY|PY_RUNNER|KMSG_PATH)\b`)
 
 	var wrong []string
 	walkTree(t, func(rel, body string) {

@@ -176,7 +176,7 @@ func TestBootstrapExpectMismatchAtLeastOneExitsNonzero(t *testing.T) {
 		}
 		cmd := exec.CommandContext(ctx, builtBinaries.goblind, append([]string{"start"}, args...)...)
 		cmd.Stdout, cmd.Stderr = logFile, logFile
-		cmd.Env = append(os.Environ(), agentPathEnv())
+		cmd.Env = append(os.Environ(), agentPathEnv()...)
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 		cmd.Cancel = func() error {
 			return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
