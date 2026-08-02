@@ -24,7 +24,7 @@ func mustApply(t *testing.T, f *FSM, entry *goblinv1.LogEntry) interface{} {
 }
 
 func TestFSM_SetIncrementsVersion(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 
 	resp := mustApply(t, f, &goblinv1.LogEntry{
 		Type: goblinv1.CommandType_COMMAND_TYPE_SET, Namespace: "ns", Key: "k", Value: []byte("v1"),
@@ -48,7 +48,7 @@ func TestFSM_SetIncrementsVersion(t *testing.T) {
 }
 
 func TestFSM_CASAppliesOnVersionMatch(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	mustApply(t, f, &goblinv1.LogEntry{
 		Type: goblinv1.CommandType_COMMAND_TYPE_SET, Namespace: "ns", Key: "k", Value: []byte("v1"),
 	})
@@ -68,7 +68,7 @@ func TestFSM_CASAppliesOnVersionMatch(t *testing.T) {
 }
 
 func TestFSM_CASRejectsStaleVersion(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	mustApply(t, f, &goblinv1.LogEntry{
 		Type: goblinv1.CommandType_COMMAND_TYPE_SET, Namespace: "ns", Key: "k", Value: []byte("v1"),
 	})
@@ -92,7 +92,7 @@ func TestFSM_CASRejectsStaleVersion(t *testing.T) {
 }
 
 func TestFSM_CASOnMissingKey(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 
 	// Version 0 = "key must not exist yet": create-if-absent.
 	resp := mustApply(t, f, &goblinv1.LogEntry{
@@ -118,7 +118,7 @@ func TestFSM_CASOnMissingKey(t *testing.T) {
 }
 
 func TestFSM_UnknownCommandRejected(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	resp := mustApply(t, f, &goblinv1.LogEntry{
 		Type: goblinv1.CommandType(99), Namespace: "ns", Key: "k",
 	})
@@ -138,7 +138,7 @@ func (s *fakeSink) Cancel() error { s.cancelled = true; return nil }
 func (s *fakeSink) Close() error  { return nil }
 
 func TestFSM_SnapshotRestoreCarriesVersions(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	mustApply(t, f, &goblinv1.LogEntry{
 		Type: goblinv1.CommandType_COMMAND_TYPE_SET, Namespace: "ns", Key: "k", Value: []byte("v1"),
 	})
@@ -156,7 +156,7 @@ func TestFSM_SnapshotRestoreCarriesVersions(t *testing.T) {
 		t.Fatalf("Persist: %v", err)
 	}
 
-	restored := NewFSM()
+	restored := NewFSM(nil)
 	if err := restored.Restore(io.NopCloser(bytes.NewReader(sink.Bytes()))); err != nil {
 		t.Fatalf("Restore: %v", err)
 	}
@@ -201,7 +201,7 @@ func persistToBytes(t *testing.T, f *FSM) []byte {
 // restores into a fresh FSM. Every field of goblinv1.FSMSnapshot must
 // survive: state, versions, instances, tombstones, migrations.
 func TestFSM_SnapshotRestoreRoundTrip(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 
 	mustApply(t, f, &goblinv1.LogEntry{
 		Type: goblinv1.CommandType_COMMAND_TYPE_SET, Namespace: "ns", Key: "k", Value: []byte("v1"),
@@ -261,7 +261,7 @@ func TestFSM_SnapshotRestoreRoundTrip(t *testing.T) {
 
 	wire := persistToBytes(t, f)
 
-	restored := NewFSM()
+	restored := NewFSM(nil)
 	if err := restored.Restore(io.NopCloser(bytes.NewReader(wire))); err != nil {
 		t.Fatalf("Restore: %v", err)
 	}
@@ -317,7 +317,7 @@ func TestFSM_RestoreRefusesJSONSnapshot(t *testing.T) {
 	// data dir and rejoins rather than the FSM silently upgrading it.
 	preReset := []byte(`{"schema_version":2,"state":{"ns":{"k":"djE="}},"versions":{"ns":{"k":1}}}`)
 
-	f := NewFSM()
+	f := NewFSM(nil)
 	mustApply(t, f, &goblinv1.LogEntry{
 		Type: goblinv1.CommandType_COMMAND_TYPE_SET, Namespace: "untouched", Key: "k", Value: []byte("v1"),
 	})
@@ -343,7 +343,7 @@ func TestFSM_RestoreRefusesJSONSnapshot(t *testing.T) {
 func TestFSM_RestoreGarbageBytesErrorsWithoutPanic(t *testing.T) {
 	garbage := []byte{0xff, 0x00, 0xde, 0xad, 0xbe, 0xef, 0x01, 0x02, 0x03}
 
-	f := NewFSM()
+	f := NewFSM(nil)
 	err := f.Restore(io.NopCloser(bytes.NewReader(garbage)))
 	if err == nil {
 		t.Fatalf("Restore(garbage) = nil error, want a decode error")

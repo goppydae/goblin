@@ -78,7 +78,7 @@ func buildTestConsensus() (*consensus.Consensus, error) {
 	if err != nil {
 		return nil, fmt.Errorf("stream layer: %w", err)
 	}
-	c, err := consensus.NewConsensus("test-node", dir, stream, true, 0, 0, 0)
+	c, err := consensus.NewConsensus("test-node", dir, stream, true, 0, 0, 0, nil)
 	if err != nil {
 		return nil, fmt.Errorf("new consensus: %w", err)
 	}

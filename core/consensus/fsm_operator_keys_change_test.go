@@ -13,7 +13,7 @@ import (
 // half, which is the only thing that can authorize a change.
 func seeded(t *testing.T) (*FSM, *goblinv1.OperatorKey, ed25519.PrivateKey) {
 	t.Helper()
-	f := NewFSM()
+	f := NewFSM(nil)
 	root, priv := opKey(t, "root")
 	if err, _ := f.applyOperatorKeySeed(&goblinv1.OperatorKeySeed{
 		Keys: []*goblinv1.OperatorKey{root},
@@ -177,7 +177,7 @@ func TestChangeWithUnspecifiedOpIsRefused(t *testing.T) {
 }
 
 func TestChangeAgainstAnEmptyRegistryIsRefused(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	stranger, priv := opKey(t, "stranger")
 	victim, _ := opKey(t, "victim")
 

@@ -44,7 +44,7 @@ func followerConsensus(t *testing.T) *Consensus {
 	config.CommitTimeout = 10 * time.Millisecond
 	config.Logger = hclog.NewNullLogger()
 
-	fsm := NewFSM()
+	fsm := NewFSM(nil)
 	_, transport := raft.NewInmemTransport("")
 	r, err := raft.NewRaft(config, fsm, raft.NewInmemStore(), raft.NewInmemStore(),
 		raft.NewInmemSnapshotStore(), transport)

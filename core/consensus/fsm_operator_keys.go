@@ -27,19 +27,28 @@ import (
 // refused. The seed is therefore reachable exactly once in a cluster's
 // life, at bootstrap, which is the only time it means anything.
 //
-// Restore is a different matter and the boundary is worth stating
-// plainly: it installs whatever the snapshot holds, and a snapshot is
-// not a signed object. The prefix argument - that a snapshot is a
-// prefix of the same log, so the original seed either lives in it or
-// replays after it - holds only for snapshots produced by an honest
-// leader. A hostile raft peer that can forge InstallSnapshot can
-// install arbitrary registry state on every replica, bypassing every
-// rule in this file, because none of them run on that path. That is a
-// node-trust boundary this piece does not close; caller-supplied
-// tokens and mTLS are what close it, and both are later work. What
-// Restore does enforce is below: a record whose key id lies about its
-// bytes is refused, so the id-is-derived invariant holds everywhere
-// and not merely on the Apply path.
+// Restore used to be the hole in this, and GOBLIN-DIV-047 closed it.
+// The boundary is still worth stating plainly, because it moved rather
+// than vanished.
+//
+// A snapshot is not a signed object and cannot be: it is machine-produced
+// state, and no operator is present to sign it. So authenticating it
+// cannot mean checking a signature ON the snapshot - it means checking
+// the PROVENANCE the snapshot carries. Every mutation the registry ever
+// took is a signed change, and the seed that started it is compared
+// against the keys this node was configured with. core/consensus/
+// fsm_snapshot_trust.go replays that chain on restore and refuses unless
+// it reproduces the registry the snapshot claims, so a hostile raft peer
+// can no longer bypass the rules in this file by shipping a snapshot
+// instead of a log entry.
+//
+// What that does NOT cover is the rest of the snapshot. Key/value state,
+// instances and migrations are still installed on the authority of the
+// transport alone. That is deliberate: they are data the cluster already
+// agreed on, whereas the registry is the authority over who may change
+// that data, and only the second is a root of trust. A compromised member
+// can still lie about instance state; it can no longer make itself an
+// operator.
 
 var (
 	// ErrOperatorRegistryEmpty means no operator key is registered.
@@ -114,7 +123,44 @@ func (f *FSM) applyOperatorKeySeed(seed *goblinv1.OperatorKeySeed) interface{} {
 	}
 	f.operatorKeys = installed
 	f.operatorSerial++
+	// Record the founding set beside the registry it created. Only this
+	// branch records: the idempotent-restart path above returns without
+	// touching state, so a re-seed must not append a second seed that a
+	// replay would then apply twice (GOBLIN-DIV-047).
+	f.operatorSeed = &goblinv1.OperatorKeySeed{Keys: cloneOperatorKeys(keys)}
 	return nil
+}
+
+// cloneOperatorKeys deep-copies a key slice. The provenance records must
+// not alias the caller's memory: a log entry's message is not ours to
+// retain, and a later mutation of it would silently rewrite history that
+// Restore is going to verify against.
+func cloneOperatorKeys(in []*goblinv1.OperatorKey) []*goblinv1.OperatorKey {
+	out := make([]*goblinv1.OperatorKey, 0, len(in))
+	for _, k := range in {
+		out = append(out, &goblinv1.OperatorKey{
+			KeyId:     k.GetKeyId(),
+			PublicKey: append([]byte(nil), k.GetPublicKey()...),
+			Comment:   k.GetComment(),
+		})
+	}
+	return out
+}
+
+// recordOperatorChange appends a change that ACTUALLY MUTATED the
+// registry. Callers hold f.mu.
+//
+// "Actually mutated" is the whole contract. An ADD of an already
+// registered id returns early without bumping the serial, and so does an
+// idempotent re-seed; appending either would make Restore's replay take a
+// step the Apply path never took, and the replay would then disagree with
+// the registry it is supposed to reproduce - failing closed on honest
+// state, which is the worst kind of security check.
+func (f *FSM) recordOperatorChange(chg *goblinv1.OperatorKeyChange) {
+	f.operatorChain = append(f.operatorChain, &goblinv1.OperatorKeyChange{
+		Payload:   append([]byte(nil), chg.GetPayload()...),
+		Signature: append([]byte(nil), chg.GetSignature()...),
+	})
 }
 
 // sameKeySet compares two registries by key id and key bytes. Comments
@@ -250,6 +296,7 @@ func (f *FSM) applyOperatorKeyChange(chg *goblinv1.OperatorKeyChange) interface{
 			Comment:   k.GetComment(),
 		}
 		f.operatorSerial++
+		f.recordOperatorChange(chg)
 		return nil
 
 	case goblinv1.OperatorKeyOp_OPERATOR_KEY_OP_REMOVE:
@@ -265,6 +312,7 @@ func (f *FSM) applyOperatorKeyChange(chg *goblinv1.OperatorKeyChange) interface{
 		}
 		delete(f.operatorKeys, id)
 		f.operatorSerial++
+		f.recordOperatorChange(chg)
 		return nil
 
 	default:

@@ -61,7 +61,7 @@ func migrateBegin(uuid []byte, target string, epoch uint64) *goblinv1.MigrateBeg
 }
 
 func TestMigrateBeginRecordsIntentWithoutChangingState(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	runningInstance(t, f, migInstA, "node-1")
 
 	if err, _ := f.applyMigrateBegin(migrateBegin(migInstA, "node-2", 1)).(error); err != nil {
@@ -89,7 +89,7 @@ func TestMigrateBeginRecordsIntentWithoutChangingState(t *testing.T) {
 }
 
 func TestConcurrentMigrationRejected(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	runningInstance(t, f, migInstA, "node-1")
 
 	if err, _ := f.applyMigrateBegin(migrateBegin(migInstA, "node-2", 1)).(error); err != nil {
@@ -108,7 +108,7 @@ func TestConcurrentMigrationRejected(t *testing.T) {
 }
 
 func TestMigrateCommitCompletedMovesNode(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	runningInstance(t, f, migInstA, "node-1")
 	if err, _ := f.applyMigrateBegin(migrateBegin(migInstA, "node-2", 5)).(error); err != nil {
 		t.Fatalf("begin: %v", err)
@@ -131,7 +131,7 @@ func TestMigrateCommitCompletedMovesNode(t *testing.T) {
 }
 
 func TestMigrateCommitAbortedLeavesInstancePut(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	runningInstance(t, f, migInstA, "node-1")
 	if err, _ := f.applyMigrateBegin(migrateBegin(migInstA, "node-2", 5)).(error); err != nil {
 		t.Fatalf("begin: %v", err)
@@ -160,7 +160,7 @@ func TestMigrateCommitAbortedLeavesInstancePut(t *testing.T) {
 // A late commit from a superseded attempt must not close the current
 // migration on the strength of an older one's outcome.
 func TestStaleEpochCommitRejected(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	runningInstance(t, f, migInstA, "node-1")
 	if err, _ := f.applyMigrateBegin(migrateBegin(migInstA, "node-2", 9)).(error); err != nil {
 		t.Fatalf("begin: %v", err)
@@ -185,7 +185,7 @@ func TestStaleEpochCommitRejected(t *testing.T) {
 // UNSPECIFIED must not resolve in either direction: guessing would
 // either strand an instance or move one that never arrived.
 func TestUnspecifiedOutcomeRefused(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	runningInstance(t, f, migInstA, "node-1")
 	if err, _ := f.applyMigrateBegin(migrateBegin(migInstA, "node-2", 1)).(error); err != nil {
 		t.Fatalf("begin: %v", err)
@@ -203,7 +203,7 @@ func TestUnspecifiedOutcomeRefused(t *testing.T) {
 }
 
 func TestMigrateBeginRequiresRunningAndRights(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	runningInstance(t, f, migInstA, "node-1")
 
 	noRights := migrateBegin(migInstA, "node-2", 1)
@@ -231,7 +231,7 @@ func TestMigrateBeginRequiresRunningAndRights(t *testing.T) {
 // The arbitration is only sound if it survives a restart: a replica
 // that caught up from a snapshot must still refuse a concurrent move.
 func TestMigrationSurvivesSnapshotRestore(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	runningInstance(t, f, migInstA, "node-1")
 	if err, _ := f.applyMigrateBegin(migrateBegin(migInstA, "node-2", 3)).(error); err != nil {
 		t.Fatalf("begin: %v", err)
@@ -246,7 +246,7 @@ func TestMigrationSurvivesSnapshotRestore(t *testing.T) {
 		t.Fatalf("Persist: %v", err)
 	}
 
-	restored := NewFSM()
+	restored := NewFSM(nil)
 	if err := restored.Restore(io.NopCloser(bytes.NewReader(sink.Bytes()))); err != nil {
 		t.Fatalf("Restore: %v", err)
 	}
