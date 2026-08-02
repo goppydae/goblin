@@ -242,20 +242,47 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 // boot runs the phases in order and blocks until the context ends.
 // It returns the first phase error, or nil on a clean cancellation.
 func (s *Supervisor) boot(ctx context.Context, st *runState, failFatal func(error)) error {
+	// The phases are TARGETS REACHED (GOBLIN-DIV-050). Each phase does
+	// its own work and then starts the agents that declared themselves
+	// wanted by the state that work establishes, so Phase 2 is not a step
+	// between the others - it is distributed across all of them, which is
+	// what the entry meant by a target model MOVING Phase 2 rather than
+	// filtering it.
+	//
 	// Phase 1: local runtime.
 	if err := s.phaseLocal(ctx, st); err != nil {
 		return err
 	}
-	// Phase 3: network readiness. Phase 2 would sit here.
+	// Phase 2: local agents. Reached here because the local runtime is up
+	// and the network is not required.
+	if err := s.reachTarget(ctx, st, TargetLocal, applyStart); err != nil {
+		return err
+	}
+	s.warnUnreachableTargets(ctx, st)
+
+	// Phase 3: network readiness. local.target above is what gives this
+	// gate a producer - before it, nothing on this node ever published
+	// the readiness topic, so a nonzero timeout always expired.
 	if err := s.phaseNetworkGate(ctx, st); err != nil {
 		return err
 	}
+	if err := s.reachTarget(ctx, st, TargetNetworkReady, applyStart); err != nil {
+		return err
+	}
+
 	// Phase 4: cluster join.
 	if err := s.phaseCluster(ctx, st, failFatal); err != nil {
 		return err
 	}
+	if err := s.reachTarget(ctx, st, TargetCluster, applyStart); err != nil {
+		return err
+	}
+
 	// Phase 5: serving.
 	if err := s.phaseServing(ctx, st); err != nil {
+		return err
+	}
+	if err := s.reachTarget(ctx, st, TargetDistributed, applyStart); err != nil {
 		return err
 	}
 
