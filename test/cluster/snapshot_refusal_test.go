@@ -94,6 +94,7 @@ func TestJSONSnapshotRefusedAtStartup(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, builtBinaries.goblind,
+		"start",
 		"--id", "refusal-test",
 		"--listen-addr", addr,
 		"--data", dataDir,

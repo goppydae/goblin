@@ -174,7 +174,7 @@ func TestBootstrapExpectMismatchAtLeastOneExitsNonzero(t *testing.T) {
 		if join != "" {
 			args = append(args, "--join", join)
 		}
-		cmd := exec.CommandContext(ctx, builtBinaries.goblind, args...)
+		cmd := exec.CommandContext(ctx, builtBinaries.goblind, append([]string{"start"}, args...)...)
 		cmd.Stdout, cmd.Stderr = logFile, logFile
 		cmd.Env = append(os.Environ(), "RUNTIME_AGENT_PATH="+builtBinaries.agentsDir)
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

@@ -394,5 +394,5 @@ func Lint() error {
 func Dev() error {
 	mg.Deps(Build)
 	fmt.Println("Starting goblind in development mode...")
-	return sh.RunV("./bin/goblind")
+	return sh.RunV("./bin/goblind", "start")
 }

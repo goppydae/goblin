@@ -32,7 +32,7 @@ DATA_DIR_3=$(mktemp -d /tmp/goblin-test-3-XXXXXX)
 
 # Node 1 (Seed)
 log "Starting Node 1..."
-./bin/goblind \
+./bin/goblind start \
     --id=node-1 \
     --serf-addr=127.0.0.1 --serf-port=29011 \
     --raft-addr=127.0.0.1:29021 --data=$DATA_DIR_1 \
@@ -43,7 +43,7 @@ sleep 2 # Wait for leader election
 
 # Node 2
 log "Starting Node 2..."
-./bin/goblind \
+./bin/goblind start \
     --id=node-2 \
     --serf-addr=127.0.0.1 --serf-port=29012 \
     --raft-addr=127.0.0.1:29022 --data=$DATA_DIR_2 \
@@ -53,7 +53,7 @@ pids+=($!)
 
 # Node 3
 log "Starting Node 3..."
-./bin/goblind \
+./bin/goblind start \
     --id=node-3 \
     --serf-addr=127.0.0.1 --serf-port=29013 \
     --raft-addr=127.0.0.1:29023 --data=$DATA_DIR_3 \

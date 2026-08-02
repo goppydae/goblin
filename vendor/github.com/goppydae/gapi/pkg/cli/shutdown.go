@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/goppydae/gapi/core/client"
-	"github.com/goppydae/gapi/core/config"
 )
 
 var (
@@ -31,7 +30,7 @@ var shutdownCmd = &cobra.Command{
 			action = "halt"
 		}
 
-		cfg, err := config.Load()
+		cfg, err := controlConfig()
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
 		}

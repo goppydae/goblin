@@ -71,7 +71,7 @@ func TestGoblindPid1Smoke(t *testing.T) {
 		"-v", tmpVol+":/tmp",
 		"--env", "GOBLIN_KMSG_PATH=/tmp/kmsg",
 		"--rootfs", rootfs+":O",
-		"/goblind", "--pid1", "--no-early-mounts",
+		"/goblind", "start", "--pid1", "--no-early-mounts",
 		"--id", "node1", "--listen-addr", "127.0.0.1:29000",
 		"--data", "/data/raft", "--log-level", "debug",
 	)
