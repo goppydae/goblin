@@ -80,6 +80,43 @@ jobs:
         working-directory: goblin
         run: nix develop -c mage -v test
 
+  flake-build:
+    # The PR-path half of the flake gate. goblin runs 'nix flake check'
+    # only in vm-checks.yml, which is deliberately OFF this path and
+    # needs KVM - so nothing built the flake package or evaluated the
+    # declared systems on a pull request.
+    #
+    # A FLAKE BUILDS FROM THE GIT TREE, a third resolution mode beside
+    # go.work and vendor/. An uncommitted file does not exist to it, so
+    # 'nix develop -c go build ./...' can be green while 'nix build .#'
+    # fails on the same checkout.
+    #
+    # --all-systems is the load-bearing flag: a plain check PASSES on
+    # outputs that cannot evaluate for a declared system - it omits the
+    # incompatible ones, says so in a warning, and exits 0. It is what
+    # found that devShells.aarch64-darwin could not be instantiated at
+    # all, because criu and libseccomp have no darwin build. --no-build
+    # keeps the VM guests out; those stay in vm-checks.yml.
+    name: Flake Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Workspace (Goblin)
+        uses: actions/checkout@v4
+
+      # No sibling checkout: the flake builds through vendor/ with
+      # GOWORK=off, the same resolution the no-replace job proves.
+
+      - name: Synchronize Environment (Nix)
+        uses: cachix/install-nix-action@v24
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Build the Flake Package
+        run: nix build .# --no-link --print-build-logs
+
+      - name: Evaluate Every Declared System
+        run: nix flake check --no-build --all-systems
+
   no-replace-module-resolution:
     # Proves the ledger exit for the first tagged release: the module
     # graph resolves from published tags alone - no replace directives,

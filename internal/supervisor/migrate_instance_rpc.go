@@ -89,6 +89,15 @@ func (s *SchedulerRPC) MigrateInstance(req *goblinv1.MigrateInstanceRequest, res
 		Token:        token,
 		Spec:         spec,
 	})
+	// The token's job ends with the migration, whichever way it went.
+	// Revoking on FAILURE matters more than on success: a rolled-back or
+	// stranded migration is exactly when a token is loose with no
+	// completion to bound it, and until this existed nothing ever called
+	// Revoke in production (GOBLIN-DIV-015). Without it the only bound
+	// on a leaked migrate token - which reads another process's entire
+	// address space - was its 60-300s TTL.
+	s.revokeToken(context.Background(), payload.GetTokenId())
+
 	if err != nil {
 		// The coordinator's typed outcomes matter to an operator:
 		// ErrRolledBack means the instance is still serving on its

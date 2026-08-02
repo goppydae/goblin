@@ -41,6 +41,13 @@ type SchedulerRPC struct {
 	revocations *capability.Revocations
 	members     memberTagLister
 
+	// publishRevocation broadcasts the merged revocation filter. It is a
+	// narrow function rather than the bus itself so the revoke path is
+	// testable without one, and so a node with no bus still revokes
+	// LOCALLY - refusing a token you cannot tell anyone about is
+	// strictly better than not refusing it.
+	publishRevocation func(tokenID []byte)
+
 	// Migration collaborators (nil outside a full supervisor, in which
 	// case MigrateInstance refuses rather than half-running).
 	migrateNodes  *migration.RPCNodes
@@ -50,6 +57,41 @@ type SchedulerRPC struct {
 	eventsMu  sync.RWMutex
 	events    []LogEvent
 	lastIndex uint64
+}
+
+// revokeToken records tokenID in this node's filter and broadcasts the
+// merged snapshot.
+//
+// Nothing called Revocations.Revoke in production before this
+// (GOBLIN-DIV-015): the receive half shipped - a subscriber that merges
+// incoming filters, and enforcement at the checkpoint boundary - while
+// the send half did not, so IsRevoked was a constant false and a leaked
+// token was bounded only by its 60-300s TTL.
+//
+// Local revocation is unconditional and the broadcast is best-effort, in
+// that order deliberately. A node that cannot gossip must still refuse
+// the token itself.
+func (s *SchedulerRPC) revokeToken(ctx context.Context, tokenID []byte) {
+	if s.revocations == nil || len(tokenID) == 0 {
+		return
+	}
+	s.revocations.Revoke(tokenID)
+
+	if s.publishRevocation == nil {
+		slog.Default().LogAttrs(ctx, slog.LevelWarn,
+			"capability revoked locally but not broadcast: no publisher wired",
+			slog.String("token_id", fmt.Sprintf("%x", tokenID)))
+		return
+	}
+	// The DELTA is broadcast, not the filter. Snapshot is 1024 bytes
+	// fixed-width and the Serf user-event limit is 512, so a filter
+	// broadcast could never have fit - which is plausibly why this half
+	// was never wired. A token id is 16 bytes and every node applies it
+	// with the same Revoke call, so merge order stays irrelevant.
+	//
+	// Best-effort: a node that misses the event keeps accepting the
+	// token until it expires (<=300s). Anti-entropy closes that window.
+	s.publishRevocation(tokenID)
 }
 
 const maxEvents = 50

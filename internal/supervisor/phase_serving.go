@@ -85,6 +85,21 @@ func (s *Supervisor) startRPC(ctx context.Context, st *runState) error {
 		migrateNodes:  migrateNodes,
 		migrateRaft:   migration.NewRaftProposer(st.consensus, 0),
 		migrateLogger: slog.Default(),
+
+		// The send half of revocation gossip. The subscriber below is
+		// the receive half and predates this by weeks; nothing filled
+		// this side, so the topic carried no traffic at all.
+		publishRevocation: func(tokenID []byte) {
+			// PublishCluster, not PublishLocal: a revocation is only
+			// useful on the nodes that will be asked to honour the
+			// token, which is every node but this one.
+			if err := st.bus.PublishCluster("capability", "capability.revocation",
+				map[string]interface{}{"token_id": tokenID}, nil); err != nil {
+				slog.Default().LogAttrs(ctx, slog.LevelWarn,
+					"revocation broadcast failed; the token is refused locally only",
+					logattr.Err(err))
+			}
+		},
 	}
 	st.schedulerRPC = schedulerRPC
 	slog.Default().LogAttrs(ctx, slog.LevelInfo, "scheduler rpc created")
@@ -144,7 +159,7 @@ func (s *Supervisor) startRPC(ctx context.Context, st *runState) error {
 
 	ckptServer := migration.NewServer(
 		nodeRPC.Images(),
-		checkpointAuthorizer(schedulerRPC.capabilityKeyResolver(), slog.Default()),
+		checkpointAuthorizer(schedulerRPC.capabilityKeyResolver(), s.revocations, slog.Default()),
 		slog.Default(),
 	)
 	s.loops.spawn(tierRun, "checkpoint-server", func() { ckptServer.Serve(ctx, ckptConns) })
@@ -288,13 +303,16 @@ func (s *Supervisor) startHeartbeat(ctx context.Context, st *runState) {
 	// node merges what it sees (the filter only grows, so merge order
 	// is irrelevant). Bytes ride the bus JSON as base64.
 	bus.Subscribe("capability.revocation", func(e eventbus.Event) {
-		raw, ok := decodeRevocationFilter(ctx, e.Payload["filter"])
+		id, ok := decodeRevocationFilter(ctx, e.Payload["token_id"])
 		if !ok {
 			return
 		}
-		if err := s.revocations.Ingest(raw); err != nil {
-			slog.Default().LogAttrs(ctx, slog.LevelWarn, "reject revocation snapshot", logattr.Err(err))
+		if len(id) != 16 {
+			slog.Default().LogAttrs(ctx, slog.LevelWarn, "revocation carries a malformed token id",
+				slog.Int("bytes", len(id)))
+			return
 		}
+		s.revocations.Revoke(id)
 	})
 }
 
