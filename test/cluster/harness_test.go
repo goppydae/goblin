@@ -205,7 +205,7 @@ func (c *testCluster) startNodeWithArgs(id, join string, extra ...string) *clust
 		c.t.Fatalf("create node log: %v", err)
 	}
 
-	cmd := exec.Command(builtBinaries.goblind, args...)
+	cmd := exec.Command(builtBinaries.goblind, append([]string{"start"}, args...)...)
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	// The embedded agent manager discovers the fixture dir exclusively;
 	// binaries resolve from the harness build, never from /bin (lessons:

@@ -52,7 +52,7 @@ nix develop -c mage build
 Single node - with no `--join`, it bootstraps a cluster of one:
 
 ```bash
-./bin/goblind
+./bin/goblind start
 ```
 
 Inspect it. Note that cluster verbs live under `goblinctl cluster`; a

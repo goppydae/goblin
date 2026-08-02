@@ -72,7 +72,7 @@ in {
       # Found by the two-node migration test (GOBLIN-DIV-031).
       path = optionals cfg.enableMigration [ pkgs.criu ];
       serviceConfig = {
-        ExecStart = "${cfg.package}/bin/goblind";
+        ExecStart = "${cfg.package}/bin/goblind start";
         Restart = "always";
       } // optionalAttrs cfg.enableMigration {
         # CAP_CHECKPOINT_RESTORE for clone3(set_tid) on restore,
