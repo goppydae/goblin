@@ -63,10 +63,51 @@ func (s *SchedulerRPC) authorize(verb capability.Verb, subject []byte) (*gapiv1.
 // starts asking WHICH key, rather than whether there is one, must move
 // to the verified accessor.
 func operatorRegistryGate(c *consensus.Consensus, op string) error {
-	if c == nil || c.OperatorKeyCountLocal() == 0 {
+	if c == nil {
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn,
+			"operator registry gate refused with no consensus",
+			slog.String("op", op))
+		return fmt.Errorf("%w: %s refused", consensus.ErrOperatorRegistryEmpty, op)
+	}
+	if c.OperatorKeyCountLocal() == 0 {
+		logRegistryRefusal(c, op)
 		return fmt.Errorf("%w: %s refused", consensus.ErrOperatorRegistryEmpty, op)
 	}
 	return nil
+}
+
+// logRegistryRefusal is the GOBLIN-DIV-048 instrumentation.
+//
+// That entry recorded a migration rolled back because the destination
+// refused a checkpoint pull for want of a root of trust the cluster
+// demonstrably had, and left the mechanism unresolved on purpose: a
+// replica lagging behind the seed and a gate reading the wrong thing
+// produce the identical error text, and the two want opposite fixes.
+// The refusal now says which it was.
+//
+// It logs rather than enriching the error because the error crosses the
+// wire to a peer, and a refusal is not the place to hand a caller this
+// node's raft indices. The harness dumps each node's log on failure, so
+// this lands where the failure is already read.
+func logRegistryRefusal(c *consensus.Consensus, op string) {
+	stats := c.Stats()
+	_, serial := c.OperatorKeysLocal()
+	slog.Default().LogAttrs(context.Background(), slog.LevelWarn,
+		"operator registry gate refused: registry reads empty on this node",
+		slog.String("op", op),
+		slog.String("node_id", c.NodeID()),
+		slog.Bool("is_leader", c.IsLeader()),
+		slog.String("leader_id", c.LeaderID()),
+		slog.Int("local_key_count", c.OperatorKeyCountLocal()),
+		slog.Uint64("registry_serial", serial),
+		// applied vs commit vs last_log separates "this node has not
+		// caught up" from "this node is caught up and the registry is
+		// genuinely absent" - the two candidate mechanisms.
+		slog.String("raft_state", stats["state"]),
+		slog.String("applied_index", stats["applied_index"]),
+		slog.String("commit_index", stats["commit_index"]),
+		slog.String("last_log_index", stats["last_log_index"]),
+	)
 }
 
 // requireOperatorRegistry is the fail-closed gate (GOBLIN-DIV-015
