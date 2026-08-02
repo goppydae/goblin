@@ -38,6 +38,14 @@ type Skip struct {
 	// permanent exemption the rule itself grants, and the distinction
 	// between that and debt only works if the classification is auditable
 	// at the point it is made.
+	//
+	// A reason for a TERMINOLOGY skip must not spell out the phrase the
+	// rule forbids. The Magefile declaring it is itself walked, so the
+	// gate catches its own configuration - and whoever writes such a
+	// reason is exactly the person reaching for the phrase. Both
+	// consumers hit this on the first draft. State the decision without
+	// quoting what it rejected; the ledger entry the skip exists for is
+	// where the rejected spelling belongs.
 	Reason string
 }
 

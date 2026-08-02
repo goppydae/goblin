@@ -72,14 +72,15 @@ var nameRe = regexp.MustCompile(`^[a-z][a-z0-9]*$`)
 // struct's mapstructure tags by core/config, which is a stronger source
 // than any list - a field added later is bound because it exists.
 var directEnv = map[string]string{
-	"CONFIG":             "core/config.Load - path to config.yaml",
-	"AGENT_PATH":         "core/config.AgentSearchPaths - replaces the whole search path",
-	"DEV_AGENTS":         "core/config.AgentSearchPaths, ClassifyPath - highest-priority agent dir",
-	"SKIP_SYSTEM_AGENTS": "core/config.AgentSearchPaths - drop the system dirs",
-	"CGROUPS_DISABLE":    "core/cgroups.Setup - refuse cgroup delegation",
-	"VERIFY_KEY":         "core/supervisor.New - agent signing public key",
-	"PY_RUNNER":          "core/supervisor.resolvePyRunner - override the Python runner path",
-	"KMSG_PATH":          "core/supervisor pid1 wiring - override /dev/kmsg",
+	"CONFIG":               "core/config.Load - path to config.yaml",
+	"AGENT_PATH":           "core/config.AgentSearchPaths - directories PREPENDED to the tiers",
+	"AGENT_PATH_EXCLUSIVE": "core/config.AgentSearchPaths - search only what AGENT_PATH names",
+	"DEV_AGENTS":           "core/config.AgentSearchPaths, ClassifyPath - highest-priority agent dir",
+	"SKIP_SYSTEM_AGENTS":   "core/config.AgentSearchPaths - drop the system dirs",
+	"CGROUPS_DISABLE":      "core/cgroups.Setup - refuse cgroup delegation",
+	"VERIFY_KEY":           "core/supervisor.New - agent signing public key",
+	"PY_RUNNER":            "core/supervisor.resolvePyRunner - override the Python runner path",
+	"KMSG_PATH":            "core/supervisor pid1 wiring - override /dev/kmsg",
 }
 
 var (

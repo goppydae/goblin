@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -74,10 +74,20 @@ func init() {
 	agentBuildCmd.Flags().BoolVarP(&watchMode, "watch", "w", false, "Watch for changes and rebuild")
 	agentBuildCmd.Flags().BoolVar(&signBuild, "sign", false, "Sign the built binary with ED25519")
 	agentBuildCmd.Flags().StringVar(&keyPath, "key", "", "Path to ED25519 signing key")
-	agentBuildCmd.Flags().StringVarP(&outputDir, "output", "o", "agents/build/go", "Output directory for built binaries")
+	// Built agents land in the DEPLOY payload, not a build sub-tree.
+	// agents/ is what an install ships, and a built Go agent is a
+	// deployable artifact exactly as a Python agent file is - it keeps
+	// the same <name>.<lang>.<type> name, so one directory holds every
+	// language and type and reads like a systemd unit directory.
+	agentBuildCmd.Flags().StringVarP(&outputDir, "output", "o", "agents", "Output directory for built agents")
 
-	agentNewCmd.Flags().StringVarP(&agentLang, "lang", "l", "go", "Agent language (go, python)")
-	agentNewCmd.Flags().StringVarP(&agentType, "type", "t", "service", "Agent type (service, timer, socket)")
+	// The advertised sets come from the scaffold matrix rather than from
+	// literals here: help that names a type with no template is the same
+	// promise the fallback used to keep badly (GAPI-DIV-054).
+	agentNewCmd.Flags().StringVarP(&agentLang, "lang", "l", "go",
+		fmt.Sprintf("Agent language (%s)", strings.Join(scaffoldLangs(), ", ")))
+	agentNewCmd.Flags().StringVarP(&agentType, "type", "t", "service",
+		fmt.Sprintf("Agent type (%s)", strings.Join(scaffoldTypes(), ", ")))
 	agentNewCmd.Flags().StringVarP(&agentOutput, "output", "o", "", "Output directory (default: agents/{lang}/foundational or agents/{lang}/services)")
 
 	agentCmd.AddCommand(agentBuildCmd)
@@ -150,8 +160,12 @@ func watchAndBuild(sourcePath string, isDir bool) error {
 				return nil
 			}
 
-			// Only rebuild on .go file changes
-			if filepath.Ext(event.Name) != ".go" {
+			// Only rebuild on agent sources. This tests the AGENT-FILE
+			// form rather than a ".go" extension: an agent is named
+			// <name>.go.<type>, so filepath.Ext returns ".service" and an
+			// extension check would silently never fire - watch mode
+			// would run, report nothing, and rebuild nothing.
+			if !isGoAgentFile(filepath.Base(event.Name)) {
 				continue
 			}
 
@@ -218,76 +232,52 @@ func addWatchRecursive(watcher *fsnotify.Watcher, path string) error {
 func buildDirectory(dir string) error {
 	fmt.Printf("Building all Go agents in %s...\n", dir)
 
-	// Find all directories with main.go
-	var agentDirs []string
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() && info.Name() == "main.go" {
-			agentDirs = append(agentDirs, filepath.Dir(path))
-		}
-		return nil
-	})
+	sources, err := findGoAgents(dir)
 	if err != nil {
 		return fmt.Errorf("failed to scan directory: %w", err)
 	}
-
-	if len(agentDirs) == 0 {
-		return fmt.Errorf("no Go agents found in %s (looking for main.go)", dir)
+	if len(sources) == 0 {
+		return fmt.Errorf("no Go agents found in %s: an agent is a single file named "+
+			"<name>.go.<type> where type is one of %s", dir, strings.Join(goAgentTypes, ", "))
 	}
 
-	for _, agentDir := range agentDirs {
-		if err := buildAgent(agentDir); err != nil {
-			slog.Default().LogAttrs(context.Background(), slog.LevelError, "build failed", logattr.Path(agentDir), logattr.Err(err))
+	// A failure builds the rest rather than aborting: one broken agent in
+	// a tree should not stop the others, and the error names which.
+	failed := 0
+	for _, src := range sources {
+		if err := buildAgent(src); err != nil {
+			failed++
+			slog.Default().LogAttrs(context.Background(), slog.LevelError, "build failed", logattr.Path(src), logattr.Err(err))
 		}
 	}
 
-	fmt.Printf("[OK] Built %d agents\n", len(agentDirs))
+	if failed > 0 {
+		return fmt.Errorf("%d of %d agents failed to build", failed, len(sources))
+	}
+	fmt.Printf("[OK] Built %d agents\n", len(sources))
 	return nil
 }
 
+// buildAgent builds ONE Go agent from its source file.
+//
+// sourcePath names a <name>.go.<type> file, not a directory containing a
+// main.go. A Go agent is a single file that declares metadata and
+// lifecycle functions; the main that registers them and runs the ADK is
+// generated at build time, which is what makes an agent unable to
+// misunderstand the verb its supervisor invokes (GAPI-DIV-052).
 func buildAgent(sourcePath string) error {
-	// Determine agent name from directory
-	agentName := filepath.Base(sourcePath)
-	if agentName == "." {
-		agentName = filepath.Base(filepath.Dir(sourcePath))
+	if !isGoAgentFile(filepath.Base(sourcePath)) {
+		return fmt.Errorf("%s is not a Go agent: an agent is a single file named "+
+			"<name>.go.<type> where type is one of %s",
+			sourcePath, strings.Join(goAgentTypes, ", "))
 	}
 
-	// Create output directory
-	if err := os.MkdirAll(outputDir, 0750); err != nil {
-		return fmt.Errorf("failed to create output directory: %w", err)
-	}
-
-	outputBinary := filepath.Join(outputDir, agentName)
-
+	agentName := goAgentName(sourcePath)
 	fmt.Printf("Building %s...\n", agentName)
 
-	// Compute source hash for verification chain
-	sourceHash, err := crypto.HashDirectory(sourcePath, "*.go")
+	outputBinary, _, err := buildGoAgent(sourcePath, outputDir)
 	if err != nil {
-		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "failed to compute source hash", logattr.Err(err))
-		sourceHash = "unknown"
-	}
-
-	// Build with embedded metadata
-	buildTime := time.Now().Format(time.RFC3339)
-	ldflags := fmt.Sprintf("-X main.SourceHash=%s -X main.BuildTime=%s", sourceHash, buildTime)
-
-	// Make output path absolute
-	absOutputBinary, err := filepath.Abs(outputBinary)
-	if err != nil {
-		return fmt.Errorf("failed to get absolute path: %w", err)
-	}
-
-	// Build from source directory
-	buildCmd := exec.Command("go", "build", "-ldflags", ldflags, "-o", absOutputBinary, ".")
-	buildCmd.Dir = sourcePath
-	buildCmd.Stdout = os.Stdout
-	buildCmd.Stderr = os.Stderr
-
-	if err := buildCmd.Run(); err != nil {
-		return fmt.Errorf("build failed: %w", err)
+		return err
 	}
 
 	// Generate BLAKE3 hash

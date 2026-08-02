@@ -1,64 +1,73 @@
-// {{.Name}} - {{.Description}}
-package main
+// {{.Description}}
+package agent
 
 import (
-	"encoding/json"
-	"flag"
-	"fmt"
+	"context"
+	"errors"
 	"net"
-	"os"
+
+	adk "github.com/goppydae/gapi/adk/go/agent"
 )
 
-var describe = flag.Bool("describe", false, "Print agent metadata")
+const (
+	ID          = "{{.ID}}"
+	Type        = "socket"
+	Version     = "1.0.0"
+	Description = "{{.Description}}"
+	Enabled     = true
+)
 
-func main() {
-	flag.Parse()
+// ListenStream declares the address THE SUPERVISOR binds, not one this
+// agent binds. The supervisor creates and arms the listener before this
+// process exists, so connections queue in the kernel's backlog while the
+// agent starts, and the listener arrives here as an inherited descriptor.
+var ListenStream = "127.0.0.1:8080"
 
-	if *describe {
-		metadata := map[string]interface{}{
-			"describe": map[string]interface{}{
-				"id":           "{{.ID}}",
-				"type":         "socket",
-				"version":      "1.0.0",
-				"language":     "go",
-				"description":  "{{.Description}}",
-				"listen_stream": "127.0.0.1:8080",
-				"capabilities": []string{"initialize", "start", "stop"},
-			},
-		}
-		json.NewEncoder(os.Stdout).Encode(metadata)
-		return
-	}
-
-	// Start socket server
-	start()
-}
-
-func start() {
-	fmt.Println("[{{.ID}}] Starting socket server...")
-
-	listener, err := net.Listen("tcp", "127.0.0.1:8080")
+// Start serves the inherited listener.
+//
+// Never call net.Listen on ListenStream. The supervisor has already bound
+// it, so a fresh bind either fails with EADDRINUSE or races the
+// supervisor and wins - which is worse, because the socket the supervisor
+// is queueing connections on is then not the socket this agent is
+// serving, and everything that arrived before startup is stranded.
+func Start(ctx context.Context) error {
+	ln, err := adk.Listener()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to listen: %v\n", err)
-		os.Exit(1)
+		return err
 	}
-	defer listener.Close()
+	defer func() { _ = ln.Close() }()
 
-	fmt.Println("[{{.ID}}] Listening on 127.0.0.1:8080")
+	go func() {
+		<-ctx.Done()
+		_ = ln.Close()
+	}()
 
 	for {
-		conn, err := listener.Accept()
+		conn, err := ln.Accept()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to accept: %v\n", err)
-			continue
+			// A closed listener is the ordinary shutdown path, not a
+			// failure: ctx cancellation closes it out from under Accept.
+			if ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
+				return nil
+			}
+			return err
 		}
-
-		go handleConnection(conn)
+		go handle(conn)
 	}
 }
 
-func handleConnection(conn net.Conn) {
-	defer conn.Close()
-	fmt.Println("[{{.ID}}] Connection accepted")
-	// TODO: Add connection handling logic
+func handle(conn net.Conn) {
+	defer func() { _ = conn.Close() }()
+
+	// TODO: Replace the echo with this agent's protocol
+	buf := make([]byte, 4096)
+	for {
+		n, err := conn.Read(buf)
+		if err != nil {
+			return
+		}
+		if _, err := conn.Write(buf[:n]); err != nil {
+			return
+		}
+	}
 }

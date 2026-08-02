@@ -120,8 +120,13 @@ goblind start --id node-1 --tls-cert /etc/goblin/node.crt --tls-key /etc/goblin/
 ### Agent discovery
 
 Local agents are discovered from the paths GAPI searches.
-`GOBLIN_AGENT_PATH` overrides the search root, so binaries resolve
-from there rather than from the system `PATH`.
+`GOBLIN_AGENT_PATH` is **prepended** to those paths: it adds
+precedence, it does not replace them. To search only what it names,
+set `GOBLIN_AGENT_PATH_EXCLUSIVE=1`.
+
+Setting `GOBLIN_AGENT_PATH` alone therefore discovers *more* agents
+than the default, never fewer. A deployment that used it to fence a
+node to one directory must set the exclusive switch as well.
 
 ## `goblinctl` - Control CLI
 
@@ -282,7 +287,8 @@ flags only. The variables that are actually read:
 
 | Variable | Read by | Purpose |
 | -------- | ------- | ------- |
-| `GOBLIN_AGENT_PATH` | agent discovery | Override the agent search root |
+| `GOBLIN_AGENT_PATH` | agent discovery | Directories prepended to the agent search path |
+| `GOBLIN_AGENT_PATH_EXCLUSIVE` | agent discovery | Search only what `GOBLIN_AGENT_PATH` names |
 | `GOBLIN_VERIFY_KEY` | signature verification | Fallback for `--agent-verify-key` |
 | `GOBLIN_KMSG_PATH` | PID 1 mode | Override the kmsg device |
 

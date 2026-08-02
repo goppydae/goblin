@@ -1,39 +1,29 @@
-// {{.Name}} - {{.Description}}
-package main
+// {{.Description}}
+package agent
 
-import (
-	"encoding/json"
-	"flag"
-	"fmt"
-	"os"
+const (
+	ID          = "{{.ID}}"
+	Type        = "timer"
+	Version     = "1.0.0"
+	Description = "{{.Description}}"
+	Enabled     = true
 )
 
-var describe = flag.Bool("describe", false, "Print agent metadata")
+// Schedule accepts a cron expression ("*/5 * * * *") or a systemd-style
+// monotonic form (OnUnitActiveSec=, OnBootSec=, OnStartupSec=). The
+// supervisor substitutes this exact value for a timer that declares no
+// schedule, so leaving it is the documented default and not a placeholder.
+var Schedule = "OnUnitActiveSec=60s"
 
-func main() {
-	flag.Parse()
+// Start runs ONE firing and RETURNS.
+//
+// The supervisor waits for this process to exit before scheduling the
+// next firing, so blocking here - which is what a service's Start does -
+// holds the timer inside a single run and every later firing is skipped.
+// One firing is bounded at 30s; work needing longer must bound itself
+// below that or be restructured as a service.
+func Start() error {
+	// TODO: Add the work this timer performs
 
-	if *describe {
-		metadata := map[string]interface{}{
-			"describe": map[string]interface{}{
-				"id":           "{{.ID}}",
-				"type":         "timer",
-				"version":      "1.0.0",
-				"language":     "go",
-				"description":  "{{.Description}}",
-				"schedule":     "OnUnitActiveSec=60s",
-				"capabilities": []string{"start"},
-			},
-		}
-		json.NewEncoder(os.Stdout).Encode(metadata)
-		return
-	}
-
-	// Execute timer task
-	start()
-}
-
-func start() {
-	fmt.Println("[{{.ID}}] Timer triggered")
-	// TODO: Add timer task logic
+	return nil
 }

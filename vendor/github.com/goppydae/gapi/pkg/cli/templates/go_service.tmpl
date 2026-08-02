@@ -1,78 +1,47 @@
-// {{.Name}} - {{.Description}}
-package main
+// {{.Description}}
+package agent
 
-import (
-	"encoding/json"
-	"flag"
-	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
+import "context"
+
+const (
+	ID          = "{{.ID}}"
+	Type        = "service"
+	Version     = "1.0.0"
+	Description = "{{.Description}}"
+	Enabled     = true
 )
 
-var (
-	// Injected at build time via ldflags
-	SourceHash string
-	BuildTime  string
-	Version    string = "1.0.0"
-)
+// Dependencies and resource limits are optional. Declare them and the
+// supervisor honours them; omit them and it uses its defaults.
+//
+//	var (
+//		Requires    = []string{"database"}
+//		Wants       = []string{"cache"}
+//		WantedBy    = []string{"local.target"}
+//		CPULimit    = 0.5
+//		MemoryLimit = "512MB"
+//	)
 
-var describe = flag.Bool("describe", false, "Print agent metadata")
-
-func main() {
-	flag.Parse()
-
-	if *describe {
-		metadata := map[string]interface{}{
-			"describe": map[string]interface{}{
-				"id":           "{{.ID}}",
-				"type":         "service",
-				"version":      Version,
-				"language":     "go",
-				"description":  "{{.Description}}",
-				"capabilities": []string{"initialize", "start", "stop"},
-				"build_info": map[string]string{
-					"source_hash": SourceHash,
-					"build_time":  BuildTime,
-				},
-			},
-		}
-		json.NewEncoder(os.Stdout).Encode(metadata)
-		return
-	}
-
-	// Initialize
-	initialize()
-
-	// Start service
-	start()
+// Initialize runs once before Start. It is optional; delete it if this
+// agent has nothing to set up.
+func Initialize() error {
+	return nil
 }
 
-func initialize() {
-	fmt.Println("[{{.ID}}] Initializing...")
-	// TODO: Add initialization logic
+// Start runs the service. It must BLOCK until ctx is cancelled - the
+// supervisor treats the moment Start is running as the agent being up,
+// and a Start that returns immediately is an agent that stopped.
+//
+// 'func Start() error' is also accepted if this agent has no use for the
+// context.
+func Start(ctx context.Context) error {
+	// TODO: Add service logic
+
+	<-ctx.Done()
+	return nil
 }
 
-func start() {
-	fmt.Println("[{{.ID}}] Starting...")
-
-	// Setup graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	// Main service loop
-	for {
-		select {
-		case <-sigChan:
-			stop()
-			return
-		default:
-			// TODO: Add service logic
-		}
-	}
-}
-
-func stop() {
-	fmt.Println("[{{.ID}}] Stopping...")
-	// TODO: Add cleanup logic
+// Stop releases whatever Initialize and Start acquired. It is optional.
+func Stop() error {
+	return nil
 }
