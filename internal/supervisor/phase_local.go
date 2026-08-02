@@ -184,7 +184,10 @@ func (s *Supervisor) bindControlPlane(ctx context.Context, st *runState) error {
 			return peerTLS, nil
 		}
 	}
-	sharedLn, err := transport.NewSharedListener(s.cfg.ListenAddr, lnTLS)
+	// The predicate, not a flag the listener owns: the accept loop starts
+	// here in Phase 1 and must answer "not yet" for every cluster ALPN
+	// until phaseCluster sets this (GOBLIN-DIV-051).
+	sharedLn, err := transport.NewSharedListener(s.cfg.ListenAddr, lnTLS, st.planesUp.Load)
 	if err != nil {
 		return fmt.Errorf("bind control-plane listener: %w", err)
 	}

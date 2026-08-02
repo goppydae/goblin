@@ -194,7 +194,7 @@ func (t *QUICSerfTransport) getOrDial(addr string) (*quic.Conn, error) {
 		EnableDatagrams: true,
 	}
 
-	newConn, err := quic.DialAddr(ctx, addr, clientTLS, quicConf)
+	newConn, err := dialWithClusterNotReadyRetry(ctx, addr, clientTLS, quicConf)
 	if err != nil {
 		return nil, err
 	}

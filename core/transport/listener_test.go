@@ -30,7 +30,7 @@ func newSharedListener(t *testing.T) *testListener {
 	l, err := transport.NewSharedListener("127.0.0.1:0", &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS13,
-	})
+	}, alwaysReady)
 	if err != nil {
 		t.Fatalf("NewSharedListener: %v", err)
 	}
@@ -171,3 +171,9 @@ func TestSharedListener_DatagramsEnabled(t *testing.T) {
 		t.Fatal("connection not routed")
 	}
 }
+
+// alwaysReady is the readiness predicate for tests whose subject is not
+// phase-aware admission. Named rather than an inline literal so the
+// tests that DO exercise admission (see admission_test.go) are visibly
+// the ones passing something else.
+func alwaysReady() bool { return true }
