@@ -40,6 +40,27 @@ func (s *Scheduler) reconcileAgent(ctx context.Context, spec *goblinv1.AgentSpec
 	for _, inst := range instances {
 		instID := ident.String(inst.InstanceUuid)
 		failed := ""
+		// GOBLIN-DIV-049: a migration checkpoints the source, which
+		// STOPS the process on purpose. Heartbeat alone cannot tell a
+		// deliberate stop from a crash, so recovery used to re-place the
+		// instance while the coordinator was still moving it - leaving
+		// two copies of one instance, which is a split brain rather than
+		// a move.
+		//
+		// The mark is not new: the coordinator records the intent
+		// through Raft BEFORE it checkpoints anything, and
+		// MigrationInFlight has been the documented read path for this
+		// since it was written. Nothing called it.
+		//
+		// A migrating instance stays in `active` below, so the replica
+		// count does not dip and no replacement is admitted.
+		if _, migrating := s.store.MigrationInFlight(inst.InstanceUuid); migrating {
+			slog.Default().LogAttrs(ctx, slog.LevelDebug,
+				"instance is migrating; leaving recovery to the coordinator",
+				logattr.InstanceID(instID))
+			active = append(active, inst)
+			continue
+		}
 		// Heartbeat verdict overrides recorded state: a node that
 		// reported failure, or has gone silent past the staleness
 		// window, makes its running instances dead (phase 2b).

@@ -23,6 +23,13 @@ type memKVStore struct {
 	data map[string][]byte
 }
 
+// MigrationInFlight: this fake never has a migration under way, which
+// is what every test using it assumes (GOBLIN-DIV-049 added the method
+// to the interface).
+func (m *memKVStore) MigrationInFlight(_ []byte) (*goblinv1.MigrationRecord, bool) {
+	return nil, false
+}
+
 func newMemKVStore() *memKVStore { return &memKVStore{data: map[string][]byte{}} }
 
 func (m *memKVStore) storeKey(namespace, key string) string { return namespace + "\x00" + key }

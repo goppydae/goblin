@@ -34,6 +34,13 @@ type KVStore interface {
 	SignalInstance(ctx context.Context, req *goblinv1.SignalRequest) (string, error)
 	GetInstance(ctx context.Context, instanceID string) (*goblinv1.AgentInstance, bool, error)
 	ListInstances(ctx context.Context) ([]*goblinv1.AgentInstance, error)
+
+	// MigrationInFlight reports whether a migration is under way for
+	// this instance. The reconciler needs it because a migration STOPS
+	// the source process on purpose, and a deliberate stop is
+	// indistinguishable from a crash by heartbeat alone
+	// (GOBLIN-DIV-049).
+	MigrationInFlight(instanceUUID []byte) (*goblinv1.MigrationRecord, bool)
 }
 
 // Cluster defines the interface for cluster membership operations

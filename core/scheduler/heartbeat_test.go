@@ -196,3 +196,60 @@ func TestCreateInstance_RPCFailureMarksFailed(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+// GOBLIN-DIV-049: a migrating instance must not be recovered.
+//
+// A migration checkpoints the source, which STOPS the process on
+// purpose, and the node duly reports it failed. Heartbeat cannot tell a
+// deliberate stop from a crash, so the reconciler terminated the
+// instance and admitted a replacement while the coordinator was still
+// moving it - two copies of one instance, which is a split brain rather
+// than a move.
+//
+// This test lives here rather than beside the other reconcile tests
+// because only this harness can make an instance genuinely look dead.
+// The first version of it did not: it marked an instance as migrating
+// without ever making it unhealthy, so no recovery was attempted with
+// or without the fix, and it passed against the unfixed code. A test
+// that cannot fail proves nothing.
+func TestReconcile_MigratingInstanceIsNotRecovered(t *testing.T) {
+	s, clk := newHeartbeatScheduler(t)
+	specID, instID := registerRunningInstance(t, s, "spec-migrating", "node-1")
+	ctx := context.Background()
+
+	if err := s.ReconcileAgents(ctx); err != nil {
+		t.Fatalf("ReconcileAgents: %v", err)
+	}
+
+	// The coordinator recorded its intent through Raft before touching
+	// anything; its checkpoint then stops the process and node-1
+	// reports the failure. Both facts are true at once, which is the
+	// whole difficulty.
+	store, ok := s.Store().(*MockStore)
+	if !ok {
+		t.Fatalf("Store() is %T, want *MockStore", s.Store())
+	}
+	instUUID, perr := ident.Parse(instID)
+	if perr != nil {
+		t.Fatalf("parse instance id %q: %v", instID, perr)
+	}
+	store.SetMigrating(instUUID, "node-2")
+	s.ObserveHeartbeat(instID, "node-1", "failed", clk.Now())
+
+	for i := 0; i < 2; i++ { // terminate, then archive, if it were going to
+		if err := s.ReconcileAgents(ctx); err != nil {
+			t.Fatalf("ReconcileAgents: %v", err)
+		}
+	}
+
+	states := instanceStates(t, s, specID)
+	if _, alive := states[instID]; !alive {
+		t.Fatalf("the migrating instance was recovered away while the coordinator "+
+			"was still moving it; states = %v", states)
+	}
+	if len(states) != 1 {
+		t.Fatalf("%d instances after reconciling a migrating one, want exactly 1 - "+
+			"a migration that leaves a copy behind is a split brain, not a move: %v",
+			len(states), states)
+	}
+}

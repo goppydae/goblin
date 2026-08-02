@@ -137,6 +137,32 @@ func (f *FSM) applyMigrateCommit(mc *goblinv1.MigrateCommit) interface{} {
 	}
 }
 
+// MigrationsInFlight lists every migration currently recorded as in
+// flight.
+//
+// It exists for the orphan sweep (GOBLIN-DIV-049): nothing else ever
+// clears one of these records. Only a MIGRATE_COMMIT does, and only the
+// leader can propose one - so a leader that dies mid-migration leaves a
+// record no surviving node will ever retire, and the reconciler now
+// honours those records. Without a sweep that would trade a duplicated
+// instance for a permanently unrecoverable one.
+func (f *FSM) MigrationsInFlight() []*goblinv1.MigrationRecord {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	out := make([]*goblinv1.MigrationRecord, 0, len(f.migrations))
+	for _, rec := range f.migrations {
+		// Copied for the same reason MigrationInFlight copies: a read
+		// must not hand out a pointer into replicated state.
+		out = append(out, &goblinv1.MigrationRecord{
+			InstanceUuid:    append([]byte(nil), rec.InstanceUuid...),
+			SourceNodeId:    rec.SourceNodeId,
+			TargetNodeId:    rec.TargetNodeId,
+			CheckpointEpoch: rec.CheckpointEpoch,
+		})
+	}
+	return out
+}
+
 // MigrationInFlight reports the in-flight migration for an instance.
 // Read path for goblinctl and the reconciler; takes the read lock.
 func (f *FSM) MigrationInFlight(instanceUUID []byte) (*goblinv1.MigrationRecord, bool) {

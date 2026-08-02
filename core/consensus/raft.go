@@ -277,6 +277,20 @@ func (c *Consensus) Stats() map[string]string {
 	return c.raft.Stats()
 }
 
+// MigrationInFlight reports the in-flight migration for one instance.
+// Local read: the reconciler asks about an instance it is already
+// looking at, and a stale "no migration" only costs the recovery it
+// would have done anyway.
+func (c *Consensus) MigrationInFlight(instanceUUID []byte) (*goblinv1.MigrationRecord, bool) {
+	return c.fsm.MigrationInFlight(instanceUUID)
+}
+
+// MigrationsInFlight lists every recorded in-flight migration, for the
+// orphan sweep (GOBLIN-DIV-049).
+func (c *Consensus) MigrationsInFlight() []*goblinv1.MigrationRecord {
+	return c.fsm.MigrationsInFlight()
+}
+
 // NodeID is this node's raft server id. It exists so a refusal can name
 // WHICH node refused without threading the supervisor's config through
 // every gate (GOBLIN-DIV-048): a diagnostic that says "the registry was
