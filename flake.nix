@@ -57,8 +57,6 @@
             pandoc
 
             # Checkpoint/restore (Goblin owns migration; see GOBLIN-DIV-018)
-            criu
-            libseccomp
 
             # Container orchestration
             podman
@@ -77,6 +75,21 @@
             
             # Markdown linting
             markdownlint-cli2
+          ]
+          # DAEMON-SIDE ONLY. criu and libseccomp have no darwin build,
+          # so listing them unconditionally made devShells.aarch64-darwin
+          # impossible to instantiate - the system was declared and
+          # unusable, exactly as it was in gapi (GAPI-DIV-064).
+          #
+          # The split is the product's: the control-plane client is
+          # cross-platform and the supervisor is not, because cgroups v2,
+          # PID 1 and CRIU are the point rather than an implementation
+          # detail. A darwin shell builds both binaries, runs the unit
+          # tests and lints; it cannot run goblind meaningfully or the
+          # privileged suites, neither of which it could have anyway.
+          ++ lib.optionals stdenv.hostPlatform.isLinux [
+            criu
+            libseccomp
           ];
 
           shellHook = ''
