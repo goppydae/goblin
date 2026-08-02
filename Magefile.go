@@ -34,16 +34,15 @@ var toolchain = magelib.DoctorConfig{
 // waiver to delete - so this list can only ever shrink. Adding a line to
 // this list is a decision to carry a violation, not to exempt a file.
 //
-// Line count when the gate landed, for anyone judging progress:
-// supervisor.go 1200 - 140 percent over the limit and the single largest
-// hand-written violation in the silo. It is entangled with
-// GOBLIN-DIV-038 (Supervisor.Run has no ordered shutdown, and the
-// documented boot-phase model does not match the code), so the split is
-// a cohesion question to settle with the startup/teardown ordering, not
-// a line-count exercise. See GOBLIN-DIV-046.
-var fileLengthWaivers = []string{
-	"internal/supervisor/supervisor.go",
-}
+// The list is EMPTY, and that is a result rather than a starting state:
+// internal/supervisor/supervisor.go was the one entry, at 1200 lines
+// against the 500 limit. It came off when GOBLIN-DIV-046 closed - the
+// file was split along the boot phases while GOBLIN-DIV-038's ordered
+// shutdown was built, so the boundaries follow the lifecycle rather
+// than a line count. The gate forced the deletion: magelib fails a
+// waiver whose file has come back under the limit, naming the waiver to
+// remove, so the debt could not be paid off silently.
+var fileLengthWaivers = []string{}
 
 // fileLengthSkips is EXEMPTION, not debt: paths the 500-line rule does
 // not reach at all. They are never measured, so they are never reported

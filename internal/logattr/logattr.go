@@ -9,6 +9,7 @@ package logattr
 
 import (
 	"log/slog"
+	"strings"
 	"time"
 )
 
@@ -46,6 +47,16 @@ func CPUCores(n int) slog.Attr      { return slog.Int("cpu_cores", n) }
 func MemoryMB(n uint64) slog.Attr   { return slog.Uint64("memory_mb", n) }
 
 func Backoff(d time.Duration) slog.Attr { return slog.Duration("backoff", d) }
+
+// Tier names a supervisor loop tier ("pre-userspace", "run") in
+// shutdown records.
+func Tier(s string) slog.Attr { return slog.String("tier", s) }
+
+// Loops carries the names of supervisor loops that outlived their
+// shutdown grace. Joined rather than slog.Any so the field is a plain
+// string in every handler, and pre-sorted by the caller so the value is
+// stable across runs.
+func Loops(names []string) slog.Attr { return slog.String("loops", strings.Join(names, ",")) }
 
 // Err pins the conventional "err" key; nil-safe for termini that log
 // unconditionally.
