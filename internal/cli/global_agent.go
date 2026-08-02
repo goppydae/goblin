@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
 
-	"github.com/goppydae/gapi/core/transport"
 	"github.com/goppydae/goblin/internal/ident"
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
@@ -45,7 +44,7 @@ var globalAgentRegisterCmd = &cobra.Command{
 			return fmt.Errorf("failed to parse agent spec: %w", err)
 		}
 
-		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
+		client, err := dialControl()
 		if err != nil {
 			return err
 		}
@@ -65,7 +64,7 @@ var globalAgentListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all global agent specifications",
 	RunE: func(cmd *cobra.Command, args []string) (err error) {
-		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
+		client, err := dialControl()
 		if err != nil {
 			return err
 		}
@@ -90,7 +89,7 @@ var globalAgentGetCmd = &cobra.Command{
 	Short: "Get details of a global agent",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) (err error) {
-		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
+		client, err := dialControl()
 		if err != nil {
 			return err
 		}
@@ -115,7 +114,7 @@ var globalAgentDeleteCmd = &cobra.Command{
 	Short: "Delete a global agent specification",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) (err error) {
-		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
+		client, err := dialControl()
 		if err != nil {
 			return err
 		}
@@ -143,7 +142,7 @@ var globalAgentScaleCmd = &cobra.Command{
 			return fmt.Errorf("invalid replicas: %w", err)
 		}
 
-		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
+		client, err := dialControl()
 		if err != nil {
 			return err
 		}
@@ -167,7 +166,7 @@ var globalAgentInstancesCmd = &cobra.Command{
 	Short: "List scheduled instances (all specs when no id is given)",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) (err error) {
-		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
+		client, err := dialControl()
 		if err != nil {
 			return err
 		}
@@ -207,7 +206,7 @@ var globalAgentSignalCmd = &cobra.Command{
 			return fmt.Errorf("invalid signal number: %w", err)
 		}
 
-		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
+		client, err := dialControl()
 		if err != nil {
 			return err
 		}

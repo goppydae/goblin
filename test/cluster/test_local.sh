@@ -65,7 +65,7 @@ sleep 5 # Wait for cluster formation
 
 # Verify
 log "Verifying cluster status..."
-./bin/goblinctl status --api-addr 127.0.0.1:29001 --tls-insecure
+./bin/goblinctl cluster status --api-addr 127.0.0.1:29001 --tls-insecure
 
 # Check for successful output (command exit code check is implicit with set -e)
 log "Cluster verification passed!"

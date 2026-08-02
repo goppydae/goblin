@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/goppydae/gapi/core/transport"
 	"github.com/goppydae/gapi/core/tui"
 	"github.com/goppydae/goblin/internal/logattr"
 	goblinv1 "github.com/goppydae/goblin/proto"
@@ -31,7 +30,7 @@ func (u *UnifiedController) FetchStatus(ctx context.Context) (_ []tui.AgentStatu
 	var statuses []tui.AgentStatus
 
 	// Connect to QUIC RPC
-	client, err := NewQUICRPCClient(u.rpcAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
+	client, err := NewQUICRPCClient(u.rpcAddr, controlTLS())
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to QUIC RPC: %w", err)
 	}
@@ -130,7 +129,7 @@ func (u *UnifiedController) GetLogs(ctx context.Context, id string) (<-chan stri
 	go func() {
 		defer close(ch)
 
-		client, err := NewQUICRPCClient(u.rpcAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
+		client, err := NewQUICRPCClient(u.rpcAddr, controlTLS())
 		if err != nil {
 			ch <- fmt.Sprintf("[ERROR] Failed to connect to QUIC RPC: %v", err)
 			return
