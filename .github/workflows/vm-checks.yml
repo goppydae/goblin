@@ -68,12 +68,18 @@ jobs:
       # TestClusterEndToEnd took 61.8s contended against 2.1s serialized,
       # against a 5s placement target.
       #
+      # --keep-going because serializing made nix's default fail-fast
+      # actively harmful: run 30723910070 failed one check and the other
+      # four never ran at all, so a single flake masked the state of
+      # everything else. Without it the suite reports the first failure
+      # and nothing about the rest.
+      #
       # pipefail because tee would otherwise swallow a nonzero exit and
       # report a failing suite as green.
       - name: Execute NixOS VM Checks
         run: |
           set -o pipefail
-          nix flake check --print-build-logs --max-jobs 1 2>&1 | tee vm-checks.log
+          nix flake check --print-build-logs --max-jobs 1 --keep-going 2>&1 | tee vm-checks.log
 
       # Uploaded on success as well as failure, and this is not
       # belt-and-braces. Re-running a failed job REPLACES its conclusion,
