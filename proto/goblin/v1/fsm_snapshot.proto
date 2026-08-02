@@ -59,4 +59,42 @@ message FSMSnapshot {
   // snapshot that forgot the serial would accept a change already
   // applied.
   uint64 operator_registry_serial = 6;
+
+  // The PROVENANCE of operator_keys, so a restoring node can authenticate
+  // the registry independently of who delivered it (GOBLIN-DIV-047).
+  //
+  // operator_keys above is a RESULT, and a result is not evidence. A raft
+  // peer holding a valid client certificate can forge an FSMSnapshot
+  // naming its own key and install it as the cluster's root of trust on
+  // every replica, because InstallSnapshot does not pass through Apply
+  // and none of the registry's guards run on that path. Transport
+  // authentication cannot reach this: the forged snapshot arrives over an
+  // authenticated connection like any other.
+  //
+  // These two fields carry how the registry got to its current state.
+  // The seed is the cluster's founding key set, and the chain is every
+  // signed change applied since, in apply order. A restoring node replays
+  // them from a root it ALREADY HOLDS - the keys its operator configured
+  // with --operator-key, which do not come from the snapshot - and
+  // refuses unless the replay reproduces operator_keys and
+  // operator_registry_serial exactly. A forger cannot produce the
+  // signatures, so it cannot produce a chain that replays.
+  //
+  // Both are marshalled bytes rather than nested messages, matching the
+  // convention the fields above already set: this message does not import
+  // the schemas it carries.
+
+  // Marshalled goblin.v1.OperatorKeySeed - the founding key set. Unsigned,
+  // because a seed is authorized by the registry being empty rather than
+  // by a signature; that is exactly why the restoring node must compare it
+  // against its OWN configured keys instead of trusting it. Empty when the
+  // registry is empty.
+  bytes operator_key_seed = 7;
+
+  // Marshalled goblin.v1.OperatorKeyChange records, in the order they were
+  // applied. Only changes that actually mutated the registry appear: a
+  // re-seed of an identical set and an ADD of an already-registered id are
+  // both no-ops that do not bump the serial, so including them would make
+  // the replay diverge from the apply path it is reproducing.
+  repeated bytes operator_key_chain = 8;
 }

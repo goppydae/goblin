@@ -110,8 +110,20 @@ type FSMSnapshot struct {
 	// snapshot that forgot the serial would accept a change already
 	// applied.
 	OperatorRegistrySerial uint64 `protobuf:"varint,6,opt,name=operator_registry_serial,json=operatorRegistrySerial,proto3" json:"operator_registry_serial,omitempty"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
+	// Marshalled goblin.v1.OperatorKeySeed - the founding key set. Unsigned,
+	// because a seed is authorized by the registry being empty rather than
+	// by a signature; that is exactly why the restoring node must compare it
+	// against its OWN configured keys instead of trusting it. Empty when the
+	// registry is empty.
+	OperatorKeySeed []byte `protobuf:"bytes,7,opt,name=operator_key_seed,json=operatorKeySeed,proto3" json:"operator_key_seed,omitempty"`
+	// Marshalled goblin.v1.OperatorKeyChange records, in the order they were
+	// applied. Only changes that actually mutated the registry appear: a
+	// re-seed of an identical set and an ADD of an already-registered id are
+	// both no-ops that do not bump the serial, so including them would make
+	// the replay diverge from the apply path it is reproducing.
+	OperatorKeyChain [][]byte `protobuf:"bytes,8,rep,name=operator_key_chain,json=operatorKeyChain,proto3" json:"operator_key_chain,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *FSMSnapshot) Reset() {
@@ -186,6 +198,20 @@ func (x *FSMSnapshot) GetOperatorRegistrySerial() uint64 {
 	return 0
 }
 
+func (x *FSMSnapshot) GetOperatorKeySeed() []byte {
+	if x != nil {
+		return x.OperatorKeySeed
+	}
+	return nil
+}
+
+func (x *FSMSnapshot) GetOperatorKeyChain() [][]byte {
+	if x != nil {
+		return x.OperatorKeyChain
+	}
+	return nil
+}
+
 var File_goblin_v1_fsm_snapshot_proto protoreflect.FileDescriptor
 
 const file_goblin_v1_fsm_snapshot_proto_rawDesc = "" +
@@ -199,7 +225,7 @@ const file_goblin_v1_fsm_snapshot_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\x1a;\n" +
 	"\rVersionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\"\xa6\x05\n" +
+	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\"\x80\x06\n" +
 	"\vFSMSnapshot\x12F\n" +
 	"\n" +
 	"namespaces\x18\x01 \x03(\v2&.goblin.v1.FSMSnapshot.NamespacesEntryR\n" +
@@ -212,7 +238,9 @@ const file_goblin_v1_fsm_snapshot_proto_rawDesc = "" +
 	"migrations\x18\x04 \x03(\v2&.goblin.v1.FSMSnapshot.MigrationsEntryR\n" +
 	"migrations\x12M\n" +
 	"\roperator_keys\x18\x05 \x03(\v2(.goblin.v1.FSMSnapshot.OperatorKeysEntryR\foperatorKeys\x128\n" +
-	"\x18operator_registry_serial\x18\x06 \x01(\x04R\x16operatorRegistrySerial\x1a[\n" +
+	"\x18operator_registry_serial\x18\x06 \x01(\x04R\x16operatorRegistrySerial\x12*\n" +
+	"\x11operator_key_seed\x18\a \x01(\fR\x0foperatorKeySeed\x12,\n" +
+	"\x12operator_key_chain\x18\b \x03(\fR\x10operatorKeyChain\x1a[\n" +
 	"\x0fNamespacesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x122\n" +
 	"\x05value\x18\x02 \x01(\v2\x1c.goblin.v1.FSMNamespaceStateR\x05value:\x028\x01\x1a<\n" +

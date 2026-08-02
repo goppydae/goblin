@@ -37,8 +37,15 @@ type Consensus struct {
 // value for that field (GOBLIN-DIV-040: operators need these to bound
 // trailing-log size and replay-on-join cost, not just the library
 // defaults tuned for a generic workload).
+// trustedRoots is this node's configured operator keys (--operator-key).
+// They reach the FSM at construction so Restore can authenticate a
+// snapshot's registry against material this node already holds rather
+// than material the snapshot supplies (GOBLIN-DIV-047). Threaded through
+// the constructor rather than set afterwards because raft may call
+// Restore as soon as the FSM is handed to it.
 func NewConsensus(nodeID, dataDir string, stream raft.StreamLayer, bootstrap bool,
-	snapshotThreshold uint64, snapshotInterval time.Duration, trailingLogs uint64) (*Consensus, error) {
+	snapshotThreshold uint64, snapshotInterval time.Duration, trailingLogs uint64,
+	trustedRoots []*goblinv1.OperatorKey) (*Consensus, error) {
 	// Create data directory
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create data dir: %w", err)
@@ -71,7 +78,7 @@ func NewConsensus(nodeID, dataDir string, stream raft.StreamLayer, bootstrap boo
 	}
 
 	// Create FSM
-	fsm := NewFSM()
+	fsm := NewFSM(trustedRoots)
 
 	// Create log store
 	logStore, err := NewBoltStore(filepath.Join(dataDir, "raft-log.db"))

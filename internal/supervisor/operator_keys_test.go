@@ -50,7 +50,7 @@ type fakeRegistry struct {
 }
 
 func newFakeRegistry(leader bool) *fakeRegistry {
-	return &fakeRegistry{leader: leader, fsm: consensus.NewFSM()}
+	return &fakeRegistry{leader: leader, fsm: consensus.NewFSM(nil)}
 }
 
 func (r *fakeRegistry) IsLeader() bool {

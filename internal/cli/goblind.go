@@ -102,7 +102,7 @@ func NewGoblindRoot(start func(*cobra.Command, []string) error) (*cobra.Command,
 	f.BoolVar(&sf.ProductionMode, "production", false,
 		"Restrict agent discovery to binaries with verified signatures")
 	f.StringArrayVar(&sf.OperatorKeyFiles, "operator-key", nil,
-		"Path to a hex-encoded Ed25519 operator public key that bootstraps the cluster's operator registry (repeatable; with none, every mutating verb is refused). Keep the matching private key: the last registered key cannot be removed, so a registry left holding only keys nobody controls can neither authorize anything nor be re-seeded, and the only recovery is wiping the data dir on EVERY replica and re-bootstrapping. Produce keys with 'goblinctl operator keygen'.")
+		"Path to a hex-encoded Ed25519 operator public key that bootstraps the cluster's operator registry (repeatable; with none, every mutating verb is refused). Keep the matching private key: the last registered key cannot be removed, so a registry left holding only keys nobody controls can neither authorize anything nor be re-seeded, and the only recovery is wiping the data dir on EVERY replica and re-bootstrapping. Produce keys with 'goblinctl operator keygen'. These are also this node's FOUNDING SEED: a snapshot's registry is authenticated by replaying its provenance from exactly this key set, so every node in a cluster must be given the same one, and a node joining after the registry has been rotated is still given the FOUNDING keys rather than the current ones. Keep them for the cluster's life (GOBLIN-DIV-047).")
 
 	// Boot and lifecycle.
 	f.BoolVar(&sf.Pid1Mode, "pid1", false,

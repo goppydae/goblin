@@ -3,10 +3,8 @@ package consensus
 import (
 	"errors"
 	"fmt"
-	"io"
 	"sync"
 
-	"github.com/goppydae/goblin/core/capability"
 	goblinv1 "github.com/goppydae/goblin/proto"
 	"github.com/hashicorp/raft"
 	"google.golang.org/protobuf/proto"
@@ -51,11 +49,59 @@ type FSM struct {
 	// guard for signed changes: a change names the serial it was signed
 	// against and is dead once any other change lands.
 	operatorSerial uint64
-	mu             sync.RWMutex
+
+	// operatorSeed and operatorChain are the registry's PROVENANCE: the
+	// founding key set and every signed change that actually mutated the
+	// registry, in apply order. They exist so a snapshot can carry how
+	// the registry reached its state rather than only the state itself
+	// (GOBLIN-DIV-047).
+	//
+	// They are derived state, not an independent source of truth: every
+	// write to them happens beside the write to operatorKeys that the
+	// same log entry caused, so replaying them reproduces operatorKeys
+	// exactly. Restore relies on that equality and refuses when it does
+	// not hold.
+	operatorSeed  *goblinv1.OperatorKeySeed
+	operatorChain []*goblinv1.OperatorKeyChange
+
+	// trustedRoots is this NODE's configured operator keys, from
+	// --operator-key. It is the one piece of per-node configuration the
+	// FSM is allowed to hold, and it is deliberately never consulted by
+	// Apply - doing so would make the same log entry succeed on one
+	// replica and fail on another, which is divergence.
+	//
+	// Restore is a different path with different rules. It is not
+	// replicated decision-making; it is this node deciding whether to
+	// adopt a root of trust that arrived over the wire, and that is
+	// exactly the decision that must be made against something local.
+	// Nil means the node was configured with no operator keys, which
+	// makes it unable to authenticate a registry at all - see Restore.
+	trustedRoots map[string]*goblinv1.OperatorKey
+
+	mu sync.RWMutex
 }
 
 // NewFSM creates a new FSM
-func NewFSM() *FSM {
+// NewFSM builds the state machine. trustedRoots is this node's configured
+// operator keys (--operator-key), which Restore uses to authenticate a
+// snapshot's registry; pass nil for a node configured with none.
+//
+// It is a CONSTRUCTOR PARAMETER rather than a setter, and that is not a
+// style preference. A setter reintroduces an ordering hazard with real
+// consequences: raft can call Restore as soon as the FSM is handed over,
+// so an anchor installed "shortly after" construction is an anchor that
+// might not be there when the first snapshot lands - and the failure
+// would be silent acceptance of an unverified registry, which is the
+// defect this closes.
+func NewFSM(trustedRoots []*goblinv1.OperatorKey) *FSM {
+	roots := make(map[string]*goblinv1.OperatorKey, len(trustedRoots))
+	for _, k := range trustedRoots {
+		roots[k.GetKeyId()] = &goblinv1.OperatorKey{
+			KeyId:     k.GetKeyId(),
+			PublicKey: append([]byte(nil), k.GetPublicKey()...),
+			Comment:   k.GetComment(),
+		}
+	}
 	return &FSM{
 		state:        make(map[string]map[string][]byte),
 		versions:     make(map[string]map[string]uint64),
@@ -63,6 +109,7 @@ func NewFSM() *FSM {
 		tombstones:   make(map[string]struct{}),
 		migrations:   make(map[string]*goblinv1.MigrationRecord),
 		operatorKeys: make(map[string]*goblinv1.OperatorKey),
+		trustedRoots: roots,
 	}
 }
 
@@ -155,187 +202,6 @@ func (f *FSM) write(namespace, key string, value []byte) {
 	f.versions[namespace][key]++
 }
 
-// Snapshot returns a snapshot of the FSM state
-func (f *FSM) Snapshot() (raft.FSMSnapshot, error) {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-
-	namespaces := make(map[string]*goblinv1.FSMNamespaceState, len(f.state))
-	for ns, kv := range f.state {
-		values := make(map[string][]byte, len(kv))
-		for k, v := range kv {
-			val := make([]byte, len(v))
-			copy(val, v)
-			values[k] = val
-		}
-		versions := make(map[string]uint64, len(f.versions[ns]))
-		for k, v := range f.versions[ns] {
-			versions[k] = v
-		}
-		namespaces[ns] = &goblinv1.FSMNamespaceState{Values: values, Versions: versions}
-	}
-
-	instances := make(map[string][]byte, len(f.instances))
-	for id, inst := range f.instances {
-		raw, err := proto.Marshal(inst)
-		if err != nil {
-			return nil, fmt.Errorf("snapshot: marshal instance %s: %w", id, err)
-		}
-		instances[id] = raw
-	}
-	tombstones := make([]string, 0, len(f.tombstones))
-	for id := range f.tombstones {
-		tombstones = append(tombstones, id)
-	}
-	migrations := make(map[string][]byte, len(f.migrations))
-	for id, rec := range f.migrations {
-		raw, err := proto.Marshal(rec)
-		if err != nil {
-			return nil, fmt.Errorf("snapshot: marshal migration %s: %w", id, err)
-		}
-		migrations[id] = raw
-	}
-
-	operatorKeys := make(map[string][]byte, len(f.operatorKeys))
-	for id, k := range f.operatorKeys {
-		raw, err := proto.Marshal(k)
-		if err != nil {
-			return nil, fmt.Errorf("snapshot: marshal operator key %s: %w", id, err)
-		}
-		operatorKeys[id] = raw
-	}
-
-	return &fsmSnapshot{payload: &goblinv1.FSMSnapshot{
-		Namespaces:             namespaces,
-		Instances:              instances,
-		Tombstones:             tombstones,
-		Migrations:             migrations,
-		OperatorKeys:           operatorKeys,
-		OperatorRegistrySerial: f.operatorSerial,
-	}}, nil
-}
-
-// Restore restores the FSM from a snapshot. Only the proto encoding is
-// accepted (GOBLIN-DIV-040 schema reset): a snapshot written by the old
-// JSON encoder is refused outright rather than dual-read, mirroring the
-// CommandType-0 rejection above for the same reason - a compatibility
-// path nothing forces anyone to remove never gets removed.
-func (f *FSM) Restore(rc io.ReadCloser) (err error) {
-	defer func() {
-		if cerr := rc.Close(); cerr != nil && err == nil {
-			err = cerr
-		}
-	}()
-
-	raw, err := io.ReadAll(rc)
-	if err != nil {
-		return err
-	}
-
-	if looksLikeJSON(raw) {
-		return fmt.Errorf("snapshot appears to be a pre-schema-reset snapshot (JSON, not protobuf): " +
-			"wipe the data dir and rejoin")
-	}
-
-	var payload goblinv1.FSMSnapshot
-	if err := proto.Unmarshal(raw, &payload); err != nil {
-		return fmt.Errorf("restore: unmarshal snapshot: %w", err)
-	}
-
-	state := make(map[string]map[string][]byte, len(payload.GetNamespaces()))
-	versions := make(map[string]map[string]uint64, len(payload.GetNamespaces()))
-	for ns, nsState := range payload.GetNamespaces() {
-		state[ns] = nsState.GetValues()
-		versions[ns] = nsState.GetVersions()
-	}
-
-	instances := make(map[string]*goblinv1.AgentInstance, len(payload.GetInstances()))
-	for id, raw := range payload.GetInstances() {
-		var inst goblinv1.AgentInstance
-		if err := proto.Unmarshal(raw, &inst); err != nil {
-			return fmt.Errorf("restore: unmarshal instance %s: %w", id, err)
-		}
-		instances[id] = &inst
-	}
-	tombstones := make(map[string]struct{}, len(payload.GetTombstones()))
-	for _, id := range payload.GetTombstones() {
-		tombstones[id] = struct{}{}
-	}
-
-	// In-flight migrations. Restoring them is what keeps the concurrency
-	// arbitration honest across a restart or a replica that caught up
-	// from a snapshot rather than replaying the log.
-	migrations := make(map[string]*goblinv1.MigrationRecord, len(payload.GetMigrations()))
-	for id, raw := range payload.GetMigrations() {
-		var rec goblinv1.MigrationRecord
-		if err := proto.Unmarshal(raw, &rec); err != nil {
-			return fmt.Errorf("restore: unmarshal migration %s: %w", id, err)
-		}
-		migrations[id] = &rec
-	}
-
-	// The registry and its serial. Restoring the serial matters as much
-	// as restoring the keys: it is the replay guard, and a leader that
-	// came back from a snapshot with serial 0 would accept a signed
-	// change it had already applied.
-	//
-	// Every record is re-validated. A snapshot arrives off the Apply
-	// path, so none of the rules in fsm_operator_keys.go have run on
-	// it; a malformed record refuses the whole Restore rather than
-	// entering the registry, the same fail-loud choice as the
-	// pre-schema-reset JSON refusal above.
-	operatorKeys := make(map[string]*goblinv1.OperatorKey, len(payload.GetOperatorKeys()))
-	for id, raw := range payload.GetOperatorKeys() {
-		var k goblinv1.OperatorKey
-		if err := proto.Unmarshal(raw, &k); err != nil {
-			return fmt.Errorf("restore: unmarshal operator key %s: %w", id, err)
-		}
-		// A snapshot carries no authorization, so this is the only
-		// place the id-is-derived invariant can be enforced off the
-		// Apply path. It does not stop a well-formed hostile key -
-		// nothing here can - but it does stop a stored record whose
-		// id lies about its bytes, which every reader of this
-		// registry assumes cannot exist.
-		if err := capability.ValidateOperatorKey(&k); err != nil {
-			return fmt.Errorf("restore: operator key %s: %w", id, err)
-		}
-		if k.GetKeyId() != id {
-			return fmt.Errorf("restore: operator key filed under %q names %q", id, k.GetKeyId())
-		}
-		operatorKeys[id] = &k
-	}
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	f.state = state
-	f.versions = versions
-	f.instances = instances
-	f.tombstones = tombstones
-	f.migrations = migrations
-	f.operatorKeys = operatorKeys
-	f.operatorSerial = payload.GetOperatorRegistrySerial()
-	return nil
-}
-
-// looksLikeJSON reports whether raw's first non-whitespace byte opens a
-// JSON object - the shape every pre-schema-reset snapshot has (the old
-// encoder always wrote a top-level object). A proto-marshalled
-// FSMSnapshot never starts with '{': the wire format's field tags are
-// low-value bytes, and '{' (0x7b) as a field-1 varint tag would demand
-// a wire type this schema does not use for field 1.
-func looksLikeJSON(raw []byte) bool {
-	for _, b := range raw {
-		switch b {
-		case ' ', '\t', '\n', '\r':
-			continue
-		default:
-			return b == '{'
-		}
-	}
-	return false
-}
-
 // Get retrieves a value from the FSM state
 func (f *FSM) Get(namespace, key string) ([]byte, bool) {
 	f.mu.RLock()
@@ -382,30 +248,3 @@ func (f *FSM) Scan(namespace, prefix string) map[string][]byte {
 	}
 	return result
 }
-
-// fsmSnapshot implements raft.FSMSnapshot
-type fsmSnapshot struct {
-	payload *goblinv1.FSMSnapshot
-}
-
-// Persist writes the snapshot to the sink
-func (s *fsmSnapshot) Persist(sink raft.SnapshotSink) error {
-	raw, err := proto.Marshal(s.payload)
-	if err != nil {
-		if cerr := sink.Cancel(); cerr != nil {
-			return fmt.Errorf("%w (also failed to cancel sink: %w)", err, cerr)
-		}
-		return err
-	}
-	if _, err := sink.Write(raw); err != nil {
-		if cerr := sink.Cancel(); cerr != nil {
-			return fmt.Errorf("%w (also failed to cancel sink: %w)", err, cerr)
-		}
-		return err
-	}
-
-	return sink.Close()
-}
-
-// Release is called when the snapshot is no longer needed
-func (s *fsmSnapshot) Release() {}

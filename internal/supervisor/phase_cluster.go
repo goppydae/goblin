@@ -85,17 +85,26 @@ func (s *Supervisor) startConsensus(ctx context.Context, st *runState, failFatal
 	// construction time - the engine comes up unseeded and is
 	// bootstrapped once gossip shows the whole seed set.
 	seedAlone := s.cfg.JoinAddr == "" && s.cfg.BootstrapExpect < 2
-	engine, err := consensus.NewConsensus(st.nodeID, s.cfg.RaftDir, raftStream, seedAlone,
-		s.cfg.RaftSnapshotThreshold, s.cfg.RaftSnapshotInterval, s.cfg.RaftTrailingLogs)
-	if err != nil {
-		return fmt.Errorf("failed to create consensus: %w", err)
-	}
-	st.consensus = engine
 
+	// Loaded BEFORE the engine, because the engine builds the FSM and the
+	// FSM needs this node's root of trust at construction: raft may call
+	// Restore as soon as it owns the FSM, and a snapshot that arrives
+	// before the anchor is installed is a snapshot this node cannot
+	// authenticate (GOBLIN-DIV-047). These keys are also still proposed as
+	// a seed below - that is the replicated half; this is the local half,
+	// and they are deliberately the same material.
 	operatorKeys, err := loadOperatorKeys(s.cfg.OperatorKeyFiles)
 	if err != nil {
 		return fmt.Errorf("load operator keys: %w", err)
 	}
+
+	engine, err := consensus.NewConsensus(st.nodeID, s.cfg.RaftDir, raftStream, seedAlone,
+		s.cfg.RaftSnapshotThreshold, s.cfg.RaftSnapshotInterval, s.cfg.RaftTrailingLogs,
+		operatorKeys)
+	if err != nil {
+		return fmt.Errorf("failed to create consensus: %w", err)
+	}
+	st.consensus = engine
 
 	// GOBLIN-DIV-049: nothing else retires a migration record left by a
 	// leader that died mid-move, and the reconciler now honours those

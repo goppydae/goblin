@@ -28,7 +28,7 @@ func opKey(t *testing.T, comment string) (*goblinv1.OperatorKey, ed25519.Private
 }
 
 func TestSeedInstallsKeysIntoEmptyRegistry(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	if f.OperatorKeyCountLocal() != 0 {
 		t.Fatalf("a fresh FSM has %d operator keys, want 0", f.OperatorKeyCountLocal())
 	}
@@ -50,7 +50,7 @@ func TestSeedInstallsKeysIntoEmptyRegistry(t *testing.T) {
 }
 
 func TestSeedIsIdempotentForAnIdenticalSet(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	k1, _ := opKey(t, "one")
 	seed := &goblinv1.OperatorKeySeed{Keys: []*goblinv1.OperatorKey{k1}}
 
@@ -75,7 +75,7 @@ func TestSeedIsIdempotentForAnIdenticalSet(t *testing.T) {
 }
 
 func TestSeedIntoNonEmptyRegistryWithDifferentKeysIsRefused(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	k1, _ := opKey(t, "one")
 	k2, _ := opKey(t, "two")
 
@@ -112,7 +112,7 @@ func TestSeedIntoNonEmptyRegistryWithDifferentKeysIsRefused(t *testing.T) {
 // loop" - this one puts a GOOD key ahead of the bad one, which is the
 // only arrangement that can tell those two implementations apart.
 func TestSeedValidatesEveryKeyBeforeInstallingAny(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	good, _ := opKey(t, "good")
 	bad, _ := opKey(t, "bad")
 	bad.KeyId = "0000000000000000000000000000000000000000000000000000000000000000"
@@ -133,7 +133,7 @@ func TestSeedValidatesEveryKeyBeforeInstallingAny(t *testing.T) {
 }
 
 func TestSeedRejectsAKeyWhoseIDLiesAboutItsBytes(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	k1, _ := opKey(t, "one")
 	k1.KeyId = "0000000000000000000000000000000000000000000000000000000000000000"
 
@@ -149,7 +149,7 @@ func TestSeedRejectsAKeyWhoseIDLiesAboutItsBytes(t *testing.T) {
 }
 
 func TestSeedWithNoKeysIsRefused(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	err, _ := f.applyOperatorKeySeed(&goblinv1.OperatorKeySeed{}).(error)
 	if !errors.Is(err, ErrOperatorRegistryEmpty) {
 		t.Fatalf("empty seed = %v, want ErrOperatorRegistryEmpty", err)
@@ -157,7 +157,7 @@ func TestSeedWithNoKeysIsRefused(t *testing.T) {
 }
 
 func TestApplyDispatchesTheSeedCommand(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	k1, _ := opKey(t, "one")
 	if err, _ := mustApply(t, f, &goblinv1.LogEntry{
 		Type: goblinv1.CommandType_COMMAND_TYPE_OPERATOR_KEY_SEED,
@@ -173,7 +173,7 @@ func TestApplyDispatchesTheSeedCommand(t *testing.T) {
 }
 
 func TestSeedCommandWithMismatchedPayloadIsRefused(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	// Type says SEED; the oneof carries a migration. GetOperatorKeySeed()
 	// returns nil, and the FSM must refuse rather than panic. The schema
 	// cannot prevent this pairing, so the apply path has to.
@@ -201,7 +201,7 @@ func TestSeedCommandWithMismatchedPayloadIsRefused(t *testing.T) {
 // verdicts on signed changes, which is the failure this design exists
 // to prevent.
 func TestResolveOperatorKeyReturnsACopy(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	root, _ := opKey(t, "root")
 	if err, _ := f.applyOperatorKeySeed(&goblinv1.OperatorKeySeed{
 		Keys: []*goblinv1.OperatorKey{root},
@@ -228,7 +228,7 @@ func TestResolveOperatorKeyReturnsACopy(t *testing.T) {
 }
 
 func TestRegistrySurvivesSnapshotRestore(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	k1, k1Priv := opKey(t, "one")
 	k2, _ := opKey(t, "two")
 	if err, _ := f.applyOperatorKeySeed(&goblinv1.OperatorKeySeed{
@@ -247,7 +247,12 @@ func TestRegistrySurvivesSnapshotRestore(t *testing.T) {
 		t.Fatalf("persist: %v", err)
 	}
 
-	restored := NewFSM()
+	// Anchored on the SAME founding keys the snapshot was seeded with.
+	// That is the contract GOBLIN-DIV-047 introduces: a restoring node
+	// authenticates the registry against its own configured roots, so a
+	// node with no roots - or different ones - refuses this snapshot
+	// rather than adopting it.
+	restored := NewFSM([]*goblinv1.OperatorKey{k1, k2})
 	if err := restored.Restore(io.NopCloser(bytes.NewReader(sink.Bytes()))); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
@@ -317,7 +322,7 @@ func TestRestoreRefusesAKeyWhoseIDLiesAboutItsBytes(t *testing.T) {
 		k, _ := opKey(t, "liar")
 		k.KeyId = "0000000000000000000000000000000000000000000000000000000000000000"
 
-		f := NewFSM()
+		f := NewFSM(nil)
 		err := f.Restore(io.NopCloser(bytes.NewReader(snapshotWith(t, k.GetKeyId(), k))))
 		if !errors.Is(err, capability.ErrOperatorKeyMalformed) {
 			t.Fatalf("restore of a lying key id = %v, want ErrOperatorKeyMalformed", err)
@@ -336,7 +341,7 @@ func TestRestoreRefusesAKeyWhoseIDLiesAboutItsBytes(t *testing.T) {
 		k, _ := opKey(t, "honest")
 		other, _ := opKey(t, "other")
 
-		f := NewFSM()
+		f := NewFSM(nil)
 		err := f.Restore(io.NopCloser(bytes.NewReader(snapshotWith(t, other.GetKeyId(), k))))
 		if err == nil {
 			t.Fatal("restore accepted a key filed under another key's id")

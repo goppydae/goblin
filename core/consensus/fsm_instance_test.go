@@ -29,7 +29,7 @@ func transitionEntry(instUUID []byte, to goblinv1.InstanceState, reason string) 
 }
 
 func TestFSM_AdmitCreatesAdmittedInstance(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	spec, inst := ident.NewV7(), ident.NewV7()
 
 	if resp := mustApply(t, f, admitEntry(spec, inst, "node-1")); resp != nil {
@@ -49,7 +49,7 @@ func TestFSM_AdmitCreatesAdmittedInstance(t *testing.T) {
 }
 
 func TestFSM_AdmitRejectsDuplicateAndMalformed(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	spec, inst := ident.NewV7(), ident.NewV7()
 	mustApply(t, f, admitEntry(spec, inst, "node-1"))
 
@@ -68,7 +68,7 @@ func TestFSM_AdmitRejectsDuplicateAndMalformed(t *testing.T) {
 }
 
 func TestFSM_TransitionForwardLegalBackwardIllegal(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	spec, inst := ident.NewV7(), ident.NewV7()
 	mustApply(t, f, admitEntry(spec, inst, "node-1"))
 
@@ -94,7 +94,7 @@ func TestFSM_TransitionForwardLegalBackwardIllegal(t *testing.T) {
 }
 
 func TestFSM_TerminatedTombstonesForever(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	spec, inst := ident.NewV7(), ident.NewV7()
 	mustApply(t, f, admitEntry(spec, inst, "node-1"))
 	mustApply(t, f, transitionEntry(inst, goblinv1.InstanceState_INSTANCE_STATE_RUNNING, ""))
@@ -132,7 +132,7 @@ func TestFSM_TerminatedTombstonesForever(t *testing.T) {
 }
 
 func TestFSM_SignalAuthorizedAgainstRights(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	spec, inst := ident.NewV7(), ident.NewV7()
 	mustApply(t, f, admitEntry(spec, inst, "node-3"))
 	mustApply(t, f, transitionEntry(inst, goblinv1.InstanceState_INSTANCE_STATE_RUNNING, ""))
@@ -169,7 +169,7 @@ func TestFSM_SignalAuthorizedAgainstRights(t *testing.T) {
 }
 
 func TestFSM_SnapshotRestoreCarriesInstancesAndTombstones(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	spec := ident.NewV7()
 	live, dead := ident.NewV7(), ident.NewV7()
 	mustApply(t, f, admitEntry(spec, live, "node-1"))
@@ -185,7 +185,7 @@ func TestFSM_SnapshotRestoreCarriesInstancesAndTombstones(t *testing.T) {
 		t.Fatalf("Persist: %v", err)
 	}
 
-	restored := NewFSM()
+	restored := NewFSM(nil)
 	if err := restored.Restore(io.NopCloser(bytes.NewReader(sink.Bytes()))); err != nil {
 		t.Fatalf("Restore: %v", err)
 	}
@@ -224,7 +224,7 @@ func TestLegalTransition_Table(t *testing.T) {
 
 // ErrIllegalTransition must be distinguishable as data.
 func TestFSM_IllegalTransitionTypedError(t *testing.T) {
-	f := NewFSM()
+	f := NewFSM(nil)
 	spec, inst := ident.NewV7(), ident.NewV7()
 	mustApply(t, f, admitEntry(spec, inst, "node-1"))
 	mustApply(t, f, transitionEntry(inst, goblinv1.InstanceState_INSTANCE_STATE_RUNNING, ""))
