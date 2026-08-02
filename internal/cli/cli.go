@@ -15,10 +15,60 @@ import (
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
 
-var RootCmd = &cobra.Command{
-	Use:     "goblinctl",
-	Short:   "Goblin distributed supervisor control",
-	Version: version.Version,
+// RootCmd is goblinctl's root, built by the kernel's shared constructor
+// so the control roots of all four binaries carry one definition of each
+// flag's name, shorthand, default and help text (cli-contract.md).
+//
+// It also supplies the identity surface: `version`, `--version` and `-v`
+// all render core/version.Summary(), and the block names the binary
+// rather than printing cobra's anonymous one-liner (GOBLIN-DIV-052).
+var RootCmd, controlFlags = gapicli.NewControlRoot(
+	"goblinctl", version.Version, "Goblin distributed supervisor control")
+
+// defaultAPIAddr is goblind's default listen address, and it lives here
+// because the shared --api-addr default is EMPTY.
+//
+// The contract gives that empty default the meaning "resolve from
+// config", which keeps config the source of truth and the flag an
+// override. gapictl can honour that; goblinctl cannot, because goblin
+// has no config package at all - there is nothing to resolve from. So
+// empty resolves to the literal below, which is exactly the default this
+// flag carried before it moved to the shared registrar, and the flag's
+// NAME, shorthand and default still come from one definition as the
+// contract requires. Only the interpretation of empty differs, and it
+// differs because one binary has a config loader and the other does not.
+// Recorded as a residual on GOBLIN-DIV-052 rather than papered over: a
+// config source for goblinctl is its own piece of work.
+const defaultAPIAddr = "127.0.0.1:29000"
+
+// controlAddr is the daemon to talk to: the --api-addr override when
+// given, the local node otherwise.
+func controlAddr() string {
+	if controlFlags.APIAddr != "" {
+		return controlFlags.APIAddr
+	}
+	return defaultAPIAddr
+}
+
+// controlTLS is how to reach it. On a CONTROL binary --tls-ca is the
+// client's trust root, not server-side material; the name is shared with
+// the daemon role and the meaning is not (cli-contract.md).
+func controlTLS() transport.TLSConfig {
+	return transport.TLSConfig{
+		CAFile:             controlFlags.TLSCA,
+		InsecureSkipVerify: controlFlags.TLSInsecure,
+	}
+}
+
+// dialControl opens an RPC client to the configured target.
+//
+// This exists because the same three-line construction appeared THIRTEEN
+// times verbatim. A shared flag registrar makes the definitions agree and
+// says nothing about whether anything reads them - the GAPI-DIV-034 shape
+// that GAPI-DIV-058's residual warns about - so the read is funnelled
+// through one function that is obviously exercised by every verb.
+func dialControl() (*QUICRPCClient, error) {
+	return NewQUICRPCClient(controlAddr(), controlTLS())
 }
 
 var clusterCmd = &cobra.Command{
@@ -49,12 +99,6 @@ func closeClient(client *QUICRPCClient, err *error) {
 // binary never starts a daemon; there is one way to bring up a
 // supervisor and it is goblind's own start verb (cli-contract.md,
 // GOBLIN-DIV-054).
-var (
-	apiAddr string
-
-	tlsCA       string
-	tlsInsecure bool
-)
 
 func init() {
 	RootCmd.AddCommand(clusterCmd)
@@ -68,10 +112,10 @@ func init() {
 	clusterCmd.AddCommand(migrateCmd)
 	clusterCmd.AddCommand(migrateInstanceCmd)
 
-	// Global flags
-	RootCmd.PersistentFlags().StringVar(&apiAddr, "api-addr", "127.0.0.1:29000", "Target node's single listen address")
-	RootCmd.PersistentFlags().StringVar(&tlsCA, "tls-ca", "", "Path to CA certificate for API TLS verification")
-	RootCmd.PersistentFlags().BoolVar(&tlsInsecure, "tls-insecure", false, "Skip API TLS verification (INSECURE)")
+	// The persistent set is registered by NewControlRoot above; nothing
+	// is defined locally here, which is the point - a flag added to one
+	// control binary and not its peer is what the shared registrar
+	// exists to prevent.
 
 	// Create agent subcommand for GAPI operations
 	agentCmd := &cobra.Command{
@@ -93,7 +137,21 @@ func init() {
 			cmd.Short = "Local Agent TUI"
 		}
 		if cmd.Name() == "version" {
-			continue // Avoid conflict
+			// Deliberately NOT mounted. The old comment here said
+			// "Avoid conflict", which described a conflict that did not
+			// exist: gapictl's version command would have landed at
+			// `goblinctl agent version`, colliding with nothing, and
+			// goblinctl had no version verb of its own to collide with -
+			// so the conflict was avoided by having none at all
+			// (GOBLIN-DIV-052).
+			//
+			// Now there IS a reason. NewControlRoot gives goblinctl its
+			// own `version`, and a mounted copy would render the same
+			// bytes - cobra resolves cmd.Root() to goblinctl once
+			// mounted, so `goblinctl agent version` would print
+			// goblinctl's block, not the kernel's. A second spelling of
+			// one output is a surface to keep in step for no benefit.
+			continue
 		}
 		agentCmd.AddCommand(cmd)
 	}
@@ -125,9 +183,9 @@ var runCmd = &cobra.Command{
 		}
 
 		// Connect to QUIC RPC
-		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
+		client, err := dialControl()
 		if err != nil {
-			return fmt.Errorf("failed to connect to QUIC RPC at %s: %w", apiAddr, err)
+			return fmt.Errorf("failed to connect to QUIC RPC at %s: %w", controlAddr(), err)
 		}
 		defer closeClient(client, &err)
 
@@ -150,9 +208,9 @@ var drainCmd = &cobra.Command{
 		nodeID := args[0]
 
 		// Connect to QUIC RPC
-		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
+		client, err := dialControl()
 		if err != nil {
-			return fmt.Errorf("failed to connect to QUIC RPC at %s: %w", apiAddr, err)
+			return fmt.Errorf("failed to connect to QUIC RPC at %s: %w", controlAddr(), err)
 		}
 		defer closeClient(client, &err)
 
@@ -193,9 +251,9 @@ instance is running nowhere, and the error says so explicitly.`,
 			ToNode:     args[1],
 		}
 
-		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
+		client, err := dialControl()
 		if err != nil {
-			return fmt.Errorf("failed to connect to QUIC RPC at %s: %w", apiAddr, err)
+			return fmt.Errorf("failed to connect to QUIC RPC at %s: %w", controlAddr(), err)
 		}
 		defer closeClient(client, &err)
 
@@ -223,9 +281,9 @@ var migrateCmd = &cobra.Command{
 		}
 
 		// Connect to QUIC RPC
-		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
+		client, err := dialControl()
 		if err != nil {
-			return fmt.Errorf("failed to connect to QUIC RPC at %s: %w", apiAddr, err)
+			return fmt.Errorf("failed to connect to QUIC RPC at %s: %w", controlAddr(), err)
 		}
 		defer closeClient(client, &err)
 
@@ -249,7 +307,7 @@ var publishCmd = &cobra.Command{
 	Short: "Publish user event to cluster",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) (err error) {
-		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
+		client, err := dialControl()
 		if err != nil {
 			return err
 		}
@@ -278,7 +336,7 @@ var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show cluster status",
 	RunE: func(cmd *cobra.Command, args []string) (err error) {
-		client, err := NewQUICRPCClient(apiAddr, transport.TLSConfig{CAFile: tlsCA, InsecureSkipVerify: tlsInsecure})
+		client, err := dialControl()
 		if err != nil {
 			return err
 		}
@@ -290,7 +348,7 @@ var statusCmd = &cobra.Command{
 			return fmt.Errorf("failed to get members: %w", err)
 		}
 
-		fmt.Printf("[OK] Connected to %s (QUIC)\n", apiAddr)
+		fmt.Printf("[OK] Connected to %s (QUIC)\n", controlAddr())
 		fmt.Printf("Cluster Members: %d\n", len(resp.GetMembers()))
 		fmt.Println("NAME\t\tADDRESS\t\t\tSTATUS\t\tROLE\t\tTAGS")
 		fmt.Println("----\t\t-------\t\t\t------\t\t----\t\t----")
@@ -313,8 +371,8 @@ var tuiCmd = &cobra.Command{
 	Use:   "tui",
 	Short: "Unified cluster and agent TUI",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Use apiAddr for both GAPI and Cluster RPC since they now share the same QUIC endpoint
-		ctrl := NewUnifiedController(apiAddr, apiAddr)
+		// One address for both GAPI and Cluster RPC: they share the QUIC endpoint.
+		ctrl := NewUnifiedController(controlAddr(), controlAddr())
 		return tui.Run(ctrl)
 	},
 }

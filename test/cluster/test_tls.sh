@@ -81,6 +81,6 @@ sleep 5
 log "Verifying cluster status..."
 # Use --tls-insecure for client just to simplify, or could verify with CA but client needs client certs potentially if mTLS
 # Assuming the client tool supports just verifying CA
-./bin/goblinctl status --api-addr 127.0.0.1:29001 --tls-insecure
+./bin/goblinctl cluster status --api-addr 127.0.0.1:29001 --tls-insecure
 
 log "Cluster verification passed!"
