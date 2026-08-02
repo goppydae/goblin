@@ -24,6 +24,32 @@ type MockStore struct {
 	data       map[string][]byte
 	instances  map[string]*goblinv1.AgentInstance
 	tombstones map[string]struct{}
+	// migrating keys instance ids whose migration is in flight. Empty
+	// by default, so every existing test keeps the behaviour it was
+	// written against.
+	migrating map[string]*goblinv1.MigrationRecord
+}
+
+// MigrationInFlight reports a recorded migration for the instance.
+func (m *MockStore) MigrationInFlight(instanceUUID []byte) (*goblinv1.MigrationRecord, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	rec, ok := m.migrating[ident.String(instanceUUID)]
+	return rec, ok
+}
+
+// SetMigrating marks an instance as being migrated, for tests that need
+// the reconciler to see one.
+func (m *MockStore) SetMigrating(instanceUUID []byte, target string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.migrating == nil {
+		m.migrating = map[string]*goblinv1.MigrationRecord{}
+	}
+	m.migrating[ident.String(instanceUUID)] = &goblinv1.MigrationRecord{
+		InstanceUuid: append([]byte(nil), instanceUUID...),
+		TargetNodeId: target,
+	}
 }
 
 func NewMockStore() *MockStore {

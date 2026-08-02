@@ -74,6 +74,17 @@ func (s *Store) GetInstance(ctx context.Context, instanceID string) (*goblinv1.A
 }
 
 // ListInstances reads every live instance record, leader-gated.
+// MigrationInFlight reports the in-flight migration for an instance.
+// A pass-through to the replicated record: the reconciler asks so it
+// does not recover an instance the migration coordinator stopped on
+// purpose (GOBLIN-DIV-049).
+func (s *Store) MigrationInFlight(instanceUUID []byte) (*goblinv1.MigrationRecord, bool) {
+	if s.consensus == nil {
+		return nil, false
+	}
+	return s.consensus.MigrationInFlight(instanceUUID)
+}
+
 func (s *Store) ListInstances(ctx context.Context) ([]*goblinv1.AgentInstance, error) {
 	if err := s.requireLeader(); err != nil {
 		return nil, err

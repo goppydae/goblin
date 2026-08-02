@@ -438,6 +438,12 @@ func (s *Supervisor) Run(ctx context.Context) (err error) {
 	if err != nil {
 		return fmt.Errorf("load operator keys: %w", err)
 	}
+	// GOBLIN-DIV-049: nothing else retires a migration record left by a
+	// leader that died mid-move, and the reconciler now honours those
+	// records - so without this, one dead coordinator makes an instance
+	// permanently unrecoverable.
+	go runMigrationSweeper(ctx, consensus, slog.Default(), time.Second)
+
 	go func() {
 		serr := runOperatorKeySeeder(ctx, consensus, operatorKeys, slog.Default(), time.Second)
 		if serr == nil || errors.Is(serr, context.Canceled) {
