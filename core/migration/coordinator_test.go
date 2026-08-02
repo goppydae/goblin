@@ -39,6 +39,23 @@ type fakeNodes struct {
 	calls      []call
 	ckptErr    error
 	restoreErr map[string]error // keyed by node id
+	// notReady makes the destination refuse the pre-flight. The zero
+	// value is READY, so every existing test keeps exercising the path
+	// it was written for rather than silently short-circuiting at a new
+	// first step.
+	notReady string
+	readyErr error
+}
+
+func (f *fakeNodes) Ready(_ context.Context, nodeID, _ string) (string, bool, error) {
+	f.calls = append(f.calls, call{op: "ready", nodeID: nodeID})
+	if f.readyErr != nil {
+		return "", false, f.readyErr
+	}
+	if f.notReady != "" {
+		return f.notReady, false, nil
+	}
+	return "", true, nil
 }
 
 func (f *fakeNodes) Checkpoint(_ context.Context, nodeID, _ string, _ []byte, _ uint64) error {
@@ -59,6 +76,21 @@ type fakePuller struct {
 func (f *fakePuller) Pull(_ context.Context, _, _ string, _ []byte, _ uint64, _ []byte) error {
 	f.called = true
 	return f.err
+}
+
+// mutating drops the read-only readiness probe. Several tests mean
+// "nothing was DONE to the instance", and asking a node whether it can
+// accept one is not doing anything to it - so they assert over the
+// mutating calls rather than over an exact transcript, which would
+// break again the next time a question is added ahead of the work.
+func mutating(calls []call) []call {
+	out := make([]call, 0, len(calls))
+	for _, c := range calls {
+		if c.op != "ready" {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 var coordUUID = []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
@@ -92,12 +124,24 @@ func TestMigrateHappyPathOrdersStepsCorrectly(t *testing.T) {
 	if !puller.called {
 		t.Error("image was never pulled")
 	}
-	// Dump on the source must precede restore on the target: restoring
-	// first would mean two live copies of one instance.
-	if len(nodes.calls) != 2 ||
-		nodes.calls[0] != (call{op: "checkpoint", nodeID: "node-1"}) ||
-		nodes.calls[1] != (call{op: "restore", nodeID: "node-2"}) {
-		t.Fatalf("step order = %+v, want checkpoint@node-1 then restore@node-2", nodes.calls)
+	// The destination is asked whether it can accept BEFORE the source
+	// is dumped (GOBLIN-DIV-048), and dump on the source precedes
+	// restore on the target: restoring first would mean two live copies
+	// of one instance. The order is asserted as a whole rather than
+	// per-step, because every defect this test exists to catch is an
+	// ordering defect.
+	want := []call{
+		{op: "ready", nodeID: "node-2"},
+		{op: "checkpoint", nodeID: "node-1"},
+		{op: "restore", nodeID: "node-2"},
+	}
+	if len(nodes.calls) != len(want) {
+		t.Fatalf("step order = %+v, want %+v", nodes.calls, want)
+	}
+	for i := range want {
+		if nodes.calls[i] != want[i] {
+			t.Fatalf("step order = %+v, want %+v", nodes.calls, want)
+		}
 	}
 	if len(raft.commits) != 1 ||
 		raft.commits[0].GetOutcome() != goblinv1.MigrateOutcome_MIGRATE_OUTCOME_COMPLETED {
@@ -117,9 +161,13 @@ func TestRestoreFailureRollsBackToSource(t *testing.T) {
 		t.Fatalf("want ErrRolledBack, got %v", err)
 	}
 
-	// checkpoint@1, failed restore@2, rollback restore@1
-	if len(nodes.calls) != 3 || nodes.calls[2] != (call{op: "restore", nodeID: "node-1"}) {
-		t.Fatalf("calls = %+v, want a rollback restore on node-1", nodes.calls)
+	// ready@2, checkpoint@1, failed restore@2, rollback restore@1. What
+	// this test is about is the LAST call being the undo, so it asserts
+	// that rather than a fixed index - an index breaks whenever a step
+	// is added ahead of it, which says nothing about rollback.
+	if len(nodes.calls) == 0 ||
+		nodes.calls[len(nodes.calls)-1] != (call{op: "restore", nodeID: "node-1"}) {
+		t.Fatalf("calls = %+v, want the last call to be a rollback restore on node-1", nodes.calls)
 	}
 	if len(raft.commits) != 1 ||
 		raft.commits[0].GetOutcome() != goblinv1.MigrateOutcome_MIGRATE_OUTCOME_ABORTED {
@@ -197,8 +245,8 @@ func TestRefusedIntentTouchesNothing(t *testing.T) {
 		Migrate(context.Background(), request()); err == nil {
 		t.Fatal("refused intent was not reported")
 	}
-	if len(nodes.calls) != 0 {
-		t.Errorf("node calls made after a refused begin: %+v", nodes.calls)
+	if got := mutating(nodes.calls); len(got) != 0 {
+		t.Errorf("the instance was touched after a refused begin: %+v", got)
 	}
 	if puller.called {
 		t.Error("image pulled after a refused begin")
@@ -223,9 +271,14 @@ func TestCommitFailureDoesNotKillHealthyInstance(t *testing.T) {
 	if errors.Is(err, migration.ErrRolledBack) || errors.Is(err, migration.ErrStranded) {
 		t.Errorf("commit failure was treated as a rollback: %v", err)
 	}
-	// Exactly the two expected node calls: no rollback restore.
-	if len(nodes.calls) != 2 {
-		t.Fatalf("calls = %+v, want checkpoint then restore only", nodes.calls)
+	// The claim is that no ROLLBACK happened - a healthy instance was
+	// not killed to satisfy bookkeeping. Asserting that directly beats
+	// counting calls, which conflates "no rollback" with "no other step
+	// was ever added".
+	for _, c := range mutating(nodes.calls) {
+		if c == (call{op: "restore", nodeID: "node-1"}) {
+			t.Fatalf("a healthy instance was rolled back after a commit failure: %+v", nodes.calls)
+		}
 	}
 }
 
@@ -242,5 +295,67 @@ func TestMigrateRejectsBadRequests(t *testing.T) {
 	same.TargetNode = same.SourceNode
 	if err := c.Migrate(context.Background(), same); err == nil {
 		t.Error("migration to the instance's own node was accepted")
+	}
+}
+
+// GOBLIN-DIV-048: a destination that cannot accept the image must be
+// refused BEFORE the source is checkpointed.
+//
+// The assertion that matters is not the error - it is that no
+// checkpoint call was ever made. The old failure returned an error too;
+// it just returned it after the source process was already dead and had
+// to be resurrected from its own image.
+func TestMigrateRefusesUnreadyTargetBeforeTouchingTheSource(t *testing.T) {
+	raft := &fakeProposer{}
+	nodes := &fakeNodes{
+		restoreErr: map[string]error{},
+		notReady:   "operator key registry has not been applied on this node",
+	}
+	puller := &fakePuller{}
+	c := migration.NewCoordinator(raft, nodes, puller, nil)
+
+	err := c.Migrate(context.Background(), request())
+	if err == nil {
+		t.Fatal("migration to an unready destination succeeded")
+	}
+	if !errors.Is(err, migration.ErrTargetNotReady) {
+		t.Fatalf("error = %v, want it to wrap ErrTargetNotReady", err)
+	}
+
+	for _, c := range nodes.calls {
+		if c.op == "checkpoint" {
+			t.Fatal("the source was checkpointed despite the destination being unready; " +
+				"this is GOBLIN-DIV-048 - the instance is killed and then found to have " +
+				"nowhere to go")
+		}
+	}
+	if puller.called {
+		t.Error("the image was pulled despite the destination being unready")
+	}
+	// No intent either: a refusal here must not leave a migration
+	// in-flight for something else to reconcile.
+	if len(raft.begins) != 0 {
+		t.Errorf("recorded %d migration intents for a refused migration, want 0", len(raft.begins))
+	}
+}
+
+// An unreachable destination is a different failure from an unready
+// one, and must not be reported as a refusal - the operator would go
+// looking at the wrong node.
+func TestMigrateSurfacesAnUnreachableTargetDistinctly(t *testing.T) {
+	raft := &fakeProposer{}
+	boom := errors.New("dial: connection refused")
+	nodes := &fakeNodes{restoreErr: map[string]error{}, readyErr: boom}
+	c := migration.NewCoordinator(raft, nodes, &fakePuller{}, nil)
+
+	err := c.Migrate(context.Background(), request())
+	if err == nil {
+		t.Fatal("migration with an unreachable destination succeeded")
+	}
+	if errors.Is(err, migration.ErrTargetNotReady) {
+		t.Error("an unreachable destination was reported as an unready one")
+	}
+	if !errors.Is(err, boom) {
+		t.Errorf("error = %v, want it to wrap the transport failure", err)
 	}
 }

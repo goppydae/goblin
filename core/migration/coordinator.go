@@ -38,6 +38,10 @@ type Proposer interface {
 
 // NodeClient reaches the node-local checkpoint and restore RPCs.
 type NodeClient interface {
+	// Ready asks a prospective destination whether it can accept a
+	// migration. It returns (reason, ready, err): a transport failure
+	// and a considered "no" are different facts.
+	Ready(ctx context.Context, nodeID, instanceID string) (string, bool, error)
 	Checkpoint(ctx context.Context, nodeID, instanceID string, uuid []byte, epoch uint64) error
 	Restore(ctx context.Context, nodeID, instanceID string, uuid []byte, epoch uint64, spec *goblinv1.AgentSpec) error
 }
@@ -96,6 +100,34 @@ func (c *Coordinator) Migrate(ctx context.Context, req Request) error {
 	}
 	if req.SourceNode == req.TargetNode {
 		return fmt.Errorf("migration source and target are both %s", req.SourceNode)
+	}
+
+	// 0. Pre-flight. GOBLIN-DIV-048: the destination used to be asked
+	// whether it could accept the image at step 3, by which point the
+	// checkpoint had already killed the source and a refusal meant a
+	// rollback from disk. A node that had joined gossip but applied no
+	// raft entry refused there, so serf membership was being treated as
+	// consensus membership.
+	//
+	// This is a pre-flight rather than a narrowed race, and the
+	// difference is monotonicity: readiness turns on the operator key
+	// registry, which is seeded once and which the FSM refuses to empty
+	// (removing the last key is refused), so a destination that answers
+	// ready cannot become unready before the pull. That is why this is
+	// a check and not a retry - the exit for -048 rules retries out
+	// precisely because they only move the window.
+	//
+	// It runs before the intent record too: refusing here leaves no
+	// migration in flight to abort.
+	if reason, ready, err := c.nodes.Ready(ctx, req.TargetNode, req.InstanceID); err != nil {
+		return fmt.Errorf("migration of %s: asking %s whether it can accept: %w",
+			req.InstanceID, req.TargetNode, err)
+	} else if !ready {
+		c.log.LogAttrs(ctx, slog.LevelWarn, "migration refused before the source was touched",
+			slog.String("instance_id", req.InstanceID),
+			slog.String("target_node", req.TargetNode),
+			slog.String("reason", reason))
+		return fmt.Errorf("%w: %s: %s", ErrTargetNotReady, req.TargetNode, reason)
 	}
 
 	// 1. Intent. This is also the concurrency gate: the FSM refuses a
