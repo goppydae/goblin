@@ -11,7 +11,6 @@ import (
 	"github.com/goppydae/gapi/core/transport"
 	"github.com/goppydae/gapi/core/tui"
 	gapicli "github.com/goppydae/gapi/pkg/cli"
-	"github.com/goppydae/goblin/internal/supervisor"
 	"github.com/goppydae/goblin/internal/version"
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
@@ -37,41 +36,27 @@ func closeClient(client *QUICRPCClient, err *error) {
 
 // ... helper code ...
 
+// goblinctl carries NO daemon-launching verb. There was a `start` here
+// that built supervisor.Config with four of its twenty-two fields and
+// called supervisor.New - so it brought up a node with no TLS material,
+// no gossip encryption, no operator keys and not in production mode,
+// which by goblind's own --operator-key contract refuses every mutating
+// verb, and it did so with exit 0 and no warning.
+//
+// It is deleted rather than repaired. Repairing it means maintaining two
+// constructions of supervisor.Config kept identical by discipline, and
+// four-of-twenty-two is what that discipline actually produced. A control
+// binary never starts a daemon; there is one way to bring up a
+// supervisor and it is goblind's own start verb (cli-contract.md,
+// GOBLIN-DIV-054).
 var (
-	nodeID     string
-	listenAddr string
-	raftDir    string
-	joinAddr   string
-	apiAddr    string
+	apiAddr string
 
 	tlsCA       string
 	tlsInsecure bool
 )
 
-var startCmd = &cobra.Command{
-	Use:   "start",
-	Short: "Start Goblin supervisor",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg := supervisor.Config{
-			NodeID:     nodeID,
-			ListenAddr: listenAddr,
-			RaftDir:    raftDir,
-			JoinAddr:   joinAddr,
-		}
-
-		sup := supervisor.New(cfg)
-		return sup.Run(cmd.Context())
-	},
-}
-
 func init() {
-	startCmd.Flags().StringVar(&nodeID, "id", "", "Unique Node ID (default: hostname)")
-	startCmd.Flags().StringVar(&listenAddr, "listen-addr", "127.0.0.1:29000", "Single control-plane bind address (QUIC, ALPN-routed)")
-	// startCmd.Flags().IntVar(&serfPort, "serf-port", 29010, "Serf bind port") - Deprecated/Removed
-	startCmd.Flags().StringVar(&raftDir, "data", "./data/raft", "Data directory for Raft log")
-	startCmd.Flags().StringVar(&joinAddr, "join", "", "Join existing cluster peer (host:port)")
-
-	RootCmd.AddCommand(startCmd)
 	RootCmd.AddCommand(clusterCmd)
 	RootCmd.AddCommand(tuiCmd)
 	RootCmd.AddCommand(operatorCmd)
