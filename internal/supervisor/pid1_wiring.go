@@ -67,13 +67,19 @@ func (s *Supervisor) enablePid1(ctx context.Context, runCancel context.CancelFun
 			return gapimounts.MountEarly(gapimounts.SysMounter{}, specs)
 		},
 		StartReap: func(ctx context.Context) {
-			go gapisubreaper.ReapLoop(ctx, reapKick, func(pid int, ws syscall.WaitStatus) {
-				// The gapi agent manager exists a few lines into Run;
-				// an orphan in that window is still reaped, only its
-				// agent attribution is skipped.
-				if s.agentMgr != nil {
-					s.agentMgr.NotifyExited(pid, ws)
-				}
+			// tierPreUserspace, not tierRun: this loop must still be
+			// reaping while the local teardown's StopAll kills children.
+			// Joining it with the cluster loops would break the teardown
+			// it exists to serve (GOBLIN-DIV-038).
+			s.loops.spawn(tierPreUserspace, "reaper", func() {
+				gapisubreaper.ReapLoop(ctx, reapKick, func(pid int, ws syscall.WaitStatus) {
+					// The gapi agent manager exists a few lines into Run;
+					// an orphan in that window is still reaped, only its
+					// agent attribution is skipped.
+					if s.agentMgr != nil {
+						s.agentMgr.NotifyExited(pid, ws)
+					}
+				})
 			})
 		},
 		SkipMounts: skipMounts,
@@ -93,13 +99,15 @@ func (s *Supervisor) enablePid1(ctx context.Context, runCancel context.CancelFun
 		if werr != nil {
 			return nil, werr
 		}
-		go wd.Run(ctx)
+		// tierPreUserspace: the watchdog has to keep petting until
+		// reboot(2) actually fires, or the machine is reset out from
+		// under its own shutdown.
+		s.loops.spawn(tierPreUserspace, "watchdog", func() { wd.Run(ctx) })
 	}
 
-	grace := s.cfg.ShutdownGrace
-	if grace <= 0 {
-		grace = 10 * time.Second
-	}
+	// One reading of the grace, shared with the loop joins, so the two
+	// halves of teardown cannot drift apart.
+	grace := s.shutdownGrace()
 	var mountTable []gapimounts.MountSpec
 	if !skipMounts {
 		mountTable = gapimounts.EarlyMounts
