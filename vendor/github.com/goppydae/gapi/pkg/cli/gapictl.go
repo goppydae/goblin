@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -16,15 +17,61 @@ import (
 	protopkg "github.com/goppydae/gapi/pkg/proto"
 )
 
-var rootCmd = &cobra.Command{
-	Use:   "gapictl",
-	Short: "Runtime Control CLI",
-	Long:  "CLI for controlling Runtime agents and supervisors.",
+// rootCmd is the process-wide gapictl root. It is a singleton because
+// GetRoot() hands it to the orchestrator for embedding, but it is BUILT
+// by NewControlRoot rather than declared as a literal - so a test can
+// construct an independent one and compare the two flag sets.
+// Package-level initialization rather than init(): Go orders variable
+// initializers before any init() in the package, so the subcommand
+// registrations below cannot run against a nil root. Two init()s in one
+// file would have worked only by source order.
+var rootCmd, controlFlags = NewGapictlRoot()
+
+// NewGapictlRoot builds a fresh gapictl root. Exported so the parity
+// test - and the orchestrator, which embeds this tree - can construct
+// one without depending on package initialization order.
+func NewGapictlRoot() (*cobra.Command, *ControlFlags) {
+	return NewControlRoot("gapictl", version.BinaryVersion(), "Runtime Control CLI")
 }
 
-// Execute runs the root command.
+// controlConfig loads configuration and applies the control root's
+// persistent flags over it, so a registered flag is a flag that is READ.
+//
+// GAPI-DIV-058's residual names the trap directly: a shared registrar
+// makes flag DEFINITIONS agree while saying nothing about whether
+// anything consumes them, which is the GAPI-DIV-034 shape (a value
+// parsed and discarded). Every control command resolves its target
+// through here for that reason.
+//
+// Flags override config; empty means "leave config alone", which is why
+// --api-addr carries no default in the registrar.
+func controlConfig() (*config.Config, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, err
+	}
+	applyControlFlags(cfg)
+	return cfg, nil
+}
+
+// applyControlFlags is separate so the ignore-the-error call sites keep
+// their existing shape without losing the overrides.
+func applyControlFlags(cfg *config.Config) {
+	if cfg == nil || controlFlags == nil {
+		return
+	}
+	if controlFlags.APIAddr != "" {
+		cfg.Transport.Address = controlFlags.APIAddr
+	}
+	if controlFlags.LogLevel != "" {
+		cfg.Logging.Level = controlFlags.LogLevel
+	}
+}
+
+// Execute runs the root command. Bare invocation prints help and
+// returns ErrNoCommand so the process exits non-zero (cli-contract.md).
 func Execute() error {
-	return rootCmd.Execute()
+	return RunRoot(rootCmd, os.Args[1:])
 }
 
 // GetRoot returns the root command for embedding.
@@ -32,20 +79,12 @@ func GetRoot() *cobra.Command {
 	return rootCmd
 }
 
-var versionCmd = &cobra.Command{
-	Use:   "version",
-	Short: "Print version info",
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Print(version.Summary())
-	},
-}
-
 // ping
 var pingCmd = &cobra.Command{
 	Use:   "ping",
 	Short: "Ping gapid",
 	Run: func(cmd *cobra.Command, args []string) {
-		cfg, _ := config.Load()
+		cfg, _ := controlConfig()
 		c, err := client.New(cfg)
 		if err != nil {
 			log.Fatalf("failed to init client: %v", err)
@@ -70,7 +109,7 @@ var agentReloadCmd = &cobra.Command{
 	Use:   "reload",
 	Short: "Trigger a reload of registered agents",
 	Run: func(cmd *cobra.Command, args []string) {
-		cfg, _ := config.Load()
+		cfg, _ := controlConfig()
 		c, err := client.New(cfg)
 		if err != nil {
 			log.Fatalf("failed to init client: %v", err)
@@ -95,7 +134,7 @@ var agentStatusCmd = &cobra.Command{
 		if len(args) == 0 && !cmd.Flags().Changed("tree") {
 			treeView = true
 		}
-		cfg, err := config.Load()
+		cfg, err := controlConfig()
 		if err != nil {
 			log.Fatalf("failed to load config: %v", err)
 		}
@@ -154,7 +193,7 @@ var tuiCmd = &cobra.Command{
 	Short: "Interactive TUI for monitoring agents",
 	Long:  "Start an interactive terminal UI for real-time agent monitoring and control.",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := controlConfig()
 		if err != nil {
 			return fmt.Errorf("failed to load config: %w", err)
 		}
@@ -175,7 +214,6 @@ var cryptoCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(pingCmd)
 	rootCmd.AddCommand(shutdownCmd)
 	rootCmd.AddCommand(tuiCmd)

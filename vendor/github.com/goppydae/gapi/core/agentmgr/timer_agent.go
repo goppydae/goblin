@@ -87,6 +87,8 @@ func (ta *TimerAgent) Type() string           { return "timer" }
 func (ta *TimerAgent) Lang() string           { return ta.lang }
 func (ta *TimerAgent) Dependencies() []string { return nil }
 func (ta *TimerAgent) Requires() []string     { return nil }
+func (ta *TimerAgent) WantedBy() []string     { return nil }
+func (ta *TimerAgent) RequiredBy() []string   { return nil }
 func (ta *TimerAgent) Wants() []string        { return nil }
 func (ta *TimerAgent) SetRunID(id string) {
 	ta.mu.Lock()

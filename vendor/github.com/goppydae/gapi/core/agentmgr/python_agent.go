@@ -142,11 +142,13 @@ func NewPythonAgent(
 	return a
 }
 
-func (a *PythonAgent) ID() string         { return a.id }
-func (a *PythonAgent) Type() string       { return a.typ }
-func (a *PythonAgent) Lang() string       { return "python" }
-func (a *PythonAgent) Requires() []string { return a.requires }
-func (a *PythonAgent) Wants() []string    { return a.wants }
+func (a *PythonAgent) ID() string           { return a.id }
+func (a *PythonAgent) Type() string         { return a.typ }
+func (a *PythonAgent) Lang() string         { return "python" }
+func (a *PythonAgent) Requires() []string   { return a.requires }
+func (a *PythonAgent) WantedBy() []string   { return a.wantedBy }
+func (a *PythonAgent) RequiredBy() []string { return a.requiredBy }
+func (a *PythonAgent) Wants() []string      { return a.wants }
 func (a *PythonAgent) Dependencies() []string {
 	return append(append([]string(nil), a.requires...), a.wants...)
 }

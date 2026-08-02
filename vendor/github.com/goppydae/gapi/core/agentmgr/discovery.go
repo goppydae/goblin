@@ -72,6 +72,13 @@ type Agent interface {
 	Describe() map[string]string
 	Requires() []string
 	Wants() []string
+	// WantedBy and RequiredBy are the REVERSE edges: "the named unit
+	// wants/requires me", systemd's [Install] direction. They are on the
+	// interface because the topological sort needs them - they were
+	// parsed, stored and graphed for a long time while the sort could
+	// not see them at all.
+	WantedBy() []string
+	RequiredBy() []string
 	SetRunID(string)
 }
 

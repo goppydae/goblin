@@ -126,11 +126,13 @@ func NewGoAgent(
 	return a
 }
 
-func (a *GoAgent) ID() string         { return a.id }
-func (a *GoAgent) Type() string       { return a.typ }
-func (a *GoAgent) Lang() string       { return "go" }
-func (a *GoAgent) Requires() []string { return a.requires }
-func (a *GoAgent) Wants() []string    { return a.wants }
+func (a *GoAgent) ID() string           { return a.id }
+func (a *GoAgent) Type() string         { return a.typ }
+func (a *GoAgent) Lang() string         { return "go" }
+func (a *GoAgent) Requires() []string   { return a.requires }
+func (a *GoAgent) WantedBy() []string   { return a.wantedBy }
+func (a *GoAgent) RequiredBy() []string { return a.requiredBy }
+func (a *GoAgent) Wants() []string      { return a.wants }
 func (a *GoAgent) Dependencies() []string {
 	return append(append([]string(nil), a.requires...), a.wants...)
 }

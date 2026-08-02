@@ -19,6 +19,10 @@ var (
 	BuiltBy          = "unknown"
 )
 
+// runtimeCoreLabel is the kernel's own row, and the fallback name when
+// no binary has registered an identity.
+const runtimeCoreLabel = "Runtime Core"
+
 type Info struct {
 	Name      string
 	Version   string
@@ -92,37 +96,57 @@ func Summary() string {
 	name := active.Name
 	version := active.Version
 	if name == "" {
-		name = "Runtime Core"
+		name = runtimeCoreLabel
 	}
 	if version == "" {
 		version = GAPIVersion
 	}
 
+	schemaHash := truncate16(SchemaHash)
+	commit := truncate16(active.Commit)
+
+	// Rows first, then one column width taken from the longest label
+	// (cli-contract.md). The block used to carry four different hardcoded
+	// paddings - %-11s for the name, and separate widths for Go DDK,
+	// Platform and a 21-character "Protobuf Schema Hash:" that aligned
+	// with nothing - so adding a field meant re-guessing the alignment.
+	rows := [][2]string{{name, version}}
+	// Runtime Core is emitted only when the invoking binary is not the
+	// kernel itself, so gapid does not print its own version twice.
+	if name != runtimeCoreLabel {
+		rows = append(rows, [2]string{runtimeCoreLabel, GAPIVersion})
+	}
+	rows = append(rows,
+		[2]string{"Go DDK", GoDDKVersion},
+		[2]string{"Python DDK", PythonDDKVersion},
+		[2]string{"Protobuf Schema Hash", schemaHash},
+		[2]string{"Go Version", active.GoVersion},
+		[2]string{"Platform", active.Platform},
+		[2]string{"Commit", commit},
+		[2]string{"Build Tag", BuildTag},
+		[2]string{"Built Date", active.BuildDate},
+		[2]string{"Built By", active.BuiltBy},
+	)
+
+	width := 0
+	for _, r := range rows {
+		if n := len(r[0]) + 1; n > width { // +1 for the colon
+			width = n
+		}
+	}
+
 	var out strings.Builder
-	fmt.Fprintf(&out, "%-11s %s\n", name+":", version)
-
-	// Avoid duplicate Runtime Core line if it's already the label
-	if name != "Runtime Core" {
-		fmt.Fprintf(&out, "Runtime Core: %s\n", GAPIVersion)
+	for _, r := range rows {
+		fmt.Fprintf(&out, "%-*s %s\n", width, r[0]+":", r[1])
 	}
-
-	fmt.Fprintf(&out, "Go DDK:     %s\n", GoDDKVersion)
-	fmt.Fprintf(&out, "Python DDK: %s\n", PythonDDKVersion)
-	schemaHash := SchemaHash
-	if len(schemaHash) > 16 {
-		schemaHash = schemaHash[:16]
-	}
-	fmt.Fprintf(&out, "Protobuf Schema Hash: %s\n", schemaHash)
-	fmt.Fprintf(&out, "Go Version: %s\n", active.GoVersion)
-	fmt.Fprintf(&out, "Platform:   %s\n", active.Platform)
-
-	commit := active.Commit
-	if len(commit) > 16 {
-		commit = commit[:16]
-	}
-	fmt.Fprintf(&out, "Commit:     %s\n", commit)
-	fmt.Fprintf(&out, "Build Tag:  %s\n", BuildTag)
-	fmt.Fprintf(&out, "Built Date: %s\n", active.BuildDate)
-	fmt.Fprintf(&out, "Built By:   %s\n", active.BuiltBy)
 	return out.String()
+}
+
+// truncate16 bounds the hash-shaped fields, which are long enough to
+// dominate the block and are identifying at 16 characters.
+func truncate16(s string) string {
+	if len(s) > 16 {
+		return s[:16]
+	}
+	return s
 }

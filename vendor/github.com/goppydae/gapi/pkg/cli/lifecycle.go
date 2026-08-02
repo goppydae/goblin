@@ -10,14 +10,13 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/goppydae/gapi/core/client"
-	"github.com/goppydae/gapi/core/config"
 	"github.com/goppydae/gapi/internal/logattr"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
 )
 
 // sendLifecycleCommand sends control commands in parallel to multiple agents
 func sendLifecycleCommand(agentIDs []string, action protopkg.LifecycleControl_Action) {
-	cfg, err := config.Load()
+	cfg, err := controlConfig()
 	if err != nil {
 		slog.Default().LogAttrs(context.Background(), slog.LevelError, "failed to load config", logattr.Err(err))
 		os.Exit(1)

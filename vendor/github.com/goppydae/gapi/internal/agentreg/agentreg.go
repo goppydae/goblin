@@ -194,11 +194,34 @@ func (r *AgentRegistry) TopologicalSort() ([]string, error) {
 	// Shared toposort (review R5: one implementation): Requires edges order
 	// and cycle-reject; Wants edges order when satisfiable and never block
 	// (review R14). Unknown deps (external services) are ignored.
+	//
+	// WantedBy/RequiredBy fold in as reverse edges, matching what Register
+	// already writes into the graph: "X is wanted_by Y" means Y wants X.
+	// This sort read only the forward fields for as long as the reverse
+	// ones existed, so the graph and the ordering disagreed - the same
+	// gap, in the same shape, as core/agentmgr's copy.
+	known := make(map[string]struct{}, len(agents))
+	for _, a := range agents {
+		known[a.ID] = struct{}{}
+	}
 	hard := make(map[string][]string, len(agents))
 	soft := make(map[string][]string, len(agents))
+	// Copied, not aliased: the reverse pass appends to these.
 	for _, a := range agents {
-		hard[a.ID] = a.Requires
-		soft[a.ID] = a.Wants
+		hard[a.ID] = append([]string(nil), a.Requires...)
+		soft[a.ID] = append([]string(nil), a.Wants...)
+	}
+	for _, a := range agents {
+		for _, target := range a.WantedBy {
+			if _, ok := known[target]; ok {
+				soft[target] = append(soft[target], a.ID)
+			}
+		}
+		for _, target := range a.RequiredBy {
+			if _, ok := known[target]; ok {
+				hard[target] = append(hard[target], a.ID)
+			}
+		}
 	}
 	order, err := toposort.Sort(hard, soft)
 	if err != nil {
