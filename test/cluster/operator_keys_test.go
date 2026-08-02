@@ -3,6 +3,7 @@
 package main_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -38,6 +39,35 @@ func TestKeylessClusterRefusesMutations(t *testing.T) {
 	// branch on the code and never match on text.
 	if !supervisor.IsPermissionDenied(err) {
 		t.Fatalf("refusal was not classified PERMISSION_DENIED: %v", err)
+	}
+}
+
+// TestKeylessNodeNeverBecomesMigrationReady is the discriminating half
+// of the GOBLIN-DIV-059 fix. waitMigrationReady exists so the migration
+// test stops racing the registry's replication - but a helper that
+// reported ready unconditionally, or that gave up on the first probe,
+// would make that test pass just as well. This one disagrees with both:
+// a node started with no operator key can NEVER become ready, because
+// the registry it is waiting on will never arrive.
+//
+// It also asserts the elapsed time. The property under test is that the
+// helper WAITED, and a helper that returns the right error instantly is
+// still the wrong helper.
+func TestKeylessNodeNeverBecomesMigrationReady(t *testing.T) {
+	const window = 3 * time.Second
+
+	c, node := startKeylessNode(t, "keyless-migration")
+	c.waitLeader(node, 1, 60*time.Second)
+
+	elapsed, err := c.waitMigrationReady(node, "", window)
+	if err == nil {
+		t.Fatal("a node with no operator key reported ready to accept a migration")
+	}
+	if elapsed < window {
+		t.Fatalf("gave up after %s; it must keep polling for the full %s", elapsed, window)
+	}
+	if !strings.Contains(err.Error(), "operator key registry has not been applied on this node") {
+		t.Fatalf("refusal did not name the missing registry: %v", err)
 	}
 }
 
