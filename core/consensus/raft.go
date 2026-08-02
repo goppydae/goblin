@@ -277,6 +277,14 @@ func (c *Consensus) Stats() map[string]string {
 	return c.raft.Stats()
 }
 
+// NodeID is this node's raft server id. It exists so a refusal can name
+// WHICH node refused without threading the supervisor's config through
+// every gate (GOBLIN-DIV-048): a diagnostic that says "the registry was
+// empty" is useless if it cannot say empty on whom.
+func (c *Consensus) NodeID() string {
+	return c.nodeID
+}
+
 // raftLogCapture is an hclog.LevelWriter used as raft's LogOutput. It
 // discards every line - raft's internal log is noise goblind does not
 // want on stdout/stderr - except it remembers the most recent
