@@ -1,0 +1,58 @@
+name: Release Guard
+
+# The only reader of the VERSION file's agreement with the tag.
+#
+# VERSION is documented in magelib's version.go as "the single source of
+# version truth in the repo" and normatively in the build-environment
+# design as "kept in agreement with the changelog and the git tag", and
+# nothing read it for that purpose. goblin is the repo that settled the
+# argument: v0.1.0-proto2f was tagged with VERSION stale and had to be
+# deleted and re-cut, hours after MAGELIB-DIV-006 was already open and
+# after the tag procedure had been written down to prevent it.
+#
+# Tags only, and a separate workflow from ci.yml on purpose. This must
+# not spend a full build to compare one string, and must not add a
+# context to the branch ruleset's required set - a tag-ref job has no
+# pull request to block, and goblin enforces
+# strict_required_status_checks_policy, where an extra required context
+# is expensive to get wrong.
+#
+# No sibling gapi checkout, unlike ci.yml. Magefile.go imports only
+# magelib, mage and blake3; its two ../gapi mentions are string data,
+# read by checkHermetic's replace targets and the EnvCheck path map,
+# neither of which CheckVersion depends on.
+#
+# It runs AFTER the tag is pushed, so it detects rather than prevents.
+# Prevention is the same code path run locally before tagging:
+#
+#   GITHUB_REF_TYPE=tag GITHUB_REF_NAME=vX.Y.Z nix develop -c mage checkVersion
+#
+# A tag with NO run here is not a pass - it means the trigger never
+# matched, which looks exactly like nothing being wrong.
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  version-matches-tag:
+    name: VERSION matches tag
+    runs-on: ubuntu-latest
+    env:
+      # CI has no sibling checkouts for the committed go.work to
+      # resolve; vendored builds are the lone-clone contract.
+      GOWORK: "off"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Synchronize Environment (Nix)
+        uses: cachix/install-nix-action@v24
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      # No pipe. A piped command reports the pipeline's exit status, not
+      # the command's, which is how a gate reports success for its entire
+      # existence without ever having run.
+      - name: Check VERSION against tag
+        run: nix develop -c mage -v checkVersion

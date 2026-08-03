@@ -158,6 +158,31 @@ func Doctor() error {
 	return magelib.Doctor(toolchain)
 }
 
+// CheckVersion gates the VERSION file against the tag being cut.
+//
+// Invoked by release-guard.yml on a tag ref, and by the operator before
+// cutting one, which is the only form that PREVENTS rather than detects:
+//
+//	GITHUB_REF_TYPE=tag GITHUB_REF_NAME=v0.1.0-proto2g mage checkVersion
+//
+// Deliberately not a dependency of Lint or Build. It errors off a tag
+// ref by design, so wiring it into a target that runs on every pull
+// request would make it permanently red or - the likelier repair -
+// silence it into the no-op it must never become. See MAGELIB-DIV-006.
+//
+// goblin is the repo that proved the entry needed a gate rather than a
+// procedure: v0.1.0-proto2f was tagged with VERSION stale and had to be
+// deleted and re-cut, hours after the entry was filed and after the tag
+// procedure had been written down to prevent exactly that.
+//
+// No mg.Deps(checkHermetic): this reads one file and two environment
+// variables and depends on no ecosystem tool, so gating it on the
+// hermetic check would let a dev-shell problem present itself as a
+// version mismatch.
+func CheckVersion() error {
+	return magelib.CheckVersionAgainstTag()
+}
+
 // EnvCheck compares the sibling dev shells' tool inventories; skew is red
 func EnvCheck() error {
 	return magelib.CheckShellUnification(
