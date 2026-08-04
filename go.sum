@@ -106,6 +106,8 @@ github.com/goppydae/magelib v0.5.1 h1:TowUuW1yS2TgZo+H47lUhUL7IWrCr2o2uyRHUUJujI
 github.com/goppydae/magelib v0.5.1/go.mod h1:8CHMyugJA6y7cXLEfvIhc+h/DKYwCgnKuRboJRMSLmY=
 github.com/goppydae/magelib v0.5.2 h1:udRB+YFAGP49X+qa+qleexZIJ8SMuRZFG1V8rF58VQ4=
 github.com/goppydae/magelib v0.5.2/go.mod h1:8CHMyugJA6y7cXLEfvIhc+h/DKYwCgnKuRboJRMSLmY=
+github.com/goppydae/magelib v0.6.0 h1:BPK3KWFUMPmuGNjhhJER3oUeAewism42/MehPfbikKA=
+github.com/goppydae/magelib v0.6.0/go.mod h1:8CHMyugJA6y7cXLEfvIhc+h/DKYwCgnKuRboJRMSLmY=
 github.com/hashicorp/errwrap v1.0.0/go.mod h1:YH+1FKiLXxHSkmPseP+kNlulaMuP3n2brvKWEqk/Jc4=
 github.com/hashicorp/errwrap v1.1.0 h1:OxrOeh75EUXMY8TBjag2fzXGZ40LB6IKw45YeGUDY2I=
 github.com/hashicorp/errwrap v1.1.0/go.mod h1:YH+1FKiLXxHSkmPseP+kNlulaMuP3n2brvKWEqk/Jc4=
