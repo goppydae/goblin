@@ -1,3 +1,11 @@
+// Copyright (c) 2025 Steven Verhelle (enqack)
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
 // Package capability is the orchestrator half of the capability-token
 // scheme (GOBLIN-DIV-015, DDR-9): Ed25519 bearer-token issuance with a
 // clamped TTL, and a revocation Bloom filter that rides gossip. The

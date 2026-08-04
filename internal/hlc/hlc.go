@@ -1,3 +1,11 @@
+// Copyright (c) 2025 Steven Verhelle (enqack)
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
 // Package hlc is a minimal hybrid logical clock (DDR-4): timestamps
 // order last-writer-wins updates (the gossip locator layer) even when
 // physical clocks disagree. A node merges every remote timestamp it

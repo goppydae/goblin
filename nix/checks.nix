@@ -1,3 +1,11 @@
+# Copyright (c) 2025 Steven Verhelle (enqack)
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# SPDX-License-Identifier: MPL-2.0
+
 # Flake checks for goblin. Each entry is a NixOS VM test: it boots a
 # guest and asserts against the running system, not against evaluated
 # Nix. See nix/tests/ for the individual suites.
