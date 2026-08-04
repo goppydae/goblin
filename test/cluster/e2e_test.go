@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/goppydae/goblin/core/scheduler"
 	goblintransport "github.com/goppydae/goblin/core/transport"
 	"github.com/goppydae/goblin/internal/supervisor"
 	goblinv1 "github.com/goppydae/goblin/proto"
@@ -23,6 +24,22 @@ import (
 const (
 	placementTarget = 5 * time.Second
 	failoverTarget  = 30 * time.Second
+
+	// The ATTRIBUTED FLOOR of failover, which is what turns "17 seconds of
+	// 30" from an alarm into an explanation (GOBLIN-DIV-060). Detection is
+	// heartbeat-silence-only: an instance is declared failed after three
+	// missed cadences, and the reconciler then notices on its next poll.
+	//
+	// Transcribed, not imported: staleAfter and missedHeartbeatLimit are
+	// unexported (core/scheduler/heartbeat.go:25,30) and the reconciler
+	// interval is an unnamed literal (internal/supervisor/phase_serving.go:418).
+	// These CAN drift from their sources - GOBLIN-DIV-060's exit records
+	// that nothing gates the transcription. HeartbeatCadence is used
+	// through the package because it is the one value that is exported and
+	// therefore the one half that cannot silently drift.
+	attributedStaleAfter     = 3 * scheduler.HeartbeatCadence
+	attributedReconcilerPoll = 2 * time.Second
+	failoverFloor            = attributedStaleAfter + attributedReconcilerPoll
 )
 
 // TestClusterEndToEnd is the phase 2b exit: a 3-node cluster schedules,
@@ -148,7 +165,11 @@ func TestClusterEndToEnd(t *testing.T) {
 				}
 			}
 			if running == 3 && onDead == 0 {
-				t.Logf("failover: 3/3 running on survivors in %s (target %s)", time.Since(killStart), failoverTarget)
+				t.Logf("failover: 3/3 running on survivors in %s (target %s, %.1f%% of budget); "+
+					"attributed floor %s = staleAfter %s + reconciler poll %s",
+					time.Since(killStart), failoverTarget,
+					float64(time.Since(killStart))/float64(failoverTarget)*100,
+					failoverFloor, attributedStaleAfter, attributedReconcilerPoll)
 				break
 			}
 		}
