@@ -9,11 +9,27 @@
 package transport_test
 
 import (
+	_ "embed"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"testing"
 )
+
+// capturedSourceText is the guarded file, EMBEDDED rather than read from
+// disk at run time.
+//
+// Nothing runs this package as a prebuilt binary today, so unlike its
+// sibling in test/cluster this guard was never observed to fail. It had
+// the identical defect: parser.ParseFile with a nil src reads the path
+// from the working directory, which exists under `go test` and does not
+// exist wherever a compiled test binary is shipped without its sources.
+// The sibling reddened main that way. Fixing only the instance that
+// failed would leave the same trap armed here for whoever first runs
+// these tests inside a VM check.
+//
+//go:embed mtls_raft_test.go
+var capturedSourceText string
 
 // GOBLIN-DIV-062 is blocked on a fourth occurrence of an mTLS admission
 // hang, and the accept-loop slog capture is the only thing that will name
@@ -32,7 +48,7 @@ const (
 
 func TestAdmissionTestStillCapturesTheAcceptLog(t *testing.T) {
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, capturedSource, nil, parser.SkipObjectResolution)
+	file, err := parser.ParseFile(fset, capturedSource, capturedSourceText, parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatalf("parse %s: %v", capturedSource, err)
 	}
