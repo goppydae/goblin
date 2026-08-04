@@ -11,11 +11,35 @@
 package main_test
 
 import (
+	_ "embed"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"testing"
 )
+
+// waitingSourceText is the guarded file, EMBEDDED rather than read from
+// disk at run time.
+//
+// The first version of this guard called parser.ParseFile with a nil src,
+// which reads the path from the working directory. That works under
+// `go test`, which runs in the package directory, and it fails in the
+// NixOS VM check, which runs a PREBUILT TEST BINARY out of the Nix store
+// with no Go sources anywhere on the machine:
+//
+//	migration_caller_test.go:47: parse migration_test.go:
+//	open migration_test.go: no such file or directory
+//
+// It reddened main. The lesson is not about build tags, which this file
+// already reasoned about carefully - it is that the mode that ships can
+// differ in what is on DISK, not only in how modules resolve or which
+// tags are set. A source-parsing test carries a hidden dependency on its
+// own source tree, and embedding is what removes it: the bytes are fixed
+// at compile time, so the guard behaves identically under `go test` and
+// under a binary run from an empty directory.
+//
+//go:embed migration_test.go
+var waitingSourceText string
 
 // GOBLIN-DIV-059's fix is a WAIT, and a wait is invisible when it works.
 //
@@ -42,7 +66,7 @@ const (
 
 func TestLiveMigrationStillWaitsForReadiness(t *testing.T) {
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, waitingSource, nil, parser.SkipObjectResolution)
+	file, err := parser.ParseFile(fset, waitingSource, waitingSourceText, parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatalf("parse %s: %v", waitingSource, err)
 	}
