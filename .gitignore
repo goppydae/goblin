@@ -39,7 +39,11 @@ venv/
 dist/
 
 # --- Nix Build Outputs ---
-result/
+# No trailing slash: 'nix build' creates result as a SYMLINK to the store
+# path, and a trailing slash matches only directories, so 'result/'
+# ignored nothing nix actually produces. Same defect gapi carried.
+result
+result-*
 
 # --- Temporary / Runtime State ---
 tmp/
@@ -84,3 +88,28 @@ test-results.xml
 
 # --- Scenario Build Contexts (Silo) ---
 scenarios/goblin_cluster/build_context/
+
+# --- TLS / Private Key Material ---
+# goblin ships no key material and never should. This is PREVENTIVE, not
+# a fix: test/cluster/gen_certs.go already writes its CA and per-node
+# pairs to /tmp/goblin-test-certs, outside the repository, and no cert
+# has ever been tracked here.
+#
+# The patterns exist because gapi demonstrated the failure mode - a test
+# script writing into a tracked path put six 24-hour keys into history,
+# every one swept in alongside unrelated work. Nothing structural stops
+# a future script here from doing the same, so these make it require an
+# explicit 'git add -f' to land.
+*.key
+*.pem
+*.crt
+*.cer
+*.der
+*.csr
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_ecdsa
+id_ed25519
