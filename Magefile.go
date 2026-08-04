@@ -1,3 +1,11 @@
+// Copyright (c) 2025 Steven Verhelle (enqack)
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
 //go:build mage
 // +build mage
 
@@ -57,6 +65,25 @@ var fileLengthWaivers = []string{}
 // gitignored or vendored outside vendor/ lands a .go file in the walk.
 // gapi needs an entry only because gopy stamps a non-standard header.
 var fileLengthSkips = []magelib.Skip{}
+
+// licenseNotice is goblin's declaration for the MPL header gate: a
+// holder and a year, and deliberately nothing else. The Exhibit A prose
+// and the SPDX line live in magelib and are never spelled here, which is
+// the lesson the terminology gate paid for.
+//
+// Year is 2025, goblin's year of FIRST PUBLICATION, and it does not
+// advance - a file added later still carries 2025, or the gate has to
+// accept any year and stops discriminating. Per-repo years are gapi
+// 2025, goblin 2025, magelib 2026, goppydae-docs 2026 (decision 16).
+//
+// There is deliberately no skip list to go with this, for the reason
+// already given above fileLengthSkips: everything generated here is
+// protoc output carrying the standard marker, which magelib's detector
+// recognises by itself. gapi needs one only because of gopy.
+var licenseNotice = magelib.LicenseConfig{
+	Holder: "Steven Verhelle (enqack)",
+	Year:   2025,
+}
 
 // versionLdflags stamps the resolved version into internal/version, the
 // shared injection point read by both binaries (VERSION file is the source
@@ -411,8 +438,27 @@ func TestUnit() error {
 //     generator whose path segments are validated (nodeIDPattern) and
 //     joined under a constant certDir.
 func Lint() error {
-	mg.Deps(checkHermetic, checkTerminology, checkFileLength)
+	mg.Deps(checkHermetic, checkTerminology, checkFileLength, LicenseCheck)
 	return magelib.Lint("G402", "G404", "G304")
+}
+
+// LicenseCheck reports every hand-written file missing the MPL notice.
+//
+// A dependency of Lint as of the sweep that headered this repo. Wiring
+// it BEFORE the sweep would have turned every CI run red, so sweep and
+// gate land together and the gate is never a mechanism with no caller.
+func LicenseCheck() error {
+	return magelib.CheckLicenseHeaders(licenseNotice)
+}
+
+// LicenseAdd inserts the notice into every file LicenseCheck reports.
+//
+// AddLicenseHeaders prints each modified path and the total itself, so
+// the returned slice is discarded rather than printed twice. That list
+// is what the `git add` line is built from.
+func LicenseAdd() error {
+	_, err := magelib.AddLicenseHeaders(licenseNotice)
+	return err
 }
 
 // Dev runs the development build and starts goblind

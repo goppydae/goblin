@@ -1,3 +1,11 @@
+// Copyright (c) 2025 Steven Verhelle (enqack)
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
 // Package ident mints and formats the 16-byte UUIDv7 identifiers used
 // for specs, instances, and tokens (operator decision 2026-07-28: all
 // ids are UUIDv7 where reasonable; bytes on the wire, canonical string
