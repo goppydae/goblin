@@ -23,6 +23,12 @@ on:
 jobs:
   full-build-and-test:
     name: Full Build and Test
+    # Skipped on a repository_dispatch from gapi: this job resolves
+    # the kernel through vendor/ at the pinned tag, so re-running it
+    # for a kernel change tests goblin against the kernel it already
+    # had. integration-against-kernel-main is what that trigger is
+    # for (GAPI-DIV-073).
+    if: github.event_name != 'repository_dispatch'
     runs-on: ubuntu-latest
     env:
       # CI has no sibling checkouts for the committed go.work to
@@ -98,6 +104,7 @@ jobs:
     # all, because criu and libseccomp have no darwin build. --no-build
     # keeps the VM guests out; those stay in vm-checks.yml.
     name: Flake Build
+    if: github.event_name != 'repository_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Workspace (Goblin)
@@ -122,6 +129,7 @@ jobs:
     # graph resolves from published tags alone - no replace directives,
     # no sibling checkouts, no vendor tree, no go.work.
     name: No-Replace Module Resolution
+    if: github.event_name != 'repository_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (lone clone)
@@ -155,6 +163,7 @@ jobs:
     # .golangci.yml), so lint needs the sibling tree and lives in
     # sibling-gates. Run 30536124119 failed here proving it.
     name: Ecosystem Gates
+    if: github.event_name != 'repository_dispatch'
     runs-on: ubuntu-latest
     env:
       GOWORK: "off"
@@ -232,6 +241,7 @@ jobs:
     # stays off, so the build still resolves through vendor/ exactly as
     # the lone-clone contract requires.
     name: Sibling Gates
+    if: github.event_name != 'repository_dispatch'
     runs-on: ubuntu-latest
     env:
       GOWORK: "off"
@@ -287,6 +297,7 @@ jobs:
     # quantized by the scheduler's 2s reconciler tick rather than by
     # machine speed - so the margin survives a slower runner.
     name: Cluster E2E (3-node)
+    if: github.event_name != 'repository_dispatch'
     runs-on: ubuntu-latest
     env:
       GOWORK: "off"
@@ -320,3 +331,102 @@ jobs:
       - name: Execute 3-Node Cluster E2E
         working-directory: goblin
         run: nix develop -c mage -v testCluster
+
+  # GAPI-DIV-073. gapi's main build dispatches gapi-build-success here,
+  # and every job above USED to re-run for it - each resolving the kernel
+  # through vendor/ at the pinned tag, so the run could not fail for the
+  # change that triggered it. Eleven of forty runs, ~28% of this repo's
+  # CI, re-testing goblin against the kernel it already had.
+  #
+  # This job is what the trigger always claimed to be, and it is now the
+  # only one a dispatch runs. It is also the only job that resolves the
+  # kernel LIVE: go.work names ., ../gapi and ../magelib, so all three
+  # are checked out and GOWORK stays ON.
+  #
+  # It does not replace the pinned path. That is the lone-clone contract,
+  # and full-build-and-test plus no-replace-module-resolution still prove
+  # it on every push and pull request. Two jobs, two resolutions, two
+  # meanings.
+  integration-against-kernel-main:
+    name: Integration Against Kernel Main
+    if: github.event_name == 'repository_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      # FAIL LOUDLY IF THE PAYLOAD IS ABSENT. actions/checkout treats an
+      # empty ref as "the default branch", so without this a dispatch
+      # from a gapi that does not send the sha would silently test main
+      # and report a green attributed to a commit it never built. That
+      # is the shape this whole entry is about, reintroduced one layer
+      # down.
+      - name: Require The Triggering Commit
+        run: |
+          if [ -z "${{ github.event.client_payload.sha }}" ]; then
+            echo "::error::dispatch carried no client_payload.sha, so there is no"
+            echo "::error::kernel commit to test against. gapi's Trigger Goblin CI"
+            echo "::error::step must send it (GAPI-DIV-073)."
+            exit 1
+          fi
+
+      - name: Checkout Workspace (Goblin)
+        uses: actions/checkout@v4
+        with:
+          path: goblin
+
+      # The EXACT kernel commit that triggered this, not whatever main
+      # happens to be by the time the runner starts. A gate whose purpose
+      # is naming what broke has to name the commit it tested, and main
+      # can move between the dispatch and the checkout.
+      - name: Checkout Workspace (Gapi, the triggering commit)
+        uses: actions/checkout@v4
+        with:
+          repository: goppydae/gapi
+          ref: ${{ github.event.client_payload.sha }}
+          path: gapi
+
+      # go.work names ../magelib as well, so live resolution needs it
+      # present or the workspace does not load at all.
+      #
+      # No token on either sibling: all three repos are public, so a
+      # cross-repo checkout needs no credential.
+      - name: Checkout Workspace (Magelib)
+        uses: actions/checkout@v4
+        with:
+          repository: goppydae/magelib
+          path: magelib
+
+      - name: Synchronize Environment (Nix)
+        uses: cachix/install-nix-action@v24
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Report What Is Under Test
+        run: |
+          echo "goblin  $(git -C goblin rev-parse --short HEAD)"
+          echo "gapi    $(git -C gapi rev-parse --short HEAD)  (triggering commit)"
+          echo "magelib $(git -C magelib rev-parse --short HEAD)"
+
+      # GOWORK is deliberately NOT "off" in this job. That is the job.
+      - name: Build Against The Kernel's Working Tree
+        working-directory: goblin
+        run: nix develop -c go build ./...
+
+      - name: Vet Against The Kernel's Working Tree
+        working-directory: goblin
+        run: nix develop -c go vet ./...
+
+      - name: Test Against The Kernel's Working Tree
+        working-directory: goblin
+        run: nix develop -c go test ./internal/... ./core/...
+
+      # RESIDUAL 1 of GAPI-DIV-073: a live build can fail for goblin's
+      # reasons as well as the kernel's, and a bare red is ambiguous
+      # between them. Say which this is.
+      - name: Name What This Failure Means
+        if: failure()
+        run: |
+          echo "::error::goblin's tree does not build, vet or pass against gapi at ${{ github.event.client_payload.sha }}."
+          echo "::error::This does NOT mean goblin main is broken. goblin's own push and"
+          echo "::error::pull-request runs resolve the kernel through vendor/ at the pinned"
+          echo "::error::tag and are unaffected."
+          echo "::error::It means the NEXT re-vendor of gapi into goblin carries this failure"
+          echo "::error::unless the kernel change is amended or goblin adapts to it."
