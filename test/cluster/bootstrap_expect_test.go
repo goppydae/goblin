@@ -54,18 +54,21 @@ func TestBootstrapExpect_HoldsUntilTheSeedSetIsComplete(t *testing.T) {
 	// Every node must converge on the same membership. node-3 has only
 	// just joined, so this is a convergence wait, not a retry of a
 	// failed assertion.
-	deadline := time.Now().Add(30 * time.Second)
-	for id, node := range c.nodes {
-		for {
-			members, err := c.members(node)
-			if err == nil && len(members) == expect {
-				break
-			}
-			if time.Now().After(deadline) {
-				t.Fatalf("%s never saw %d members (last err: %v)", id, expect, err)
-			}
-			time.Sleep(250 * time.Millisecond)
-		}
+	//
+	// Each node gets its OWN budget, and they are visited in a fixed
+	// order (GOBLIN-DIV-064): a single deadline computed here and shared
+	// across a range over c.nodes let one slow node consume the budget a
+	// later node needed, and Go's randomised map order decided which
+	// node a failure named.
+	ids := make([]string, 0, len(c.nodes))
+	for id := range c.nodes {
+		ids = append(ids, id)
+	}
+	if err := waitAllMembers(ids, expect, 30*time.Second, func(id string) (int, error) {
+		members, err := c.members(c.nodes[id])
+		return len(members), err
+	}); err != nil {
+		t.Fatal(err)
 	}
 
 	// Exactly one node may claim the bootstrap, and it must have seeded
