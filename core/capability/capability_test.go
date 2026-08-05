@@ -117,8 +117,10 @@ func TestRevocations_GossipMergeUnions(t *testing.T) {
 		t.Fatal("merge did not union the filters")
 	}
 
-	// Garbage snapshots are rejected as data, not panics.
-	if err := b.Ingest([]byte("short")); err == nil {
+	// Garbage snapshots are rejected as data, not panics. The length is
+	// checked before any generation is used, so a malformed filter is
+	// refused whether or not its index would have been merged.
+	if err := b.Ingest([]capability.Generation{{Filter: []byte("short")}}); err == nil {
 		t.Fatal("garbage snapshot accepted")
 	}
 }

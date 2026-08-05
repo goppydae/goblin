@@ -225,6 +225,23 @@ func RegisterSchedulerHandlers(server *QUICRPCServer, rpc *SchedulerRPC) {
 		}
 		return proto.Marshal(&resp)
 	})
+
+	// SyncRevocations handler.
+	// Anti-entropy for the revocation filter (GOBLIN-DIV-057). The delta
+	// broadcast is best-effort, so a node that was partitioned,
+	// restarting or joining late never learns of that revocation; this is
+	// what repairs it. Symmetric, so one round trip repairs both nodes.
+	server.RegisterHandler("SchedulerRPC.SyncRevocations", func(payload []byte) ([]byte, error) {
+		var req goblinv1.SyncRevocationsRequest
+		if err := proto.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
+		}
+		var resp goblinv1.SyncRevocationsResponse
+		if err := rpc.SyncRevocations(&req, &resp); err != nil {
+			return nil, err
+		}
+		return proto.Marshal(&resp)
+	})
 }
 
 // RegisterNodeHandlers registers node RPC methods.

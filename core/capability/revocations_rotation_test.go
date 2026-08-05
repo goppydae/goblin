@@ -17,13 +17,22 @@ import (
 // atClock drives a filter from a settable instant so rotation can be
 // tested without sleeping. Rotation periods are 300s; a test that waited
 // would not be a test anyone runs.
+//
+// The instant is ALIGNED to a generation boundary (1700000100 =
+// 5666667 * 300). Generations are absolute windows now, so an arbitrary
+// instant lands somewhere mid-window and "advance to just before a
+// boundary" stops meaning what it says - the worst case the correctness
+// floor below aims at could not be expressed from an unaligned start.
 func atClock(t *testing.T, period time.Duration) (*Revocations, func(time.Duration)) {
 	t.Helper()
 
-	now := time.Unix(1_700_000_000, 0)
+	now := time.Unix(1_700_000_100, 0)
 	r := NewRevocationsWithPeriod(period)
+	if now.Unix()%int64(r.period/time.Second) != 0 {
+		t.Fatalf("test clock %d is not aligned to a %s generation boundary", now.Unix(), r.period)
+	}
 	r.now = func() time.Time { return now }
-	r.genStart = now
+	r.genIndex = r.indexAt(now)
 	r.firstSeen = now
 	return r, func(d time.Duration) { now = now.Add(d) }
 }
@@ -140,10 +149,16 @@ func TestStats_ObservesTheRateTheGeometryAssumes(t *testing.T) {
 	}
 }
 
-// TestIngest_FailsClosedByRenewing pins the deliberate asymmetry: a
-// merged entry gets a full fresh lifetime, so a revocation can be
-// extended but never dropped.
-func TestIngest_FailsClosedByRenewing(t *testing.T) {
+// TestIngest_GivesAnEntryTheLifetimeOfItsOwnGeneration replaces an
+// earlier TestIngest_FailsClosedByRenewing, which pinned the opposite
+// rule: that a merged entry got a full FRESH lifetime.
+//
+// That asymmetry was safe only for a one-shot merge. On a timer it is
+// the renewal loop (GOBLIN-DIV-057), so the retraction is deliberate
+// rather than drift. What replaces it is stricter and enough: an
+// ingested entry lives exactly as long as it would have on the node that
+// revoked it, because it is merged into the generation it belongs to.
+func TestIngest_GivesAnEntryTheLifetimeOfItsOwnGeneration(t *testing.T) {
 	peer, _ := atClock(t, TTLMax)
 	id := idFor(5)
 	peer.Revoke(id)
