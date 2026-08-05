@@ -1973,6 +1973,173 @@ func (x *SignalAgentInstanceResponse) GetNodeId() string {
 	return ""
 }
 
+// RevocationGeneration is one live generation of a node's revocation
+// filter: the absolute window it covers, and its bytes.
+//
+// index is floor(unix_seconds / rotation_period), which every node
+// computes identically for the same instant without coordinating. It is
+// what makes periodic exchange safe: the receiver merges each
+// generation into its own generation with the SAME index, so an entry
+// keeps the lifetime it was given when it was revoked instead of being
+// renewed on every tick (GOBLIN-DIV-057).
+//
+// Signed rather than unsigned, matching the Unix seconds it derives
+// from, so no sign conversion sits on the path that carries it.
+type RevocationGeneration struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Index int64                  `protobuf:"varint,1,opt,name=index,proto3" json:"index,omitempty"`
+	// Exactly bloom_bits/8 bytes. Length-checked on receipt; a filter of
+	// any other size is refused as data rather than merged.
+	Filter        []byte `protobuf:"bytes,2,opt,name=filter,proto3" json:"filter,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevocationGeneration) Reset() {
+	*x = RevocationGeneration{}
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevocationGeneration) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevocationGeneration) ProtoMessage() {}
+
+func (x *RevocationGeneration) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevocationGeneration.ProtoReflect.Descriptor instead.
+func (*RevocationGeneration) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_scheduler_rpc_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *RevocationGeneration) GetIndex() int64 {
+	if x != nil {
+		return x.Index
+	}
+	return 0
+}
+
+func (x *RevocationGeneration) GetFilter() []byte {
+	if x != nil {
+		return x.Filter
+	}
+	return nil
+}
+
+// SyncRevocationsRequest carries EVERY live generation the caller
+// holds, which is what repairs a revocation the best-effort delta
+// broadcast dropped.
+//
+// Not just the current generation: the filter keeps two so an entry
+// outlives the longest token TTL wherever in the period it landed, and
+// sending only the current one would repair a strictly narrower window
+// than the filter itself maintains - a revocation made late in a window
+// would go invisible to peers the moment that window rolled, while the
+// token it revoked was still valid.
+type SyncRevocationsRequest struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Generations   []*RevocationGeneration `protobuf:"bytes,1,rep,name=generations,proto3" json:"generations,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SyncRevocationsRequest) Reset() {
+	*x = SyncRevocationsRequest{}
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SyncRevocationsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SyncRevocationsRequest) ProtoMessage() {}
+
+func (x *SyncRevocationsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SyncRevocationsRequest.ProtoReflect.Descriptor instead.
+func (*SyncRevocationsRequest) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_scheduler_rpc_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *SyncRevocationsRequest) GetGenerations() []*RevocationGeneration {
+	if x != nil {
+		return x.Generations
+	}
+	return nil
+}
+
+// SyncRevocationsResponse carries the responder's own live generations,
+// so one round trip repairs BOTH directions. Merging is idempotent and
+// the filter is a set, so no leader and no ordering are needed.
+type SyncRevocationsResponse struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Generations   []*RevocationGeneration `protobuf:"bytes,1,rep,name=generations,proto3" json:"generations,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SyncRevocationsResponse) Reset() {
+	*x = SyncRevocationsResponse{}
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SyncRevocationsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SyncRevocationsResponse) ProtoMessage() {}
+
+func (x *SyncRevocationsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_goblin_v1_scheduler_rpc_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SyncRevocationsResponse.ProtoReflect.Descriptor instead.
+func (*SyncRevocationsResponse) Descriptor() ([]byte, []int) {
+	return file_goblin_v1_scheduler_rpc_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *SyncRevocationsResponse) GetGenerations() []*RevocationGeneration {
+	if x != nil {
+		return x.Generations
+	}
+	return nil
+}
+
 var File_goblin_v1_scheduler_rpc_proto protoreflect.FileDescriptor
 
 const file_goblin_v1_scheduler_rpc_proto_rawDesc = "" +
@@ -2101,7 +2268,14 @@ const file_goblin_v1_scheduler_rpc_proto_rawDesc = "" +
 	"\x06signum\x18\x01 \x01(\x05R\x06signum\x12\x1f\n" +
 	"\vinstance_id\x18\x02 \x01(\tR\n" +
 	"instanceId\x12\x17\n" +
-	"\anode_id\x18\x03 \x01(\tR\x06nodeIdB+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
+	"\anode_id\x18\x03 \x01(\tR\x06nodeId\"D\n" +
+	"\x14RevocationGeneration\x12\x14\n" +
+	"\x05index\x18\x01 \x01(\x03R\x05index\x12\x16\n" +
+	"\x06filter\x18\x02 \x01(\fR\x06filter\"[\n" +
+	"\x16SyncRevocationsRequest\x12A\n" +
+	"\vgenerations\x18\x01 \x03(\v2\x1f.goblin.v1.RevocationGenerationR\vgenerations\"\\\n" +
+	"\x17SyncRevocationsResponse\x12A\n" +
+	"\vgenerations\x18\x01 \x03(\v2\x1f.goblin.v1.RevocationGenerationR\vgenerationsB+Z)github.com/goppydae/goblin/proto;goblinv1b\x06proto3"
 
 var (
 	file_goblin_v1_scheduler_rpc_proto_rawDescOnce sync.Once
@@ -2115,7 +2289,7 @@ func file_goblin_v1_scheduler_rpc_proto_rawDescGZIP() []byte {
 	return file_goblin_v1_scheduler_rpc_proto_rawDescData
 }
 
-var file_goblin_v1_scheduler_rpc_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
+var file_goblin_v1_scheduler_rpc_proto_msgTypes = make([]protoimpl.MessageInfo, 44)
 var file_goblin_v1_scheduler_rpc_proto_goTypes = []any{
 	(*ScaleAgentRequest)(nil),           // 0: goblin.v1.ScaleAgentRequest
 	(*ScaleAgentResponse)(nil),          // 1: goblin.v1.ScaleAgentResponse
@@ -2154,36 +2328,41 @@ var file_goblin_v1_scheduler_rpc_proto_goTypes = []any{
 	(*MigrateInstanceResponse)(nil),     // 34: goblin.v1.MigrateInstanceResponse
 	(*SignalAgentInstanceRequest)(nil),  // 35: goblin.v1.SignalAgentInstanceRequest
 	(*SignalAgentInstanceResponse)(nil), // 36: goblin.v1.SignalAgentInstanceResponse
-	nil,                                 // 37: goblin.v1.MemberInfo.TagsEntry
-	nil,                                 // 38: goblin.v1.Job.ConstraintsEntry
-	nil,                                 // 39: goblin.v1.Job.RequirementsEntry
-	nil,                                 // 40: goblin.v1.Job.EnvEntry
-	(*AgentSpec)(nil),                   // 41: goblin.v1.AgentSpec
-	(*timestamppb.Timestamp)(nil),       // 42: google.protobuf.Timestamp
-	(*AgentInstance)(nil),               // 43: goblin.v1.AgentInstance
-	(*ResourceReq)(nil),                 // 44: goblin.v1.ResourceReq
+	(*RevocationGeneration)(nil),        // 37: goblin.v1.RevocationGeneration
+	(*SyncRevocationsRequest)(nil),      // 38: goblin.v1.SyncRevocationsRequest
+	(*SyncRevocationsResponse)(nil),     // 39: goblin.v1.SyncRevocationsResponse
+	nil,                                 // 40: goblin.v1.MemberInfo.TagsEntry
+	nil,                                 // 41: goblin.v1.Job.ConstraintsEntry
+	nil,                                 // 42: goblin.v1.Job.RequirementsEntry
+	nil,                                 // 43: goblin.v1.Job.EnvEntry
+	(*AgentSpec)(nil),                   // 44: goblin.v1.AgentSpec
+	(*timestamppb.Timestamp)(nil),       // 45: google.protobuf.Timestamp
+	(*AgentInstance)(nil),               // 46: goblin.v1.AgentInstance
+	(*ResourceReq)(nil),                 // 47: goblin.v1.ResourceReq
 }
 var file_goblin_v1_scheduler_rpc_proto_depIdxs = []int32{
 	3,  // 0: goblin.v1.ListJobsResponse.jobs:type_name -> goblin.v1.JobInfo
-	37, // 1: goblin.v1.MemberInfo.tags:type_name -> goblin.v1.MemberInfo.TagsEntry
+	40, // 1: goblin.v1.MemberInfo.tags:type_name -> goblin.v1.MemberInfo.TagsEntry
 	6,  // 2: goblin.v1.MembersResponse.members:type_name -> goblin.v1.MemberInfo
-	41, // 3: goblin.v1.ListGlobalAgentsResponse.agents:type_name -> goblin.v1.AgentSpec
+	44, // 3: goblin.v1.ListGlobalAgentsResponse.agents:type_name -> goblin.v1.AgentSpec
 	11, // 4: goblin.v1.ListLocalAgentsResponse.agents:type_name -> goblin.v1.LocalAgentInfo
-	41, // 5: goblin.v1.GetGlobalAgentResponse.spec:type_name -> goblin.v1.AgentSpec
-	42, // 6: goblin.v1.LogEvent.timestamp:type_name -> google.protobuf.Timestamp
+	44, // 5: goblin.v1.GetGlobalAgentResponse.spec:type_name -> goblin.v1.AgentSpec
+	45, // 6: goblin.v1.LogEvent.timestamp:type_name -> google.protobuf.Timestamp
 	16, // 7: goblin.v1.GetEventsResponse.events:type_name -> goblin.v1.LogEvent
-	43, // 8: goblin.v1.ListAgentInstancesResponse.instances:type_name -> goblin.v1.AgentInstance
-	41, // 9: goblin.v1.RegisterGlobalAgentRequest.spec:type_name -> goblin.v1.AgentSpec
-	44, // 10: goblin.v1.Job.resources:type_name -> goblin.v1.ResourceReq
-	38, // 11: goblin.v1.Job.constraints:type_name -> goblin.v1.Job.ConstraintsEntry
-	39, // 12: goblin.v1.Job.requirements:type_name -> goblin.v1.Job.RequirementsEntry
-	40, // 13: goblin.v1.Job.env:type_name -> goblin.v1.Job.EnvEntry
+	46, // 8: goblin.v1.ListAgentInstancesResponse.instances:type_name -> goblin.v1.AgentInstance
+	44, // 9: goblin.v1.RegisterGlobalAgentRequest.spec:type_name -> goblin.v1.AgentSpec
+	47, // 10: goblin.v1.Job.resources:type_name -> goblin.v1.ResourceReq
+	41, // 11: goblin.v1.Job.constraints:type_name -> goblin.v1.Job.ConstraintsEntry
+	42, // 12: goblin.v1.Job.requirements:type_name -> goblin.v1.Job.RequirementsEntry
+	43, // 13: goblin.v1.Job.env:type_name -> goblin.v1.Job.EnvEntry
 	24, // 14: goblin.v1.SubmitJobRequest.job:type_name -> goblin.v1.Job
-	15, // [15:15] is the sub-list for method output_type
-	15, // [15:15] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	37, // 15: goblin.v1.SyncRevocationsRequest.generations:type_name -> goblin.v1.RevocationGeneration
+	37, // 16: goblin.v1.SyncRevocationsResponse.generations:type_name -> goblin.v1.RevocationGeneration
+	17, // [17:17] is the sub-list for method output_type
+	17, // [17:17] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_goblin_v1_scheduler_rpc_proto_init() }
@@ -2198,7 +2377,7 @@ func file_goblin_v1_scheduler_rpc_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_goblin_v1_scheduler_rpc_proto_rawDesc), len(file_goblin_v1_scheduler_rpc_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   41,
+			NumMessages:   44,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

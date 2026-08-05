@@ -256,3 +256,43 @@ message SignalAgentInstanceResponse {
   string instance_id = 2;
   string node_id = 3;
 }
+
+// RevocationGeneration is one live generation of a node's revocation
+// filter: the absolute window it covers, and its bytes.
+//
+// index is floor(unix_seconds / rotation_period), which every node
+// computes identically for the same instant without coordinating. It is
+// what makes periodic exchange safe: the receiver merges each
+// generation into its own generation with the SAME index, so an entry
+// keeps the lifetime it was given when it was revoked instead of being
+// renewed on every tick (GOBLIN-DIV-057).
+//
+// Signed rather than unsigned, matching the Unix seconds it derives
+// from, so no sign conversion sits on the path that carries it.
+message RevocationGeneration {
+  int64 index = 1;
+  // Exactly bloom_bits/8 bytes. Length-checked on receipt; a filter of
+  // any other size is refused as data rather than merged.
+  bytes filter = 2;
+}
+
+// SyncRevocationsRequest carries EVERY live generation the caller
+// holds, which is what repairs a revocation the best-effort delta
+// broadcast dropped.
+//
+// Not just the current generation: the filter keeps two so an entry
+// outlives the longest token TTL wherever in the period it landed, and
+// sending only the current one would repair a strictly narrower window
+// than the filter itself maintains - a revocation made late in a window
+// would go invisible to peers the moment that window rolled, while the
+// token it revoked was still valid.
+message SyncRevocationsRequest {
+  repeated RevocationGeneration generations = 1;
+}
+
+// SyncRevocationsResponse carries the responder's own live generations,
+// so one round trip repairs BOTH directions. Merging is idempotent and
+// the filter is a set, so no leader and no ordering are needed.
+message SyncRevocationsResponse {
+  repeated RevocationGeneration generations = 1;
+}
