@@ -31,6 +31,7 @@ import (
 	"github.com/goppydae/goblin/core/store"
 	"github.com/goppydae/goblin/core/transport"
 	"github.com/goppydae/goblin/internal/logattr"
+	goblinv1 "github.com/goppydae/goblin/proto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -324,6 +325,49 @@ func (s *Supervisor) startMonitors(ctx context.Context, st *runState) {
 	// RegisterGlobalAgent/ScaleAgent for sub-interval placement latency.
 	sched := st.sched
 	s.loops.spawn(tierRun, "reconciler", func() { sched.RunReconciler(ctx, 2*time.Second) })
+
+	// Revocation anti-entropy (GOBLIN-DIV-057). The delta broadcast is
+	// best-effort, so a node partitioned, restarting or joining late
+	// never learns of a revocation; this repairs it on a timer. Peers
+	// are resolved through the same dialer and address source the
+	// migration coordinator uses, so nothing can disagree about where a
+	// node lives.
+	if s.revocations != nil {
+		tlsCfg, selfID := st.tlsCfg, st.nodeID
+		members := st.membership
+		revSync := &revocationSync{
+			revocations: s.revocations,
+			peers: func() []string {
+				var out []string
+				for _, m := range members.Members() {
+					if m.Status != serf.StatusAlive || m.Name == selfID {
+						continue
+					}
+					out = append(out, m.Name)
+				}
+				return out
+			},
+			exchange: func(ctx context.Context, nodeID string, req *goblinv1.SyncRevocationsRequest) (*goblinv1.SyncRevocationsResponse, error) {
+				addr, err := sched.NodeAddress(ctx, nodeID)
+				if err != nil {
+					return nil, fmt.Errorf("resolving node %s: %w", nodeID, err)
+				}
+				client, err := NewQUICRPCClient(addr, tlsCfg)
+				if err != nil {
+					return nil, fmt.Errorf("dialing node %s at %s: %w", nodeID, addr, err)
+				}
+				defer func() { _ = client.Close() }()
+
+				var resp goblinv1.SyncRevocationsResponse
+				if err := client.Call("SchedulerRPC.SyncRevocations", req, &resp); err != nil {
+					return nil, fmt.Errorf("SyncRevocations on node %s: %w", nodeID, err)
+				}
+				return &resp, nil
+			},
+			logger: slog.Default(),
+		}
+		s.loops.spawn(tierRun, "revocation-sync", func() { revSync.run(ctx) })
+	}
 
 	engine, membership, schedulerRPC := st.consensus, st.membership, st.schedulerRPC
 	s.loops.spawn(tierRun, "cluster-monitor", func() {

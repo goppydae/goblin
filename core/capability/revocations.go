@@ -47,6 +47,23 @@ const generations = 2
 // number somebody has to keep in sync.
 const DefaultRotationPeriod = TTLMax
 
+// DefaultSyncInterval is how often a node exchanges filters with a peer
+// to repair revocations the delta broadcast dropped (GOBLIN-DIV-057).
+//
+// Anti-entropy converges eventually rather than instantly, so this
+// interval IS the exposure window for a node that missed a delta - it
+// replaces the TTLMax-long window that node would otherwise carry. It
+// must therefore stay well inside a token lifetime, which is why it is
+// derived from TTLMax rather than written as a number somebody has to
+// keep in sync: a tenth of the lifetime gives ten repair opportunities
+// before the token in question expires, so no single lost round trip
+// decides the outcome.
+//
+// A constant, not configuration. Every non-null default in this repo
+// has cost a defect recently; make it configurable when someone needs
+// it to be, not in advance.
+const DefaultSyncInterval = TTLMax / 10
+
 // Revocations is the revocation set: a generational Bloom filter.
 //
 // The set-only-grows design it replaced could not forget, and nothing

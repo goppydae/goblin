@@ -133,6 +133,24 @@ func TestSync_RepairsARevocationFromThePreviousGeneration(t *testing.T) {
 	}
 }
 
+// TestDefaultSyncInterval_RepairsWithinATokenLifetime pins the sizing
+// the entry names as the real tuning decision.
+//
+// Anti-entropy converges eventually rather than instantly, so the
+// exposure window becomes the sync interval. An interval longer than
+// the token lifetime repairs nothing that still matters: the token the
+// missed revocation concerns has already expired by the time the repair
+// arrives.
+func TestDefaultSyncInterval_RepairsWithinATokenLifetime(t *testing.T) {
+	if DefaultSyncInterval >= TTLMax {
+		t.Fatalf("sync interval %s is not shorter than the longest token TTL %s: repairs arrive too late to matter",
+			DefaultSyncInterval, TTLMax)
+	}
+	if got := TTLMax / DefaultSyncInterval; got < 5 {
+		t.Errorf("only %d repair opportunities inside one token lifetime; one lost RPC then dominates the exposure", got)
+	}
+}
+
 // TestIngest_DropsAGenerationThisNodeHasRetired is the boundary that
 // makes periodic exchange terminate. A filter captured while it was live
 // can arrive arbitrarily late - a slow peer, a queued RPC, a node

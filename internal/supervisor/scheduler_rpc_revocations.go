@@ -11,7 +11,6 @@ package supervisor
 import (
 	"errors"
 
-	"github.com/goppydae/goblin/core/capability"
 	goblinv1 "github.com/goppydae/goblin/proto"
 )
 
@@ -35,27 +34,12 @@ func (s *SchedulerRPC) SyncRevocations(req *goblinv1.SyncRevocationsRequest, res
 		return ErrRevocationsUnavailable
 	}
 
-	incoming := make([]capability.Generation, 0, len(req.GetGenerations()))
-	for _, g := range req.GetGenerations() {
-		incoming = append(incoming, capability.Generation{
-			Index:  g.GetIndex(),
-			Filter: g.GetFilter(),
-		})
-	}
-
 	// Ingest validates each filter's length before merging any of them,
 	// so a malformed generation is refused as data rather than folded in.
-	if err := s.revocations.Ingest(incoming); err != nil {
+	if err := s.revocations.Ingest(generationsFromWire(req.GetGenerations())); err != nil {
 		return err
 	}
 
-	mine := s.revocations.Snapshot()
-	resp.Generations = make([]*goblinv1.RevocationGeneration, 0, len(mine))
-	for _, g := range mine {
-		resp.Generations = append(resp.Generations, &goblinv1.RevocationGeneration{
-			Index:  g.Index,
-			Filter: g.Filter,
-		})
-	}
+	resp.Generations = wireFromGenerations(s.revocations.Snapshot())
 	return nil
 }
