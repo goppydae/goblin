@@ -46,6 +46,15 @@ func (m *MockStore) MigrationInFlight(instanceUUID []byte) (*goblinv1.MigrationR
 	return rec, ok
 }
 
+// IsTombstoned mirrors the FSM's append-only tombstone set: an entry
+// outlives the instance record, which archive deletes.
+func (m *MockStore) IsTombstoned(instanceID string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, dead := m.tombstones[instanceID]
+	return dead
+}
+
 // SetMigrating marks an instance as being migrated, for tests that need
 // the reconciler to see one.
 func (m *MockStore) SetMigrating(instanceUUID []byte, target string) {

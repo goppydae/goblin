@@ -38,6 +38,10 @@ func (m *memKVStore) MigrationInFlight(_ []byte) (*goblinv1.MigrationRecord, boo
 	return nil, false
 }
 
+// IsTombstoned: this fake never terminated anything, so it never sees an
+// orphan (GOBLIN-DIV-067 added the method to the interface).
+func (m *memKVStore) IsTombstoned(_ string) bool { return false }
+
 func newMemKVStore() *memKVStore { return &memKVStore{data: map[string][]byte{}} }
 
 func (m *memKVStore) storeKey(namespace, key string) string { return namespace + "\x00" + key }

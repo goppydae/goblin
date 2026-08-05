@@ -9,9 +9,13 @@
 package scheduler
 
 import (
+	"context"
+	"fmt"
+	"log/slog"
 	"time"
 
 	gapiclock "github.com/goppydae/gapi/core/clock"
+	"github.com/goppydae/goblin/internal/logattr"
 )
 
 const (
@@ -134,6 +138,73 @@ func (s *Scheduler) instanceUnhealthy(instanceID string) bool {
 		return true // grace elapsed and the instance has never reported
 	}
 	return now.Sub(hb.at) >= staleAfter
+}
+
+// orphanStopInterval bounds how often one orphan is asked to stop. Its
+// node keeps reporting it every HeartbeatCadence until the process is
+// gone, and a stop RPC per sighting would be a retry storm against a
+// node that may simply be slow to comply.
+const orphanStopInterval = staleAfter
+
+// noteOrphanStop reports whether enough time has passed to ask about
+// this orphan again, recording the attempt when it says yes.
+func (s *Scheduler) noteOrphanStop(instanceID string) bool {
+	s.hbMu.Lock()
+	defer s.hbMu.Unlock()
+	if s.orphanStops == nil {
+		s.orphanStops = make(map[string]time.Time)
+	}
+	now := s.now()
+	if last, asked := s.orphanStops[instanceID]; asked && now.Sub(last) < orphanStopInterval {
+		return false
+	}
+	s.orphanStops[instanceID] = now
+	return true
+}
+
+// ReapOrphan answers a heartbeat for an instance the cluster has already
+// tombstoned by stopping it on the node still reporting it. It reports
+// whether the heartbeat was an orphan's, in which case the caller must
+// NOT record it: the UUID is dead and feeding it to the health view
+// would resurrect a tombstoned identity in the leader's memory.
+//
+// GOBLIN-DIV-067, reconcile-on-reconnect. Failover tombstones the dead
+// UUID and admits a REPLACEMENT under a new one (reconciler.go:86,
+// :150), and nothing ever stopped the original process. A node that
+// only blipped past staleAfter therefore came back running a second
+// live copy, and this heartbeat is the ONLY sighting the leader gets of
+// it - the record is gone from ListInstances, so no reconcile pass can
+// find it by walking state.
+//
+// Kubernetes bounds this by refusing to place the replacement at all
+// (StatefulSet at-most-one); Nomad places it and picks a winner when
+// the node returns (disconnect.reconcile). This is the latter, fixed at
+// keep_replacement: the replacement is already running and already
+// healthy, so the returning copy is the one that loses.
+//
+// LEADER-ONLY, and that gate is load-bearing rather than an
+// optimisation: instance.heartbeat is cluster-wide gossip, so every
+// node sees every orphan. Ungated, an orphan would draw one stop RPC
+// per node per interval, and a follower whose log still lags would be
+// deciding an instance's fate from a stale tombstone set. Only the
+// leader writes (review R7); the reap is a write.
+//
+// Cheap on the common path - one predicate and one map lookup, and no
+// RPC unless the UUID is tombstoned.
+func (s *Scheduler) ReapOrphan(ctx context.Context, instanceID, nodeID string) (bool, error) {
+	if instanceID == "" || !s.leading() || !s.store.IsTombstoned(instanceID) {
+		return false, nil
+	}
+	if !s.noteOrphanStop(instanceID) {
+		return true, nil
+	}
+	slog.Default().LogAttrs(ctx, slog.LevelWarn,
+		"node is reporting a tombstoned instance; stopping the orphan",
+		logattr.InstanceID(instanceID), logattr.NodeID(nodeID))
+	if err := s.stopAgentOnNode(ctx, nodeID, instanceID); err != nil {
+		return true, fmt.Errorf("stop orphaned instance %s on %s: %w", instanceID, nodeID, err)
+	}
+	return true, nil
 }
 
 // KickReconcile requests an immediate reconcile pass; RunReconciler

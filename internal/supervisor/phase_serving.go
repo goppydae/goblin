@@ -23,7 +23,6 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	gapieventbus "github.com/goppydae/gapi/core/eventbus"
-	"github.com/goppydae/gapi/core/procsig"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
 	"github.com/goppydae/goblin/core/eventbus"
 	"github.com/goppydae/goblin/core/metrics"
@@ -31,7 +30,6 @@ import (
 	"github.com/goppydae/goblin/core/scheduler"
 	"github.com/goppydae/goblin/core/store"
 	"github.com/goppydae/goblin/core/transport"
-	"github.com/goppydae/goblin/internal/hlc"
 	"github.com/goppydae/goblin/internal/logattr"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -232,96 +230,6 @@ func (s *Supervisor) startTelemetry(ctx context.Context, st *runState) error {
 	s.startHeartbeat(ctx, st)
 	s.subscribeClusterEvents(st)
 	return s.startMetrics(ctx)
-}
-
-// startHeartbeat publishes this node's instance states cluster-wide and
-// merges what it sees from peers. The heartbeat doubles as the locator
-// update path (DDR-3/4/5): a running instance's pid, start epoch, and
-// pid-namespace inode ride along, stamped by this node's HLC for
-// last-writer-wins.
-func (s *Supervisor) startHeartbeat(ctx context.Context, st *runState) {
-	hlcClock := hlc.New(st.nodeID)
-	nodeID, bus, tracker, sched := st.nodeID, st.bus, st.tracker, st.sched
-
-	s.loops.spawn(tierRun, "instance-heartbeat", func() {
-		ticker := time.NewTicker(scheduler.HeartbeatCadence)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				for id, info := range tracker.Snapshot() {
-					stamp := hlcClock.Now()
-					payload := map[string]interface{}{
-						"instance_id": id,
-						"node_id":     nodeID,
-						"state":       info.State,
-						"hlc_wall":    stamp.Wall,
-						"hlc_counter": stamp.Counter,
-						"hlc_node":    stamp.Node,
-					}
-					if info.Pid > 0 {
-						if pi, err := procsig.Identify(info.Pid); err == nil {
-							payload["node_pid"] = pi.Pid
-							payload["start_epoch"] = pi.StartEpoch
-							payload["pid_ns_inode"] = pi.PidNsInode
-						}
-					}
-					if err := bus.PublishCluster("system", "instance.heartbeat", payload, nil); err != nil {
-						slog.Default().LogAttrs(ctx, slog.LevelWarn, "publish instance heartbeat failed", logattr.InstanceID(id), logattr.Err(err))
-					}
-				}
-			}
-		}
-	})
-
-	// Leader side: heartbeats feed the reconciler's health view and the
-	// locator map; the HLC merges every remote stamp it sees.
-	bus.Subscribe("instance.heartbeat", func(e eventbus.Event) {
-		id, _ := e.Payload["instance_id"].(string)
-		node, _ := e.Payload["node_id"].(string)
-		state, _ := e.Payload["state"].(string)
-		if id == "" {
-			return
-		}
-		sched.ObserveHeartbeat(id, node, state, time.Now())
-
-		stamp := hlc.Timestamp{
-			Wall:    payloadInt64(e.Payload["hlc_wall"]),
-			Counter: payloadUint32(e.Payload["hlc_counter"]),
-			Node:    payloadString(e.Payload["hlc_node"]),
-		}
-		if stamp.IsZero() {
-			return
-		}
-		hlcClock.Observe(stamp)
-		if pid := payloadInt64(e.Payload["node_pid"]); pid > 0 {
-			sched.ObserveLocator(id, scheduler.Locator{
-				NodeID:     node,
-				Pid:        int(pid),
-				StartEpoch: payloadUint64(e.Payload["start_epoch"]),
-				PidNsInode: payloadUint64(e.Payload["pid_ns_inode"]),
-				At:         stamp,
-			})
-		}
-	})
-
-	// Revocation gossip: a revoking node broadcasts its filter; every
-	// node merges what it sees (the filter only grows, so merge order
-	// is irrelevant). Bytes ride the bus JSON as base64.
-	bus.Subscribe("capability.revocation", func(e eventbus.Event) {
-		id, ok := decodeRevocationFilter(ctx, e.Payload["token_id"])
-		if !ok {
-			return
-		}
-		if len(id) != 16 {
-			slog.Default().LogAttrs(ctx, slog.LevelWarn, "revocation carries a malformed token id",
-				slog.Int("bytes", len(id)))
-			return
-		}
-		s.revocations.Revoke(id)
-	})
 }
 
 // subscribeClusterEvents renders notable bus traffic into the RPC

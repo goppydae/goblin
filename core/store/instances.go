@@ -93,6 +93,21 @@ func (s *Store) MigrationInFlight(instanceUUID []byte) (*goblinv1.MigrationRecor
 	return s.consensus.MigrationInFlight(instanceUUID)
 }
 
+// IsTombstoned reports whether an instance UUID was ever terminated.
+// A pass-through to the replicated append-only tombstone set, read by
+// the orphan reaper (GOBLIN-DIV-067).
+//
+// Not leader-gated: it is a local FSM read, and every replica's
+// tombstone set carries the same entries once the log is applied. A
+// follower that answers "not tombstoned" from a lagging log only costs
+// the reap it would have done on the next heartbeat.
+func (s *Store) IsTombstoned(instanceID string) bool {
+	if s.consensus == nil {
+		return false
+	}
+	return s.consensus.IsTombstoned(instanceID)
+}
+
 func (s *Store) ListInstances(ctx context.Context) ([]*goblinv1.AgentInstance, error) {
 	if err := s.requireLeader(); err != nil {
 		return nil, err

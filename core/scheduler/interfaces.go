@@ -49,6 +49,14 @@ type KVStore interface {
 	// indistinguishable from a crash by heartbeat alone
 	// (GOBLIN-DIV-049).
 	MigrationInFlight(instanceUUID []byte) (*goblinv1.MigrationRecord, bool)
+
+	// IsTombstoned reports whether a UUID was ever terminated. The
+	// tombstone set is append-only and outlives the instance record,
+	// which is why the orphan reaper asks it rather than GetInstance: an
+	// archived instance is GONE from the record, so "not found" cannot
+	// distinguish a replaced instance from one this leader has simply
+	// not learned about yet (GOBLIN-DIV-067).
+	IsTombstoned(instanceID string) bool
 }
 
 // Cluster defines the interface for cluster membership operations

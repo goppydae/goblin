@@ -43,7 +43,11 @@ type Scheduler struct {
 	// pendingSince tracks when a pending instance was first observed,
 	// so dispatch losses cannot hold replica slots forever.
 	pendingSince map[string]time.Time
-	leadSince    time.Time
+	// orphanStops records when each tombstoned instance was last asked
+	// to stop, so a node that keeps reporting one is not hammered with a
+	// stop RPC per heartbeat (GOBLIN-DIV-067).
+	orphanStops map[string]time.Time
+	leadSince   time.Time
 	// locators is the gossip-fed runtime location map (LWW on HLC).
 	locators map[string]Locator
 	// reconcileKick requests an immediate reconcile pass (buffered 1).
