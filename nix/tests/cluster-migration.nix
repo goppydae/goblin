@@ -195,7 +195,7 @@ pkgs.testers.runNixOSTest {
 
     def ctl(machine, args, target_ip):
         out = machine.succeed(
-            f"${bins}/bin/goblinctl --api-addr {target_ip}:29000 --tls-insecure {args} 2>&1"
+            f"${bins}/bin/goblinctl --control-addr {target_ip}:29000 --tls-insecure {args} 2>&1"
         )
         # cobra prints help and exits 0 for a command that does not
         # exist, so machine.succeed cannot catch a wrong path. That is

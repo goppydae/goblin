@@ -1,3 +1,11 @@
+// Copyright (c) 2025 Steven Verhelle (enqack)
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
 package cli
 
 import (
@@ -9,7 +17,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/goppydae/gapi/core/client"
 	"github.com/goppydae/gapi/internal/logattr"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
 )
@@ -22,7 +29,7 @@ func sendLifecycleCommand(agentIDs []string, action protopkg.LifecycleControl_Ac
 		os.Exit(1)
 	}
 
-	c, err := client.New(cfg)
+	c, err := newControlClient(cfg)
 	if err != nil {
 		slog.Default().LogAttrs(context.Background(), slog.LevelError, "failed to init client", logattr.Err(err))
 		os.Exit(1)

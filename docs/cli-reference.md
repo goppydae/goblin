@@ -140,7 +140,7 @@ goblinctl [command] [flags]
 
 | Flag | Default | Description |
 | ---- | ------- | ----------- |
-| `--api-addr` | `127.0.0.1:29000` | Target node's single listen address |
+| `--control-addr` | `127.0.0.1:29000` | Target node's single listen address |
 | `--tls-ca` | | CA certificate for API TLS verification |
 | `--tls-insecure` | `false` | Skip API TLS verification (INSECURE) |
 
@@ -190,7 +190,7 @@ goblinctl
 Members, the current leader, and scheduled jobs.
 
 ```bash
-goblinctl cluster status --api-addr 10.0.0.1:29000
+goblinctl cluster status --control-addr 10.0.0.1:29000
 ```
 
 ### `goblinctl cluster agent`
@@ -255,7 +255,7 @@ goblinctl cluster publish deploy '{"version":"1.2.3"}'
 A terminal UI over the cluster and the local agents.
 
 ```bash
-goblinctl tui --api-addr 10.0.0.1:29000
+goblinctl tui --control-addr 10.0.0.1:29000
 ```
 
 #### Overview tab
@@ -301,7 +301,7 @@ goblind start --id node-2 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.2 
 goblind start --id node-3 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.3 --join 10.0.0.1:29000
 
 # inspect
-goblinctl cluster status --api-addr 10.0.0.1:29000
+goblinctl cluster status --control-addr 10.0.0.1:29000
 
 # schedule
 goblinctl cluster agent register ./spec.yaml

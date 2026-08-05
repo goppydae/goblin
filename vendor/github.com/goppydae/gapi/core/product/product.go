@@ -1,3 +1,11 @@
+// Copyright (c) 2025 Steven Verhelle (enqack)
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
 // Package product carries the identity of the product whose process the
 // kernel is running inside.
 //
@@ -81,6 +89,30 @@ var directEnv = map[string]string{
 	"VERIFY_KEY":           "core/supervisor.New - agent signing public key",
 	"PY_RUNNER":            "core/supervisor.resolvePyRunner - override the Python runner path",
 	"KMSG_PATH":            "core/supervisor pid1 wiring - override /dev/kmsg",
+}
+
+// controlAddrDefaults is each product's zero-config control-plane
+// address, and it is a TABLE because this one value cannot be composed.
+//
+// Every other surface here falls out of the name by string composition:
+// Daemon is Name()+"d", ConfigDir is /etc/<name>, EnvPrefix is the name
+// upper-cased. A PORT does not. 29000 does not fall out of "goblin", and
+// Daemon's own comment anticipated this case - "a product whose daemon
+// is not <product>d would need a second value here". This is the first
+// such value (GAPI-DIV-071).
+//
+// It lives in the kernel rather than being passed at Set() time so the
+// identity stays ONE argument: a second parameter would put a value at
+// every call site and reopen the two-declarations problem Set exists to
+// close. The cost is real and recorded - changing a product's default
+// port is a kernel change, a tag and a re-vendor.
+//
+// The addresses are LOOPBACK deliberately. A control plane that binds
+// every interface by default is a decision an operator should have to
+// make, and both architecture docs already specified 127.0.0.1.
+var controlAddrDefaults = map[string]string{
+	"gapi":   "127.0.0.1:14242",
+	"goblin": "127.0.0.1:29000",
 }
 
 var (
@@ -171,6 +203,26 @@ func DirectEnvNames() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// DefaultControlAddr is the product's zero-config control-plane address.
+//
+// An identity with no declared address PANICS rather than falling back.
+// A fallback would hand an unknown embedder gapi's port while every
+// other surface said otherwise - which is the defect GAPI-DIV-071 exists
+// to remove, one level up - and Name() already establishes that a
+// missing identity is fatal rather than defaulted.
+func DefaultControlAddr() string {
+	n := Name()
+	addr, ok := controlAddrDefaults[n]
+	if !ok {
+		panic(fmt.Sprintf("product %q has no default control-plane address. "+
+			"A port cannot be derived from a product name, so add %q to "+
+			"controlAddrDefaults in core/product with the address its daemon "+
+			"binds; falling back to another product's port would bind the "+
+			"wrong one in silence.", n, n))
+	}
+	return addr
 }
 
 // ConfigDir is where a release build looks for config.yaml.

@@ -112,17 +112,17 @@ func TestGoblinctlRoot_BareInvocation(t *testing.T) {
 // defined locally. A flag added to one control binary and not its peer
 // is what the registrar exists to prevent.
 func TestGoblinctlRoot_ControlFlagsAreShared(t *testing.T) {
-	for _, name := range []string{"api-addr", "tls-ca", "tls-insecure", "log-level"} {
+	for _, name := range []string{"control-addr", "tls-ca", "tls-insecure", "log-level"} {
 		if RootCmd.PersistentFlags().Lookup(name) == nil {
 			t.Errorf("--%s missing from the control root's persistent set", name)
 		}
 	}
-	// --api-addr's shared default is EMPTY, deliberately: the two daemons
+	// --control-addr's shared default is EMPTY, deliberately: the two daemons
 	// listen on different ports, so a shared literal would be wrong for
 	// one of them. If this ever reads "127.0.0.1:29000" again, the flag
 	// has been redefined locally.
-	if got := RootCmd.PersistentFlags().Lookup("api-addr").DefValue; got != "" {
-		t.Errorf("--api-addr default = %q, want empty (the shared default)", got)
+	if got := RootCmd.PersistentFlags().Lookup("control-addr").DefValue; got != "" {
+		t.Errorf("--control-addr default = %q, want empty (the shared default)", got)
 	}
 }
 
@@ -131,19 +131,19 @@ func TestGoblinctlRoot_ControlFlagsAreShared(t *testing.T) {
 // existing goblinctl invocation, and it is unreachable from a
 // behavioural test without a live daemon.
 func TestControlAddr_ResolvesEmptyToTheLocalNode(t *testing.T) {
-	saved := controlFlags.APIAddr
-	t.Cleanup(func() { controlFlags.APIAddr = saved })
+	saved := controlFlags.ControlAddr
+	t.Cleanup(func() { controlFlags.ControlAddr = saved })
 
-	controlFlags.APIAddr = ""
-	if got := controlAddr(); got != defaultAPIAddr {
-		t.Errorf("empty --api-addr resolved to %q, want %q", got, defaultAPIAddr)
+	controlFlags.ControlAddr = ""
+	if got := controlAddr(); got != defaultControlAddr {
+		t.Errorf("empty --control-addr resolved to %q, want %q", got, defaultControlAddr)
 	}
 
 	// The control disagrees with the default, so this fails if
 	// controlAddr ignores the flag and always returns the literal.
-	controlFlags.APIAddr = "10.9.8.7:12345"
+	controlFlags.ControlAddr = "10.9.8.7:12345"
 	if got := controlAddr(); got != "10.9.8.7:12345" {
-		t.Errorf("explicit --api-addr resolved to %q, want the override", got)
+		t.Errorf("explicit --control-addr resolved to %q, want the override", got)
 	}
 }
 

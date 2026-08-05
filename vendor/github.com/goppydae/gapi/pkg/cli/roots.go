@@ -1,3 +1,11 @@
+// Copyright (c) 2025 Steven Verhelle (enqack)
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
 package cli
 
 import (
@@ -92,7 +100,7 @@ func RegisterDaemonFlags(cmd *cobra.Command) *DaemonFlags {
 // ControlFlags holds the values bound by RegisterControlFlags: which
 // daemon to talk to and how to reach it.
 type ControlFlags struct {
-	APIAddr     string
+	ControlAddr string
 	TLSCA       string
 	TLSInsecure bool
 	LogLevel    string
@@ -100,14 +108,28 @@ type ControlFlags struct {
 
 // RegisterControlFlags binds the control root's persistent set to cmd.
 //
-// --api-addr defaults to EMPTY rather than to a literal address: the two
-// daemons listen on different ports, so a shared default would have to
-// be wrong for one of them. Empty means "resolve from config", which
-// keeps config the source of truth and the flag an override.
+// THE FLAG NAMES THE CONTROL PLANE, because that is what it addresses.
+// There is no API port and never was: the daemon exposes a single QUIC
+// listener multiplexed by ALPN, and every other layer already said so -
+// both architecture docs, the daemon-side flag's own help text below,
+// and goblin's controlAddr resolver. The flag an operator typed was the
+// last holdout (GAPI-DIV-072). Hard rename: no alias, no deprecation
+// period, no fallback reading the old spelling, per operator decision 1.
+//
+// It defaults to EMPTY rather than to a literal address: the two daemons
+// listen on different ports, so a shared default would have to be wrong
+// for one of them. Empty means "resolve from config", which keeps config
+// the source of truth and the flag an override.
+//
+// This is the DIAL address of a trio, and cli-contract.md records why
+// they cannot collapse into one flag: --listen-addr binds,
+// --advertise-addr is what peers are told to use, and this is where a
+// control binary sends its request. A wildcard bind is a legal bind and
+// an illegal dial.
 func RegisterControlFlags(cmd *cobra.Command) *ControlFlags {
 	f := &ControlFlags{}
 	pf := cmd.PersistentFlags()
-	pf.StringVar(&f.APIAddr, "api-addr", "", "Target daemon's listen address (empty: from config)")
+	pf.StringVar(&f.ControlAddr, "control-addr", "", "Address of the target daemon's control plane (empty: from config)")
 	pf.StringVar(&f.TLSCA, "tls-ca", "", "CA certificate used to verify the daemon")
 	pf.BoolVar(&f.TLSInsecure, "tls-insecure", false, "Skip verification (INSECURE)")
 	pf.StringVar(&f.LogLevel, "log-level", "", "Log level: debug, info, warn, error")

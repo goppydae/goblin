@@ -1,3 +1,11 @@
+// Copyright (c) 2025 Steven Verhelle (enqack)
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
 package config
 
 import (
@@ -181,7 +189,7 @@ func Load() (*Config, error) {
 
 	// Zero-config defaults
 	v.SetDefault("transport.type", "quic")
-	v.SetDefault("transport.address", ":14242")
+	v.SetDefault("transport.address", product.DefaultControlAddr())
 	v.SetDefault("transport.insecureSkipVerify", true)
 	v.SetDefault("metrics.enabled", false)
 	v.SetDefault("metrics.addr", "127.0.0.1:19090")

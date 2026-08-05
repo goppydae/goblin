@@ -1,3 +1,11 @@
+// Copyright (c) 2025 Steven Verhelle (enqack)
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
 // Package logging is the one place log handlers are built. It turns the
 // checked-in LoggingConfig into a *slog.Logger (JSON for machines, text
 // for consoles, optional rotating file sink) and is exported so consumers

@@ -1,3 +1,11 @@
+// Copyright (c) 2025 Steven Verhelle (enqack)
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
 package transport
 
 import (
@@ -109,6 +117,23 @@ func CreateClientTLSConfig(cfg TLSConfig) (*tls.Config, error) {
 	}
 
 	return tlsConf, nil
+}
+
+// Addr reports the address the listener ACTUALLY BOUND, which is not
+// always the one it was asked for: ":0" resolves to a kernel-assigned
+// port, and a configured hostname may resolve to something else. The
+// daemon is the only party that knows this value, which is why it has
+// to be published rather than re-derived by the client (GAPI-DIV-070).
+//
+// Empty for a client QUIC, which has no listener. Takes q.mu because
+// Close() nils the field.
+func (q *QUIC) Addr() string {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.listener == nil {
+		return ""
+	}
+	return q.listener.Addr().String()
 }
 
 // ---- Server / Client loops ----
