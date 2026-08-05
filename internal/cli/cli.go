@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
 
+	gapiconfig "github.com/goppydae/gapi/core/config"
 	"github.com/goppydae/gapi/core/transport"
 	"github.com/goppydae/gapi/core/tui"
 	gapicli "github.com/goppydae/gapi/pkg/cli"
@@ -38,8 +39,8 @@ import (
 var RootCmd, controlFlags = gapicli.NewControlRoot(
 	"goblin", "goblinctl", version.Version, "Goblin distributed supervisor control")
 
-// defaultAPIAddr is goblind's default listen address, and it lives here
-// because the shared --api-addr default is EMPTY.
+// defaultControlAddr is goblind's default listen address, and it lives here
+// because the shared --control-addr default is EMPTY.
 //
 // The contract gives that empty default the meaning "resolve from
 // config", which keeps config the source of truth and the flag an
@@ -52,15 +53,74 @@ var RootCmd, controlFlags = gapicli.NewControlRoot(
 // differs because one binary has a config loader and the other does not.
 // Recorded as a residual on GOBLIN-DIV-052 rather than papered over: a
 // config source for goblinctl is its own piece of work.
-const defaultAPIAddr = "127.0.0.1:29000"
+const defaultControlAddr = "127.0.0.1:29000"
 
-// controlAddr is the daemon to talk to: the --api-addr override when
-// given, the local node otherwise.
+// controlAddrSource records where the address came from, so a failure
+// can say. Empty means the compiled-in default.
+var controlAddrSource string
+
+// controlAddrAmbiguity holds the reason a published address could not be
+// used, when more than one daemon published one.
+var controlAddrAmbiguity error
+
+// controlAddr is the daemon to talk to: the --control-addr override when
+// given, then a running daemon's PUBLISHED address, then the local node.
+//
+// GOBLIN-DIV-061. The literal below cannot see a Paseo-allocated port,
+// so goblinctl could not reach a daemon on a non-default port by any
+// route. REPRODUCED BEFORE FIXING, as that entry demands: goblind on
+// 127.0.0.1:29317, and `goblinctl cluster status` with no flag failed
+// with "failed to dial 127.0.0.1:29000" - this literal - while the same
+// command with --control-addr connected.
+//
+// The published address is consulted ONLY when no flag was given, so an
+// explicit instruction always wins. Reading gapi's tier list rather than
+// a goblin-specific one is deliberate: both daemons publish through the
+// kernel's core/config, so one convention locates either.
 func controlAddr() string {
-	if controlFlags.APIAddr != "" {
-		return controlFlags.APIAddr
+	if controlFlags.ControlAddr != "" {
+		controlAddrSource = ""
+		return controlFlags.ControlAddr
 	}
-	return defaultAPIAddr
+	addr, from, err := gapiconfig.ReadControlAddr()
+	if err != nil {
+		// Several daemons are publishing and none of them is the
+		// obvious one. Carried, not swallowed: the default still
+		// applies and the reason is held for the failure message,
+		// because choosing between them would be a coin flip that
+		// looks like a decision.
+		controlAddrAmbiguity = err
+		return defaultControlAddr
+	}
+	if addr != "" {
+		controlAddrSource = from
+		return addr
+	}
+	return defaultControlAddr
+}
+
+// describeControlTarget explains WHERE goblinctl dialled and why, for an
+// error message.
+//
+// goblin's dial failure already names the address, unlike gapi's bare
+// timeout - "failed to dial 127.0.0.1:29000: context deadline exceeded"
+// - so what this adds is WHY that address was chosen and what to do
+// about it (GOBLIN-DIV-061's secondary exit).
+func describeControlTarget(addr string) string {
+	switch {
+	case controlAddrAmbiguity != nil:
+		return fmt.Sprintf("%s was the built-in default, because %v - "+
+			"pass --control-addr to say which one you mean", addr, controlAddrAmbiguity)
+	case controlAddrSource != "":
+		return fmt.Sprintf("%s came from the daemon's published address at %s "+
+			"(pass --control-addr to override)", addr, controlAddrSource)
+	case controlFlags != nil && controlFlags.ControlAddr != "":
+		return fmt.Sprintf("%s came from --control-addr", addr)
+	default:
+		return fmt.Sprintf("%s is the built-in default - no live daemon has published "+
+			"an address in %s (pass --control-addr if it is listening elsewhere)",
+			addr, strings.Join(gapiconfig.ControlAddrDirs(), " or "))
+	}
 }
 
 // controlTLS is how to reach it. On a CONTROL binary --tls-ca is the
@@ -81,7 +141,16 @@ func controlTLS() transport.TLSConfig {
 // that GAPI-DIV-058's residual warns about - so the read is funnelled
 // through one function that is obviously exercised by every verb.
 func dialControl() (*QUICRPCClient, error) {
-	return NewQUICRPCClient(controlAddr(), controlTLS())
+	addr := controlAddr()
+	c, err := NewQUICRPCClient(addr, controlTLS())
+	if err != nil {
+		// The dial already names the address; this adds WHY that
+		// address was chosen and what to do instead, which is the half
+		// an operator cannot work out from a port number
+		// (GOBLIN-DIV-061). One funnel, so no verb can miss it.
+		return nil, fmt.Errorf("%w (%s)", err, describeControlTarget(addr))
+	}
+	return c, nil
 }
 
 var clusterCmd = &cobra.Command{

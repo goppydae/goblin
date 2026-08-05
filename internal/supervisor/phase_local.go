@@ -24,6 +24,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	gapiagentmgr "github.com/goppydae/gapi/core/agentmgr"
+	gapiconfig "github.com/goppydae/gapi/core/config"
 	gapicrypto "github.com/goppydae/gapi/core/crypto"
 	gapieventbus "github.com/goppydae/gapi/core/eventbus"
 	gapilifecycle "github.com/goppydae/gapi/core/lifecycle"
@@ -200,9 +201,48 @@ func (s *Supervisor) bindControlPlane(ctx context.Context, st *runState) error {
 		return fmt.Errorf("bind control-plane listener: %w", err)
 	}
 	st.sharedLn = sharedLn
+	bound := sharedLn.Addr().String()
 	slog.Default().LogAttrs(ctx, slog.LevelInfo, "control-plane listener bound",
-		logattr.Addr(sharedLn.Addr().String()), logattr.To(st.advertiseUDP.String()))
+		logattr.Addr(bound), logattr.To(st.advertiseUDP.String()))
+	publishControlAddr(ctx, bound)
 	return nil
+}
+
+// publishControlAddr writes where this daemon ACTUALLY BOUND to the
+// runtime address directory, so goblinctl can find it without sharing
+// an environment (GOBLIN-DIV-061).
+//
+// The LISTENER's address, not s.cfg.ListenAddr: those differ whenever
+// it matters - ":0" resolves to a kernel-assigned port, a hostname may
+// resolve to something else - and only the daemon knows the difference.
+// Publishing the configured value would reintroduce the defect one
+// layer up.
+//
+// REPRODUCED ON GOBLIN BEFORE FIXING, which that entry demands after
+// its first version transcribed gapi's mechanism and was wrong about
+// this one: goblind on 127.0.0.1:29317, and `goblinctl cluster status`
+// with no flag failed with "failed to dial 127.0.0.1:29000" - the
+// hardcoded literal in controlAddr(), not gapi's config default. The
+// same command with --control-addr connected.
+//
+// The mechanism is the kernel's (gapi core/config), shared rather than
+// reimplemented, so both daemons publish into the same tier list and
+// one client convention reads either.
+//
+// NOT FATAL, deliberately: a read-only /run in a container would
+// otherwise stop a daemon that is healthy and perfectly reachable with
+// an explicit address. WARN rather than Info because the consequence is
+// real - every goblinctl call without --control-addr will miss it.
+func publishControlAddr(ctx context.Context, bound string) {
+	path, err := gapiconfig.WriteControlAddr(bound)
+	if err != nil {
+		slog.Default().LogAttrs(ctx, slog.LevelWarn,
+			"could not publish the control address; clients must be given one explicitly",
+			logattr.Addr(bound), logattr.Err(err))
+		return
+	}
+	slog.Default().LogAttrs(ctx, slog.LevelInfo, "published control address",
+		logattr.Addr(bound), logattr.Path(path))
 }
 
 // buildTLS produces the node's one tls.Config, shared by every plane.

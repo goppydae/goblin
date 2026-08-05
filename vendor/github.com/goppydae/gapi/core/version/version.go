@@ -1,3 +1,11 @@
+// Copyright (c) 2025 Steven Verhelle (enqack)
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
 package version
 
 import (
@@ -12,8 +20,8 @@ import (
 // Injected at build time via -ldflags
 var (
 	GAPIVersion      = "dev"
-	GoDDKVersion     = "dev"
-	PythonDDKVersion = "dev"
+	GoADKVersion     = "dev"
+	PythonADKVersion = "dev"
 	BuildTag         = "dev"
 	SchemaHash       = "unknown"
 	Commit           = "unknown"
@@ -258,7 +266,8 @@ func Summary() string {
 
 	// Rows first, then one column width taken from the longest label
 	// (cli-contract.md). The block used to carry four different hardcoded
-	// paddings - %-11s for the name, and separate widths for Go DDK,
+	// paddings - %-11s for the name, and separate widths for the ADK
+	// row,
 	// Platform and a 21-character "Protobuf Schema Hash:" that aligned
 	// with nothing - so adding a field meant re-guessing the alignment.
 	rows := [][2]string{{name, version}}
@@ -268,8 +277,8 @@ func Summary() string {
 		rows = append(rows, [2]string{runtimeCoreLabel, KernelVersion()})
 	}
 	rows = append(rows,
-		[2]string{"Go DDK", adkVersion(GoDDKVersion)},
-		[2]string{"Python DDK", adkVersion(PythonDDKVersion)},
+		[2]string{"Go ADK", adkVersion(GoADKVersion)},
+		[2]string{"Python ADK", adkVersion(PythonADKVersion)},
 		[2]string{"Protobuf Schema Hash", schemaHash},
 		[2]string{"Go Version", active.GoVersion},
 		[2]string{"Platform", active.Platform},

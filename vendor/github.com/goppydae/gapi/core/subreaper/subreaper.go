@@ -1,3 +1,11 @@
+// Copyright (c) 2025 Steven Verhelle (enqack)
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
 // Package subreaper implements the PID-1 orphan-reaping obligation
 // (GAPI-DIV-027): the supervisor registers as a child subreaper so
 // orphaned descendants reparent to it instead of pid 1, and a reap

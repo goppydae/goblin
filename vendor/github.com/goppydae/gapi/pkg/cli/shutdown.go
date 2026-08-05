@@ -1,3 +1,11 @@
+// Copyright (c) 2025 Steven Verhelle (enqack)
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
 package cli
 
 import (
@@ -6,8 +14,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-
-	"github.com/goppydae/gapi/core/client"
 )
 
 var (
@@ -34,7 +40,7 @@ var shutdownCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
 		}
-		c, err := client.New(cfg)
+		c, err := newControlClient(cfg)
 		if err != nil {
 			return fmt.Errorf("init client: %w", err)
 		}

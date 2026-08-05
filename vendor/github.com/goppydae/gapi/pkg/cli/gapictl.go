@@ -1,3 +1,11 @@
+// Copyright (c) 2025 Steven Verhelle (enqack)
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
 package cli
 
 import (
@@ -56,13 +64,14 @@ func NewGapictlRoot() (*cobra.Command, *ControlFlags) {
 // through here for that reason.
 //
 // Flags override config; empty means "leave config alone", which is why
-// --api-addr carries no default in the registrar.
+// --control-addr carries no default in the registrar.
 func controlConfig() (*config.Config, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, err
 	}
 	applyControlFlags(cfg)
+	resolveControlAddr(cfg)
 	return cfg, nil
 }
 
@@ -72,8 +81,8 @@ func applyControlFlags(cfg *config.Config) {
 	if cfg == nil || controlFlags == nil {
 		return
 	}
-	if controlFlags.APIAddr != "" {
-		cfg.Transport.Address = controlFlags.APIAddr
+	if controlFlags.ControlAddr != "" {
+		cfg.Transport.Address = controlFlags.ControlAddr
 	}
 	if controlFlags.LogLevel != "" {
 		cfg.Logging.Level = controlFlags.LogLevel
@@ -104,7 +113,7 @@ var pingCmd = &cobra.Command{
 	Short: "Ping the daemon",
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg, _ := controlConfig()
-		c, err := client.New(cfg)
+		c, err := newControlClient(cfg)
 		if err != nil {
 			log.Fatalf("failed to init client: %v", err)
 		}
@@ -129,7 +138,7 @@ var agentReloadCmd = &cobra.Command{
 	Short: "Trigger a reload of registered agents",
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg, _ := controlConfig()
-		c, err := client.New(cfg)
+		c, err := newControlClient(cfg)
 		if err != nil {
 			log.Fatalf("failed to init client: %v", err)
 		}
@@ -158,7 +167,7 @@ var agentStatusCmd = &cobra.Command{
 			log.Fatalf("failed to load config: %v", err)
 		}
 
-		c, err := client.New(cfg)
+		c, err := newControlClient(cfg)
 		if err != nil {
 			log.Fatalf("failed to init client: %v", err)
 		}
@@ -217,7 +226,7 @@ var tuiCmd = &cobra.Command{
 			return fmt.Errorf("failed to load config: %w", err)
 		}
 
-		c, err := client.New(cfg)
+		c, err := newControlClient(cfg)
 		if err != nil {
 			return fmt.Errorf("failed to init client: %w", err)
 		}

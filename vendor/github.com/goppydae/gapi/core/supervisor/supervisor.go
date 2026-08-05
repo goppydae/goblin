@@ -1,3 +1,11 @@
+// Copyright (c) 2025 Steven Verhelle (enqack)
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
 package supervisor
 
 import (
@@ -63,6 +71,7 @@ func New(cfg *config.Config) (*Supervisor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("transport init: %w", err)
 	}
+	publishControlAddr(logger, t)
 
 	bus := eventbus.NewEventBus[*anypb.Any](t)
 	typedBus := lifecycle.TypedBus{}
@@ -193,6 +202,8 @@ func (s *Supervisor) Run(ctx context.Context) error {
 
 	// Wait for context done
 	<-ctx.Done()
+
+	unpublishControlAddr(s.logger)
 
 	s.logger.LogAttrs(context.Background(), slog.LevelWarn, "received shutdown signal via context")
 

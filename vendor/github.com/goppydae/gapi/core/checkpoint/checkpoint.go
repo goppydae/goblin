@@ -1,3 +1,11 @@
+// Copyright (c) 2025 Steven Verhelle (enqack)
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
 // Package checkpoint dumps and restores process trees with CRIU
 // (GOBLIN-DIV-018, research section 4.4/4.5). It is mechanism only: it
 // speaks to a caller-supplied local image directory and knows nothing

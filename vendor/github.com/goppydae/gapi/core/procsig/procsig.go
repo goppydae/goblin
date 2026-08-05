@@ -1,3 +1,11 @@
+// Copyright (c) 2025 Steven Verhelle (enqack)
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
 // Package procsig delivers signals to agent processes guarded by their
 // start epoch (DDR-5, GAPI-DIV-016): a signal aimed at a dead process
 // whose PID was recycled must never hit the new occupant. Linux-only by
