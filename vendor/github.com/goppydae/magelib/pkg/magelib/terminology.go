@@ -1,3 +1,11 @@
+// Copyright (c) 2026 Steven Verhelle (enqack)
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
 package magelib
 
 import (
@@ -57,6 +65,34 @@ var GoppydaeTerminologyRules = []TerminologyRule{
 	{
 		Phrase:       "Goppydae",
 		Reason:       "canonical styling is 'GoPPydae' - double P, for the GoPPy stack",
+		WordBoundary: true,
+	},
+	// TWO RULES FOR ONE TERM, and the plural is not redundant.
+	//
+	// GAPI-DIV-067 specified a single word-boundary rule. Measured
+	// against the tree before adding it: the boundary form matches the
+	// quoted singular in gapi's docs/lore.md but NOT the plural one
+	// line above it, because a trailing s is a word character and the
+	// boundary fails there. A rule that catches the singular and misses
+	// the plural leaves the retired term free to return in the form
+	// prose most often uses, which is the drift this gate exists to
+	// prevent.
+	//
+	// Two literal rules rather than one loose rule: Phrase is a
+	// literal, not a pattern, so a trailing optional character is not
+	// available. Dropping WordBoundary would catch both forms and also
+	// any identifier merely CONTAINING the letters - a constant like
+	// ADDKEY is the realistic shape - and a gate whose false positives
+	// land on unrelated identifiers gets switched off rather than
+	// fixed.
+	{
+		Phrase:       "DDK",
+		Reason:       "the agent development kits are the ADK (GAPI-DIV-067)",
+		WordBoundary: true,
+	},
+	{
+		Phrase:       "DDKs",
+		Reason:       "the agent development kits are the ADK (GAPI-DIV-067)",
 		WordBoundary: true,
 	},
 }
