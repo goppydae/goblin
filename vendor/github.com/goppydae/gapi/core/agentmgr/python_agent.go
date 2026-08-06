@@ -91,6 +91,19 @@ type PythonAgent struct {
 	// adoptedWatch expires that claim when the process goes (parity with
 	// GoAgent, GAPI-DIV-048). Guarded by mu; joined by Stop and Reset.
 	adoptedWatch *adoptedWatch
+
+	// controlDone/announcedState/announcedRunID are the exit watcher's
+	// view of the control channel (parity with GoAgent). Guarded by mu.
+	controlDone    chan struct{}
+	announcedState string
+	announcedRunID string
+
+	// spoke/spawnedAt/firstFrameAt answer whether this run's child was
+	// silent or slow, and how long exec-to-first-speech takes (parity
+	// with GoAgent, GAPI-DIV-104). Guarded by mu.
+	spoke        bool
+	spawnedAt    time.Time
+	firstFrameAt time.Time
 }
 
 // Pid returns the running agent process id, or false when no process
@@ -412,11 +425,29 @@ func (a *PythonAgent) Start(ctx context.Context) error {
 		cmd.Env = append(cmd.Env, EnvRejectDummy+"=1")
 	}
 
-	if len(extraFiles) > 0 {
-		cmd.ExtraFiles = extraFiles
+	// THE CONTROL CHANNEL (operator decisions 37 and 38; GAPI-DIV-099).
+	// The descriptor goes AFTER any listeners so systemd's LISTEN_FDS
+	// convention keeps its base of 3, and its number is named
+	// explicitly rather than derived by the agent.
+	//
+	// LISTEN_FDS COUNTS LISTENERS AND NOTHING ELSE - see the identical
+	// comment in go_agent.go. The count is taken BEFORE the append, and
+	// when it is zero neither variable is set.
+	listenerCount := len(extraFiles)
+
+	ctlPipe, cerr := newControlPipe()
+	if cerr != nil {
+		return cerr
+	}
+	controlFD := 3 + listenerCount
+	extraFiles = append(extraFiles, ctlPipe.w)
+	cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%d", EnvControlFD, controlFD))
+
+	cmd.ExtraFiles = extraFiles
+	if listenerCount > 0 {
 		cmd.Env = append(cmd.Env,
-			fmt.Sprintf("LISTEN_FDS=%d", len(extraFiles)),
-			"LISTEN_PID=self", // or just ignore
+			fmt.Sprintf("LISTEN_FDS=%d", listenerCount),
+			"LISTEN_PID=self",
 		)
 	}
 	a.cmd = cmd
@@ -447,19 +478,41 @@ func (a *PythonAgent) Start(ctx context.Context) error {
 		return err
 	}
 
-	go a.streamControl(a.stdout)
+	// The reader owns the read end; the write end is closed as soon as
+	// the child has inherited it, or the reader never sees EOF when the
+	// child dies and the goroutine outlives the daemon's interest in it.
+	//
+	// ctlDone is this run's drain signal (parity with GoAgent) - per-run,
+	// so a restart's watcher never reads a previous run's ending.
+	ctlDone := make(chan struct{})
+	a.controlDone = ctlDone
+	a.announcedState, a.announcedRunID = "", ""
+	a.spoke, a.spawnedAt, a.firstFrameAt = false, time.Time{}, time.Time{}
+	go func() {
+		defer close(ctlDone)
+		readControl(ctlPipe.r, a, a.id, slog.Default())
+	}()
+	go a.streamLogs(a.stdout)
 	go a.streamStderr(a.stderr)
 
 	if err := a.cmd.Start(); err != nil {
+		_ = ctlPipe.w.Close()
+		_ = ctlPipe.r.Close()
 		return fmt.Errorf("cmd.Start: %w", err)
 	}
+	_ = ctlPipe.w.Close()
+	a.spawnedAt = time.Now()
 
 	attachCgroup(a.id, limits, a.cmd.Process.Pid)
+
+	// STARTING at exec, parity with GoAgent (operator decision 42,
+	// GAPI-DIV-104). The child exists; before this line there was
+	// nothing to observe.
+	a.publishStatusWithRunID("STARTING", "process spawned", a.nextRunID)
 
 	// Oneshot behavior: Wait for completion
 	if a.typ == "oneshot" {
 		rid := a.nextRunID
-		a.publishStatusWithRunID("STARTING", "oneshot running", rid)
 
 		// Release lock while waiting for exit to avoid deadlock with stream handlers
 		a.mu.Unlock()
@@ -487,10 +540,26 @@ func (a *PythonAgent) Start(ctx context.Context) error {
 		a.waitOnce.Do(func() {
 			a.waitErr = watchCmd.Wait()
 		})
+		// JOIN THE CONTROL CHANNEL BEFORE CLASSIFYING (parity with
+		// GoAgent). The agent's last frame is still in the pipe when Wait
+		// returns.
+		awaitControlDrain(ctlDone, a.id, slog.Default())
+
 		a.mu.Lock()
 		defer a.mu.Unlock()
 		if a.stopping || a.cmd != watchCmd {
 			return // Stop owns this exit, or a new run replaced the slot
+		}
+		// THE AGENT ALREADY SAID WHAT THIS EXIT WAS (parity with
+		// GoAgent). The supervisor reports what it observes and does not
+		// re-classify what the agent announced.
+		if a.announcedOwnExitLocked(watchRunID) {
+			slog.Default().LogAttrs(ctx, slog.LevelInfo, "agent process exited as announced",
+				logattr.Module("agentmgr"), logattr.AgentID(a.id),
+				slog.String("announced", a.announcedState),
+				slog.Duration("uptime", time.Since(a.startTime)))
+			a.cleanupAfterExit()
+			return
 		}
 		// Named explicitly rather than left to the status payload: when
 		// this fires the only downstream evidence is a later verb
@@ -622,7 +691,19 @@ func (a *PythonAgent) Reset() {
 	w.stop()
 }
 
-func (a *PythonAgent) streamControl(r io.Reader) {
+// streamLogs forwards the child's stdout as log lines.
+//
+// STDOUT CARRIES LOGS AND ONLY LOGS (operator decision 33). This
+// function used to unmarshal every line and switch on an "event" key,
+// driving the per-agent state machine from whatever the child happened
+// to print - so one stream carried both a protocol and arbitrary program
+// output, and which one a line WAS depended on whether it parsed
+// (GAPI-DIV-099). Lifecycle frames now arrive on their own descriptor,
+// typed, so there is no guess left to make and no reason to parse here.
+//
+// The JSON-decode-then-re-encode this used to do for the log payload
+// went with the switch: a line is forwarded as the line it was.
+func (a *PythonAgent) streamLogs(r io.Reader) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for sc.Scan() {
@@ -630,39 +711,7 @@ func (a *PythonAgent) streamControl(r io.Reader) {
 		if line == "" {
 			continue
 		}
-		var m map[string]any
-		if err := json.Unmarshal([]byte(line), &m); err != nil {
-
-			a.publishLog("stdout", line)
-			continue
-		}
-		a.publishLog("stdout", m)
-
-		ev, _ := getString(m, "event")
-		switch ev {
-		case "starting":
-			a.publishStatus("PENDING", "agent starting")
-		case "start_pending":
-			a.publishStatus("PENDING", "awaiting readiness")
-		case "ready":
-			a.publishStatus("RUNNING", "agent reported ready")
-		case "stopping":
-			a.publishStatus("PENDING", "agent stopping")
-		case "stopped":
-			a.publishStatus("STOPPED", "agent stopped")
-		case "reloaded":
-			a.publishStatus("RUNNING", "agent reloaded")
-		case "error":
-			msg, _ := getString(m, "error")
-			if msg == "" {
-				msg = "agent error"
-			}
-			a.publishStatus("FAILED", msg)
-		case "heartbeat":
-			a.publishHeartbeat()
-		default:
-			// no control topic publications from agents - by design
-		}
+		a.publishLog("stdout", line)
 	}
 }
 
@@ -702,19 +751,24 @@ func (a *PythonAgent) publishStatusWithRunID(state, message, rid string) {
 	_ = a.bus.Publish(ev)
 }
 
-func (a *PythonAgent) publishHeartbeat() {
+// publishHeartbeat forwards the agent's liveness frame.
+//
+// THE FRAME IS CARRIED, NOT RE-SYNTHESIZED. This used to decode the
+// agent's agent_id and run_id, discard both, and publish a manufactured
+// LifecycleStatus{State:"RUNNING"} - which asserts a TRANSITION the agent
+// never announced, on a topic spelled as a bare literal. A heartbeat says
+// the agent is alive; only a status says it changed state, and
+// agent_status.proto's comment names that distinction explicitly.
+func (a *PythonAgent) publishHeartbeat(hb *protopkg.Heartbeat) {
 	if a.bus == nil {
 		return
 	}
-	st := &protopkg.LifecycleStatus{
-		AgentId:  a.id,
-		State:    "RUNNING",
-		Time:     timestamppb.Now(),
-		Hostname: a.hostname,
+	anyp, err := anypb.New(hb)
+	if err != nil {
+		return
 	}
-	anyp, _ := anypb.New(st)
-	hb := eventbus.NewEvent[*anypb.Any]("system", "", "agent/heartbeat", a.id, anyp, false)
-	_ = a.bus.Publish(hb)
+	e := eventbus.NewEvent[*anypb.Any]("system", "", eventbus.TopicAgentHeartbeat, a.id, anyp, false)
+	_ = a.bus.Publish(e)
 }
 
 func (a *PythonAgent) publishLog(stream string, data any) {
@@ -754,19 +808,6 @@ func (a *PythonAgent) publishLog(stream string, data any) {
 	anyp, _ := anypb.New(logMsg)
 	ev := eventbus.NewEvent[*anypb.Any]("system", "", "logs", a.id, anyp, false)
 	_ = a.bus.Publish(ev)
-}
-
-func getString(m map[string]any, key string) (string, bool) {
-	v, ok := m[key]
-	if !ok || v == nil {
-		return "", false
-	}
-	switch t := v.(type) {
-	case string:
-		return t, true
-	default:
-		return "", false
-	}
 }
 
 // attachCgroup places pid under the agent's cgroup with spec applied.

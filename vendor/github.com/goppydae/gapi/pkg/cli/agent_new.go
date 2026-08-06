@@ -17,6 +17,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/goppydae/gapi/core/adkpath"
 	"github.com/goppydae/gapi/core/product"
 	"github.com/goppydae/gapi/internal/safeio"
 	"github.com/spf13/cobra"
@@ -185,7 +186,19 @@ func runAgentNew(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  3. Test:  %s --describe\n", built)
 	} else {
 		fmt.Printf("  1. Edit %s\n", outputFile)
-		fmt.Printf("  2. Test:  python3 adk/python/agent/runner.py --module %s --describe\n", outputFile)
+		// RESOLVED, NOT SPELLED (GAPI-DIV-093). This printed
+		// "adk/python/agent/runner.py", a path relative to a checkout,
+		// so on an installed system the command it told the operator to
+		// run failed with "no such file or directory". The runner comes
+		// from the same resolution the daemon uses, so what is printed
+		// is what will work - and when nothing resolves, saying so is
+		// the honest output rather than a path that cannot.
+		if adk, rerr := adkpath.ResolvePyADK(); rerr == nil {
+			fmt.Printf("  2. Test:  python3 %s --module %s --describe\n", adk.Runner, outputFile)
+		} else {
+			fmt.Printf("  2. Test:  the Python ADK could not be located, so there is no\n")
+			fmt.Printf("            command to give here: %v\n", rerr)
+		}
 	}
 
 	// The scaffold's directory is NOT searched just because it is called

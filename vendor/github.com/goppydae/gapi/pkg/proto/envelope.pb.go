@@ -31,14 +31,21 @@ const (
 )
 
 type Envelope struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Type          string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
-	Topic         string                 `protobuf:"bytes,3,opt,name=topic,proto3" json:"topic,omitempty"`
-	Source        string                 `protobuf:"bytes,4,opt,name=source,proto3" json:"source,omitempty"`
-	Namespace     string                 `protobuf:"bytes,5,opt,name=namespace,proto3" json:"namespace,omitempty"`
-	Payload       *anypb.Any             `protobuf:"bytes,6,opt,name=payload,proto3" json:"payload,omitempty"`
-	Tags          []string               `protobuf:"bytes,7,rep,name=tags,proto3" json:"tags,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Type      string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	Topic     string                 `protobuf:"bytes,3,opt,name=topic,proto3" json:"topic,omitempty"`
+	Source    string                 `protobuf:"bytes,4,opt,name=source,proto3" json:"source,omitempty"`
+	Namespace string                 `protobuf:"bytes,5,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Payload   *anypb.Any             `protobuf:"bytes,6,opt,name=payload,proto3" json:"payload,omitempty"`
+	Tags      []string               `protobuf:"bytes,7,rep,name=tags,proto3" json:"tags,omitempty"`
+	// scope is routing, not decoration, and it travels as a field
+	// (GAPI-DIV-102). It was previously packed into topic as a
+	// '/'-delimited prefix and recovered by splitting on the first '/',
+	// an encoding with no unique inverse: scope "system" topic "agent/x"
+	// and scope "" topic "system/agent/x" are the same bytes. topic is
+	// opaque to the transport; nothing splits it.
+	Scope         string `protobuf:"bytes,8,opt,name=scope,proto3" json:"scope,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -122,11 +129,18 @@ func (x *Envelope) GetTags() []string {
 	return nil
 }
 
+func (x *Envelope) GetScope() string {
+	if x != nil {
+		return x.Scope
+	}
+	return ""
+}
+
 var File_gapi_v1_envelope_proto protoreflect.FileDescriptor
 
 const file_gapi_v1_envelope_proto_rawDesc = "" +
 	"\n" +
-	"\x16gapi/v1/envelope.proto\x12\agapi.v1\x1a\x19google/protobuf/any.proto\"\xbe\x01\n" +
+	"\x16gapi/v1/envelope.proto\x12\agapi.v1\x1a\x19google/protobuf/any.proto\"\xd4\x01\n" +
 	"\bEnvelope\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x14\n" +
@@ -134,7 +148,8 @@ const file_gapi_v1_envelope_proto_rawDesc = "" +
 	"\x06source\x18\x04 \x01(\tR\x06source\x12\x1c\n" +
 	"\tnamespace\x18\x05 \x01(\tR\tnamespace\x12.\n" +
 	"\apayload\x18\x06 \x01(\v2\x14.google.protobuf.AnyR\apayload\x12\x12\n" +
-	"\x04tags\x18\a \x03(\tR\x04tagsB+Z)github.com/goppydae/gapi/pkg/proto;gapiv1b\x06proto3"
+	"\x04tags\x18\a \x03(\tR\x04tags\x12\x14\n" +
+	"\x05scope\x18\b \x01(\tR\x05scopeB+Z)github.com/goppydae/gapi/pkg/proto;gapiv1b\x06proto3"
 
 var (
 	file_gapi_v1_envelope_proto_rawDescOnce sync.Once

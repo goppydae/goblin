@@ -51,7 +51,7 @@ var composedNames = map[string]string{
 	"AGENT_PATH":           "names a fixture directory, PREPENDED to the search path",
 	"AGENT_PATH_EXCLUSIVE": "fences discovery to what AGENT_PATH names",
 	"VERIFY_KEY":           "agent signing public key",
-	"PY_RUNNER":            "Python ADK runner path",
+	"PY_ADK":               "Python ADK source tree",
 	"KMSG_PATH":            "kmsg device override under --pid1",
 }
 
@@ -149,7 +149,7 @@ func TestEnvNames_LiteralsAgreeWithTheKernel(t *testing.T) {
 	// RE2 engine keeps every alternative alive rather than committing to
 	// the first. Checked by swapping the two with a deliberately wrong
 	// EXCLUSIVE literal in the tree - still red, both orderings.
-	suspect := regexp.MustCompile(`\b[A-Z][A-Z0-9]*_(?:AGENT_PATH_EXCLUSIVE|AGENT_PATH|VERIFY_KEY|PY_RUNNER|KMSG_PATH)\b`)
+	suspect := regexp.MustCompile(`\b[A-Z][A-Z0-9]*_(?:AGENT_PATH_EXCLUSIVE|AGENT_PATH|VERIFY_KEY|PY_ADK|KMSG_PATH)\b`)
 
 	var wrong []string
 	walkTree(t, func(rel, body string) {

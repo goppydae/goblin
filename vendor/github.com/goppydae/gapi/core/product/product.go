@@ -87,7 +87,8 @@ var directEnv = map[string]string{
 	"SKIP_SYSTEM_AGENTS":   "core/config.AgentSearchPaths - drop the system dirs",
 	"CGROUPS_DISABLE":      "core/cgroups.Setup - refuse cgroup delegation",
 	"VERIFY_KEY":           "core/supervisor.New - agent signing public key",
-	"PY_RUNNER":            "core/supervisor.resolvePyRunner - override the Python runner path",
+	"PY_ADK":               "core/adkpath.ResolvePyADK - override the Python ADK source tree",
+	"GO_ADK":               "pkg/cli.resolveGoADK - override the Go ADK source tree used by 'agent build'",
 	"KMSG_PATH":            "core/supervisor pid1 wiring - override /dev/kmsg",
 }
 

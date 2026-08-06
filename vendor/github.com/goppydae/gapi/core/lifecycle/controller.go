@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/goppydae/gapi/internal/ident"
@@ -53,6 +54,42 @@ type Controller struct {
 	WaitStart time.Duration
 	WaitStop  time.Duration
 	stateCh   chan statusEvt // single, long-lived feed
+
+	// startMu/starting are the re-entrancy guard for ActionStart.
+	//
+	// THIS EXISTS BECAUSE STATE STOPPED BEING THE GUARD (operator
+	// decision 42, GAPI-DIV-104). The early transition to StateStarting
+	// used to be set before the dependency walk, and the switch at the
+	// top of ActionStart read it to make a concurrent start a no-op - so
+	// one field was serving as both the reported state and the in-flight
+	// marker. Moving the transition to after the exec, where STARTING
+	// becomes an observation rather than an intention, takes the marker
+	// away with it and leaves a window in which two callers could both
+	// walk the tree and both spawn.
+	//
+	// An explicit marker is the honest form: the two facts have
+	// different lifetimes and only one of them is anybody else's
+	// business.
+	startMu  sync.Mutex
+	starting bool
+}
+
+// beginStart claims the start-in-flight marker, reporting false if
+// another caller already holds it.
+func (c *Controller) beginStart() bool {
+	c.startMu.Lock()
+	defer c.startMu.Unlock()
+	if c.starting {
+		return false
+	}
+	c.starting = true
+	return true
+}
+
+func (c *Controller) endStart() {
+	c.startMu.Lock()
+	c.starting = false
+	c.startMu.Unlock()
 }
 
 // depCtxKey is an unexported context-key type so the dependency-cycle
@@ -171,6 +208,13 @@ func (c *Controller) ApplyWithContext(ctx context.Context, a Action) error {
 		case StateStarting, StateRunning, StateReloading:
 			return nil
 		}
+		// The state check above is necessary and no longer sufficient:
+		// STARTING is now set after the exec, so between here and there
+		// a second caller sees a startable state. See beginStart.
+		if !c.beginStart() {
+			return nil
+		}
+		defer c.endStart()
 		if c.deps != nil {
 			hard, soft := c.dependencyClasses()
 			for _, dep := range hard {
@@ -187,9 +231,6 @@ func (c *Controller) ApplyWithContext(ctx context.Context, a Action) error {
 			}
 		}
 		c.publishControl(protopkg.LifecycleControl_ACTION_START)
-		if err := c.sm.TransitionTo(StateStarting); err != nil {
-			return err
-		}
 
 		runID := ident.NewV7String()
 		if s, ok := c.runner.(RunIDSetter); ok {
@@ -227,8 +268,21 @@ func (c *Controller) ApplyWithContext(ctx context.Context, a Action) error {
 			}
 		}
 
+		// STARTING NOW, AND NOT BEFORE (operator decision 42). Start
+		// returned without error, so a child exists. The runner
+		// published the observation with the run id at the instant of
+		// the exec; this is the state machine agreeing with it.
+		if err := c.sm.TransitionTo(StateStarting); err != nil {
+			return err
+		}
+
 		if err := c.awaitRunningWithRunIDSince(c.WaitStart, runID, cutover); err != nil {
 			_ = c.sm.TransitionTo(StateError)
+			// A DEADLINE THAT EXPIRES IS REPORTED, NOT ONLY RETURNED.
+			// The caller gets the error, but nothing on the bus said the
+			// start failed - so an operator watching the status topic saw
+			// STARTING and then nothing at all (GAPI-DIV-104).
+			c.publishFailed(runID, err.Error())
 			return fmt.Errorf("start: %w", err)
 		}
 		return c.sm.TransitionTo(StateRunning)
@@ -346,8 +400,73 @@ func (c *Controller) awaitRunningWithRunIDSince(d time.Duration, wantRunID strin
 				return nil
 			}
 		case <-timer.C:
-			return fmt.Errorf("timeout waiting for agent state=running (run_id=%s)", wantRunID)
+			return c.startTimeout(d, wantRunID)
 		}
+	}
+}
+
+// StartTimeout is the start deadline expiring, as data rather than as a
+// sentence (GAPI-DIV-104).
+//
+// Silent is the discriminator the old bare timeout could not express: a
+// child that has written nothing is hung before its first report or was
+// built against an ADK that never opened the control descriptor, while
+// one that has spoken and not reached RUNNING is merely slow. Those want
+// different operator responses, and a caller must be able to branch on
+// the difference without matching on a message.
+//
+// SilenceKnown is separate from Silent because "the runner cannot answer
+// this question" is a third state, not a quiet false. An in-process
+// runner has no control channel at all.
+type StartTimeout struct {
+	AgentID      string
+	RunID        string
+	Waited       time.Duration
+	Silent       bool
+	SilenceKnown bool
+}
+
+func (e *StartTimeout) Error() string {
+	switch {
+	case e.SilenceKnown && e.Silent:
+		return fmt.Sprintf(
+			"agent %s was spawned and wrote no control frame within %s (run_id=%s): hung before its first report, or its ADK never opened the control descriptor",
+			e.AgentID, e.Waited, e.RunID)
+	case e.SilenceKnown:
+		return fmt.Sprintf(
+			"agent %s spoke but did not reach running within %s (run_id=%s)",
+			e.AgentID, e.Waited, e.RunID)
+	default:
+		return fmt.Sprintf(
+			"timeout waiting for agent %s state=running after %s (run_id=%s)",
+			e.AgentID, e.Waited, e.RunID)
+	}
+}
+
+func (c *Controller) startTimeout(d time.Duration, runID string) error {
+	e := &StartTimeout{AgentID: c.id, RunID: runID, Waited: d}
+	if sr, ok := c.runner.(SpeechReporter); ok {
+		e.SilenceKnown = true
+		e.Silent = !sr.HasSpoken()
+	}
+	return e
+}
+
+// publishFailed announces a supervisor-observed failure on the status
+// topic, carrying the run id so it can be told from the restart behind
+// it. Advisory observability event; see publishControl.
+func (c *Controller) publishFailed(runID, message string) {
+	st := &protopkg.LifecycleStatus{
+		AgentId:  c.id,
+		State:    "FAILED",
+		Message:  message,
+		Time:     timestamppb.Now(),
+		Hostname: c.host,
+		RunId:    runID,
+	}
+	anyMsg, _ := anypb.New(st)
+	if err := c.bus.Publish(eventbus.NewEvent("system", "", eventbus.TopicAgentLifecycleStatus, c.id, anyMsg, true)); err != nil {
+		slog.Default().LogAttrs(context.Background(), slog.LevelError, "failed to publish start-failure status", logattr.Module("lifecycle"), logattr.AgentID(c.id), logattr.Err(err))
 	}
 }
 

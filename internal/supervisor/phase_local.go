@@ -18,11 +18,11 @@ import (
 	"log/slog"
 	"net"
 	"os"
-	"path/filepath"
 	"strconv"
 
 	"google.golang.org/protobuf/types/known/anypb"
 
+	gapiadkpath "github.com/goppydae/gapi/core/adkpath"
 	gapiagentmgr "github.com/goppydae/gapi/core/agentmgr"
 	gapiconfig "github.com/goppydae/gapi/core/config"
 	gapicrypto "github.com/goppydae/gapi/core/crypto"
@@ -324,12 +324,29 @@ func (s *Supervisor) localRuntime(ctx context.Context, st *runState) error {
 	st.localBus = gapieventbus.NewInprocBus[*anypb.Any]()
 	st.lifecycleBus = (*gapilifecycle.TypedBus)(st.localBus)
 
-	// Composed through the kernel's own registry rather than spelled
-	// here, so the name goblin READS cannot drift from the name the
-	// embedded kernel would read for the same key (GOBLIN-DIV-055).
-	pyRunnerPath := os.Getenv(gapiproduct.EnvKey("PY_RUNNER"))
-	if pyRunnerPath == "" {
-		pyRunnerPath = defaultPyRunner()
+	// THE KERNEL RESOLVES ITS OWN ADK, and goblin asks rather than
+	// reimplementing (GAPI-DIV-109, operator decision 45).
+	//
+	// This read the env key directly and fell back to a local
+	// defaultPyRunner that was a VERBATIM COPY of the kernel's old
+	// resolver - including both of its defects: an install tier looking
+	// under <exedir>/adk/python, which no layout produces, and a
+	// cwd-relative last tier returned on faith, which resolves against
+	// / under a systemd unit. Copying a resolver copied its bugs, and
+	// goblin had no gate that could see either.
+	//
+	// The env key is still composed through the kernel's registry, one
+	// layer down inside ResolvePyADK, so GOBLIN-DIV-055's property
+	// holds: the name goblin reads cannot drift from the name the
+	// embedded kernel reads. An empty path is the honest "no Python ADK
+	// on this system" state and the kernel logs it once.
+	pyRunnerPath := ""
+	if adk, aerr := gapiadkpath.ResolvePyADK(); aerr != nil {
+		slog.Default().LogAttrs(ctx, slog.LevelWarn,
+			"no Python ADK found; Python agents cannot be described or started",
+			slog.String("error", aerr.Error()))
+	} else {
+		pyRunnerPath = adk.Runner
 	}
 	// Verification key for production-mode signed discovery (review R20):
 	// config first, then env, mirroring the GAPI supervisor.
@@ -359,30 +376,4 @@ func (s *Supervisor) localRuntime(ctx context.Context, st *runState) error {
 		slog.Default().LogAttrs(ctx, slog.LevelInfo, "local agent manager initialized", logattr.Count(len(discovered)))
 	}
 	return nil
-}
-
-// defaultPyRunner resolves the Python ADK runner when the environment
-// does not name one.
-//
-// It was the literal "/usr/local/bin/gapi-runner", which was wrong twice
-// over. It named the kernel to an operator installing Python agent
-// support (GOBLIN-DIV-056), and NOTHING provisions that path - not the
-// NixOS module, not the Magefile, not any document. A default nobody
-// satisfies is a mechanism built and never wired, so replacing it cannot
-// regress a working deployment: there were none resting on it.
-//
-// Resolution mirrors the kernel's own resolvePyRunner: beside the running
-// binary first, then relative to the working directory, which is what a
-// checkout looks like. Neither is guaranteed to exist, and that is
-// deliberate - the agent manager reports a missing runner when a Python
-// agent is actually started, which is the boundary where the failure is
-// attributable to something an operator did.
-func defaultPyRunner() string {
-	if exe, err := os.Executable(); err == nil {
-		cand := filepath.Join(filepath.Dir(exe), "adk", "python", "agent", "runner.py")
-		if _, err := os.Stat(cand); err == nil {
-			return cand
-		}
-	}
-	return filepath.Join("adk", "python", "agent", "runner.py")
 }

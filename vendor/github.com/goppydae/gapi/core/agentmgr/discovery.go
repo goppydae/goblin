@@ -216,7 +216,20 @@ func (am *AgentManager) discoverFromSinglePath(root string, pathType config.Path
 			// Handle Python Agent
 			desc, err := am.pythonDescribe(p)
 			if err != nil {
-				// println(err.Error()) // quiet for mixed folders
+				// WARN, because the NAME is an explicit declaration of
+				// intent: once a file matches *.py.<type> it is not a stray
+				// README, it is a broken agent, and the operator is the
+				// person who can fix it.
+				//
+				// The comment this replaced ("quiet for mixed folders")
+				// named a real concern that the name check above already
+				// serves - a non-agent file never reaches this branch. What
+				// the silence actually bought was GAPI-DIV-077 presenting as
+				// "agent discovery complete count=0", indistinguishable from
+				// an empty directory (GAPI-DIV-079).
+				slog.Default().LogAttrs(context.Background(), slog.LevelWarn,
+					"agent failed to describe; not registered",
+					logattr.Module("discovery"), logattr.Path(p), logattr.Err(err))
 				return nil
 			}
 			return am.processDiscovered(p, desc.Describe, &agents)
@@ -235,7 +248,19 @@ func (am *AgentManager) discoverFromSinglePath(root string, pathType config.Path
 			// Executable
 			desc, err := am.binaryDescribe(p)
 			if err != nil {
-				// Not a GAPI agent binary
+				// DEBUG rather than WARN, unlike the python branch above,
+				// and the difference is the declaration: an executable on a
+				// search path has declared nothing, so it may legitimately
+				// be an unrelated program and warning on it would be noise
+				// an operator cannot act on.
+				//
+				// It is still REPORTED, with the path and the reason,
+				// because the cost of being wrong here is a real agent
+				// binary skipped in silence - which is the same failure the
+				// python branch had, just less likely.
+				slog.Default().LogAttrs(context.Background(), slog.LevelDebug,
+					"executable did not describe as an agent; not registered",
+					logattr.Module("discovery"), logattr.Path(p), logattr.Err(err))
 				return nil
 			}
 			return am.processDiscovered(p, desc.Describe, &agents)
@@ -491,6 +516,21 @@ func (am *AgentManager) pythonDescribe(modulePath string) (*pyDescribe, error) {
 
 	cmd := exec.CommandContext(ctx, pythonBin, runnerAbs, "--module", modAbs, "--describe")
 
+	// DISCOVERY REFUSES THE STUB EXACTLY AS THE RUN PATH DOES
+	// (GAPI-DIV-086). This invocation used to set no environment at all,
+	// so a runner with no native binding fell back to the stub and
+	// described the agent successfully - while python_agent.go refused
+	// that same runner at start. The node then enumerated an agent it
+	// could not run, and reported both truthfully.
+	//
+	// Gated on productionMode for the same reason the run path is: the
+	// two must answer the question identically, and an answer that
+	// differs by code path is the defect itself. A developer without a
+	// built extension still gets the stub, with the runner's warning.
+	if am.productionMode {
+		cmd.Env = append(os.Environ(), EnvRejectDummy+"=1")
+	}
+
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -524,6 +564,34 @@ func (am *AgentManager) pythonDescribe(modulePath string) (*pyDescribe, error) {
 		return nil, fmt.Errorf("describe: invalid JSON: %w\nstdout: %q\nstderr: %s\ncmd: %s",
 			err, string(out), bytes.TrimSpace(stderr.Bytes()), cmdline)
 	}
+
+	// A SUCCESSFUL DESCRIBE STILL HAS SOMETHING TO SAY (GAPI-DIV-094).
+	//
+	// Every failure path above puts stderr in its error. The success
+	// path read the buffer and dropped it, so the runner's diagnostics
+	// were visible only when something else had already gone wrong -
+	// and discovery then registered the agent and reported completion,
+	// looking healthy.
+	//
+	// The stub warning is the case that motivated this and is no longer
+	// the only one that matters: GAPI-DIV-086 made discovery set
+	// ADK_REJECT_DUMMY in production, so there the stub takes the error
+	// path above. It still arrives here for a developer without a built
+	// extension, and it is the one line on this stream that changes what
+	// the agent MEANS rather than merely how it ran - every capability
+	// it declares is backed by a no-op - so it keeps WARN while ordinary
+	// chatter takes DEBUG.
+	if diag := bytes.TrimSpace(stderr.Bytes()); len(diag) > 0 {
+		level := slog.LevelDebug
+		if bytes.Contains(diag, []byte("the native ADK extension is missing")) {
+			level = slog.LevelWarn
+		}
+		slog.Default().LogAttrs(context.Background(), level,
+			"python describe wrote diagnostics",
+			logattr.Module("agentmgr"), logattr.Path(modAbs),
+			slog.String("stderr", string(diag)))
+	}
+
 	return &d, nil
 }
 

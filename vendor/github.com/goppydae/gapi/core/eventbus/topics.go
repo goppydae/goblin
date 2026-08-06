@@ -43,6 +43,20 @@ const (
 	// events. Payload: LifecycleTransition.
 	TopicAgentLifecycleTransition = "agent/lifecycle.transition"
 
+	// TopicAgentHeartbeat carries an agent's liveness frame. Payload:
+	// Heartbeat - NOT LifecycleStatus. The two answer different
+	// questions: a heartbeat asserts the agent is ALIVE, a status asserts
+	// a TRANSITION. Synthesizing a LifecycleStatus{State:"RUNNING"} for
+	// each heartbeat is the conflation the status proto's own comment
+	// condemns, and it is what the two runners did against a bare string
+	// literal.
+	//
+	// NOTHING SUBSCRIBES YET. Named here rather than left inline because
+	// a topic no consumer can find by name is one no consumer will
+	// subscribe to; the missing consumer belongs in the ledger, not in a
+	// string.
+	TopicAgentHeartbeat = "agent/heartbeat"
+
 	// TopicSystemShutdown is the operator/client -> supervisor system
 	// shutdown request. Payload: wrapperspb.StringValue holding one of
 	// "poweroff", "reboot", "halt"; decode fails closed on anything

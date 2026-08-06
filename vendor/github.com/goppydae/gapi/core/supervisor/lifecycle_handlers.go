@@ -17,16 +17,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/goppydae/gapi/core/adkpath"
 	"github.com/goppydae/gapi/core/agentmgr"
 	"github.com/goppydae/gapi/core/eventbus"
 	"github.com/goppydae/gapi/core/lifecycle"
 	"github.com/goppydae/gapi/core/metrics"
-	"github.com/goppydae/gapi/core/product"
 	"github.com/goppydae/gapi/internal/logattr"
 	protopkg "github.com/goppydae/gapi/pkg/proto"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -198,18 +196,27 @@ func isInFlight(state string) bool {
 	}
 }
 
-func resolvePyRunner() string {
-	if v := os.Getenv(product.EnvKey("PY_RUNNER")); v != "" {
-		return v
+// resolvePyRunner reports the Python runner path for the agent manager,
+// or "" when there is no Python ADK on this system.
+//
+// A DAEMON THAT CANNOT FIND THE ADK SAYS SO ONCE, HERE. The resolver
+// this replaced returned a cwd-relative path when it found nothing, so
+// the failure arrived later as a describe error per agent, naming a
+// path that had never existed on this system (GAPI-DIV-109). Running
+// only Go agents is legitimate, so an absent ADK warns rather than
+// refusing to boot; discovery already reports each agent it cannot
+// describe.
+func resolvePyRunner(logger *slog.Logger) string {
+	adk, err := adkpath.ResolvePyADK()
+	if err != nil {
+		logger.LogAttrs(context.Background(), slog.LevelWarn,
+			"no Python ADK found; Python agents cannot be described or started",
+			logattr.Err(err))
+		return ""
 	}
-	if exe, err := os.Executable(); err == nil {
-		dir := filepath.Dir(exe)
-		cand := filepath.Join(dir, "adk", "python", "agent", "runner.py")
-		if _, err := os.Stat(cand); err == nil {
-			return cand
-		}
-	}
-	return filepath.Join("adk", "python", "agent", "runner.py")
+	logger.LogAttrs(context.Background(), slog.LevelDebug, "python ADK resolved",
+		logattr.Path(adk.Root), slog.String("source", adk.Source))
+	return adk.Runner
 }
 
 func splitCSV(s string) []string {
