@@ -37,7 +37,7 @@ it is `registryALPNs` in `core/transport/listener.go`.
 | Flag | Default | Description |
 | ---- | ------- | ----------- |
 | `--id` | hostname | Unique node ID |
-| `--listen-addr` | `127.0.0.1:29000` | Single control-plane bind address |
+| `--listen-addr` | `127.0.0.1:31415` | Single control-plane bind address |
 | `--advertise-addr` | bind host | Advertise address if it differs from the bind. A bare HOST, not `host:port` - the port follows the listen address |
 | `--join` | | Existing cluster peer to join, as `host:port` |
 | `--bootstrap-expect` | `0` | Seed once this many nodes carrying the same value are visible; one is elected to bootstrap. `0` keeps the seed model, where the node with no `--join` bootstraps alone |
@@ -100,15 +100,15 @@ Three-node cluster. Every node advertises the one address its peers
 dial:
 
 ```bash
-goblind start --id node-1 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.1 --data /var/lib/goblin/raft
+goblind start --id node-1 --listen-addr 0.0.0.0:31415 --advertise-addr 10.0.0.1 --data /var/lib/goblin/raft
 ```
 
 ```bash
-goblind start --id node-2 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.2 --data /var/lib/goblin/raft --join 10.0.0.1:29000
+goblind start --id node-2 --listen-addr 0.0.0.0:31415 --advertise-addr 10.0.0.2 --data /var/lib/goblin/raft --join 10.0.0.1:31415
 ```
 
 ```bash
-goblind start --id node-3 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.3 --data /var/lib/goblin/raft --join 10.0.0.1:29000
+goblind start --id node-3 --listen-addr 0.0.0.0:31415 --advertise-addr 10.0.0.3 --data /var/lib/goblin/raft --join 10.0.0.1:31415
 ```
 
 With TLS:
@@ -140,7 +140,7 @@ goblinctl [command] [flags]
 
 | Flag | Default | Description |
 | ---- | ------- | ----------- |
-| `--control-addr` | `127.0.0.1:29000` | Target node's single listen address |
+| `--control-addr` | `127.0.0.1:31415` | Target node's single listen address |
 | `--tls-ca` | | CA certificate for API TLS verification |
 | `--tls-insecure` | `false` | Skip API TLS verification (INSECURE) |
 
@@ -190,7 +190,7 @@ goblinctl
 Members, the current leader, and scheduled jobs.
 
 ```bash
-goblinctl cluster status --control-addr 10.0.0.1:29000
+goblinctl cluster status --control-addr 10.0.0.1:31415
 ```
 
 ### `goblinctl cluster agent`
@@ -255,7 +255,7 @@ goblinctl cluster publish deploy '{"version":"1.2.3"}'
 A terminal UI over the cluster and the local agents.
 
 ```bash
-goblinctl tui --control-addr 10.0.0.1:29000
+goblinctl tui --control-addr 10.0.0.1:31415
 ```
 
 #### Overview tab
@@ -296,12 +296,12 @@ flags only. The variables that are actually read:
 
 ```bash
 # three-node cluster
-goblind start --id node-1 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.1
-goblind start --id node-2 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.2 --join 10.0.0.1:29000
-goblind start --id node-3 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.3 --join 10.0.0.1:29000
+goblind start --id node-1 --listen-addr 0.0.0.0:31415 --advertise-addr 10.0.0.1
+goblind start --id node-2 --listen-addr 0.0.0.0:31415 --advertise-addr 10.0.0.2 --join 10.0.0.1:31415
+goblind start --id node-3 --listen-addr 0.0.0.0:31415 --advertise-addr 10.0.0.3 --join 10.0.0.1:31415
 
 # inspect
-goblinctl cluster status --control-addr 10.0.0.1:29000
+goblinctl cluster status --control-addr 10.0.0.1:31415
 
 # schedule
 goblinctl cluster agent register ./spec.yaml

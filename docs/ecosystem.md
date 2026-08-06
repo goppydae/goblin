@@ -40,9 +40,9 @@ Used for production clusters and multi-region deployments.
 +--------------------------------------------------------------+
 |  GAPI daemon (gapid)     |  Goblin daemon (goblind)          |
 |  - local supervision     |  - global scheduling              |
-|  - port 14242 (QUIC)     |  - cluster coordination           |
+|  - port 29979 (QUIC)     |  - cluster coordination           |
 |                          |  - embeds the GAPI kernel         |
-|                          |  - port 29000 (QUIC + ALPN)       |
+|                          |  - port 31415 (QUIC + ALPN)       |
 +--------------------------------------------------------------+
 |               GAPI core libraries (gapi/core/*)              |
 |  - agentmgr  - lifecycle  - eventbus  - transport            |
@@ -66,7 +66,7 @@ products manage agents identically. A Goblin deployment is one binary.
 One port carries every protocol, routed by TLS ALPN.
 
 ```
-Goblin QUIC listener :29000
+Goblin QUIC listener :31415
 |-- ALPN "gapi-quic"     -> embedded kernel protocol
 |-- ALPN "goblin-rpc"    -> cluster RPC (SchedulerRPC, NodeRPC)
 |-- ALPN "serf-quic"     -> membership gossip
@@ -115,11 +115,11 @@ Local agent management is always on - `goblind` embeds the kernel, so
 there is no flag to enable it.
 
 ```bash
-goblind start --id node1 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.1
+goblind start --id node1 --listen-addr 0.0.0.0:31415 --advertise-addr 10.0.0.1
 ```
 
 ```bash
-goblind start --id node2 --listen-addr 0.0.0.0:29000 --advertise-addr 10.0.0.2 --join 10.0.0.1:29000
+goblind start --id node2 --listen-addr 0.0.0.0:31415 --advertise-addr 10.0.0.2 --join 10.0.0.1:31415
 ```
 
 ```bash
@@ -131,11 +131,11 @@ Production HA clusters and global scheduling.
 ### Pattern 3: separate GAPI daemon
 
 ```bash
-gapid --runtime-addr 127.0.0.1:14242
+gapid start --listen-addr 127.0.0.1:29979
 ```
 
 ```bash
-goblind start --id node1 --listen-addr 0.0.0.0:29000
+goblind start --id node1 --listen-addr 0.0.0.0:31415
 ```
 
 `goblind` still embeds its own kernel; running `gapid` alongside is for
@@ -173,8 +173,10 @@ goblinctl cluster migrate-instance <instance-uuid> node-2
 - **Provenance**: agent binaries carry a BLAKE3 `.b3` digest and an
   Ed25519 `.sig`. Enforcement is `supervisor.productionMode` in
   `gapid`'s config file, or `GAPI_SUPERVISOR_PRODUCTIONMODE` in its
-  environment. **`gapid` has no `--production` flag** - it accepts only
-  `--runtime-addr`, `--log-level`, `--pid1` and `--no-early-mounts`.
+  environment. **`gapid` has no `--production` flag** - its root carries
+  `--id`, the four `--log-*` names, `--metrics-addr` and the three
+  `--tls-*` names, and `gapid start` adds `--listen-addr`, `--pid1` and
+  `--no-early-mounts`.
   `--production` is `goblind`'s flag, and the two are not the same
   switch: gapi's gates agent signature verification and nothing else,
   where goblin's also refuses to start without TLS.

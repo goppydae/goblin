@@ -80,6 +80,9 @@ func TestGoblindPid1Smoke(t *testing.T) {
 		"--env", "GOBLIN_KMSG_PATH=/tmp/kmsg",
 		"--rootfs", rootfs+":O",
 		"/goblind", "start", "--pid1", "--no-early-mounts",
+		// Deliberately not goblind's default (31415): passing a
+		// non-default port keeps this exercising the flag rather than
+		// the default it would otherwise coincide with.
 		"--id", "node1", "--listen-addr", "127.0.0.1:29000",
 		"--data", "/data/raft", "--log-level", "debug",
 	)

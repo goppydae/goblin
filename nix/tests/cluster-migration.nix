@@ -181,6 +181,12 @@ pkgs.testers.runNixOSTest {
     # wait_for_open_port probes TCP; goblind's control plane is QUIC,
     # which is UDP. There is no TCP listener on 29000 and never will be,
     # so the TCP wait blocked forever against a perfectly healthy node.
+    #
+    # 29000 IS DELIBERATELY NOT goblind's DEFAULT (31415). That is what
+    # gives this grep its meaning: it passes only if --listen-addr was
+    # actually honoured. Moving this fixture onto the default would make
+    # the assertion vacuous - a goblind that ignored the flag entirely
+    # would still bind 31415 and still pass.
     def wait_listening(machine, node_id):
         machine.wait_until_succeeds("ss -uln | grep -q ':29000'", timeout=60)
         assert_running(machine, node_id)
