@@ -31,9 +31,18 @@ import (
 var toolchain = magelib.DoctorConfig{
 	ReplaceTargets: []string{"../gapi", "../magelib"},
 	ProtoPlugins:   []string{"buf", "protoc-gen-go", "protoc-gen-go-grpc"},
-	GopyVersion:    "v0.4.10",
-	RequiredEnv:    []string{"GOBIN"},
-	SharedTools:    []string{"buf", "golangci-lint", "gosec", "govulncheck", "mage", "goimports", "mkdocs", "pandoc", "criu"},
+	// GopyVersion is deliberately UNSET, so doctor reports
+	// "no FFI codegen tool required" rather than checking for gopy.
+	//
+	// goblin generates no Python bindings. Operator decision 49 has it
+	// take gapi as a flake input and copy the ADK gapi has already
+	// BUILT; nothing here runs gopy, and no target in this repo can.
+	// The check was asserting a capability this repo does not use, and
+	// the shell hook built a gopy into $GOBIN to satisfy it - which is
+	// how goblin's shell came to write a stale binary into a SIBLING's
+	// .bin and break gapi's hermetic gate (GOBLIN-DIV-077).
+	RequiredEnv: []string{"GOBIN"},
+	SharedTools: []string{"buf", "golangci-lint", "gosec", "govulncheck", "mage", "goimports", "mkdocs", "pandoc", "criu"},
 }
 
 // fileLengthWaivers is DEBT: hand-written files the 500-line rule applies
@@ -42,15 +51,30 @@ var toolchain = magelib.DoctorConfig{
 // waiver to delete - so this list can only ever shrink. Adding a line to
 // this list is a decision to carry a violation, not to exempt a file.
 //
-// The list is EMPTY, and that is a result rather than a starting state:
-// internal/supervisor/supervisor.go was the one entry, at 1200 lines
-// against the 500 limit. It came off when GOBLIN-DIV-046 closed - the
-// file was split along the boot phases while GOBLIN-DIV-038's ordered
-// shutdown was built, so the boundaries follow the lifecycle rather
-// than a line count. The gate forced the deletion: magelib fails a
-// waiver whose file has come back under the limit, naming the waiver to
-// remove, so the debt could not be paid off silently.
-var fileLengthWaivers = []string{}
+// The list WAS empty, and that was a result rather than a starting
+// state: internal/supervisor/supervisor.go was the one entry, at 1200
+// lines against the 500 limit. It came off when GOBLIN-DIV-046 closed -
+// the file was split along the boot phases while GOBLIN-DIV-038's
+// ordered shutdown was built, so the boundaries follow the lifecycle
+// rather than a line count. The gate forced the deletion: magelib fails
+// a waiver whose file has come back under the limit, naming the waiver
+// to remove, so the debt could not be paid off silently.
+//
+// IT STOPPED BEING EMPTY WHEN `CI` LANDED, and that is a decision rather
+// than an accident. This file sat at 490 lines - ten under the limit -
+// which made it a trap for the next change rather than for the one that
+// put it there. `CI` and `CIVM` are 52 lines, so it went over.
+//
+// Waived rather than split, following operator decision 23: magefiles
+// stay monolithic. A second magefile in this directory WOULD have worked
+// and needed no waiver at all - mage reads every such file - and that is
+// exactly the trade gapi's own waiver records rejecting, on the grounds
+// that one discoverable Magefile is worth more than a clean list.
+//
+// THE EXIT IS TO SHORTEN THIS FILE, NOT TO GROW THIS LIST.
+var fileLengthWaivers = []string{
+	"Magefile.go",
+}
 
 // fileLengthSkips is EXEMPTION, not debt: paths the 500-line rule does
 // not reach at all. They are never measured, so they are never reported
@@ -370,6 +394,60 @@ func All() error {
 	mg.Deps(Fmt, Tidy, Build, Test)
 	fmt.Println("All tasks complete")
 	return nil
+}
+
+// CI reproduces ci.yml's pull-request jobs locally, in CI's order.
+//
+// NOT `All`. All runs Fmt and Tidy, which REPAIR the tree, so it cannot
+// fail the way CI fails: an unformatted file is fixed by All and
+// REJECTED by lint. An audit against the workflows found All covering
+// two of the fourteen things CI runs.
+func CI() error {
+	return magelib.RunCI(magelib.CIConfig{
+		Steps: []magelib.Step{
+			// Environment first. A wrong toolchain makes every result
+			// below meaningless rather than wrong.
+			magelib.Target("doctor", Doctor),
+			magelib.Target("envcheck", EnvCheck),
+			magelib.Target("lint", Lint),
+
+			magelib.Target("build", Build),
+			magelib.Target("vuln", Vuln),
+			magelib.Target("test", Test),
+			magelib.Target("testCluster", TestCluster),
+
+			// Regenerating proves the generator runs; only the diff
+			// proves the COMMITTED output is what the pinned plugins
+			// produce. The baseline matters as much: Proto's own default
+			// compares the tree against itself and can never fail.
+			magelib.Step{Name: "proto (breaking against the merge base)", Run: func() error {
+				if err := magelib.WithProtoBaseline(magelib.ProtoBaseline(), Proto); err != nil {
+					return err
+				}
+				return magelib.AssertClean("pkg/proto")
+			}},
+
+			magelib.Step{Name: "nix build", Run: func() error { return magelib.NixBuild(".#") }},
+			magelib.Step{Name: "nix flake check --all-systems", Run: magelib.NixFlakeCheckAllSystems},
+		},
+		Excluded: []string{
+			"No-Replace Module Resolution - runs `rm -rf vendor` and resolves " +
+				"from the module proxy under a read token; this repo COMMITS vendor/",
+			"VM Checks - deliberately off the pull-request path (vm-checks.yml); " +
+				"run `mage ciVM`",
+			"Integration Against Kernel Main - CI checks out gapi's MAIN and builds " +
+				"against it; go.work here resolves ../gapi at whatever it is checked " +
+				"out to, which is more useful for development and is NOT the same assertion",
+			"release-guard checkVersion - fires on a tag push, not a pull request",
+		},
+	})
+}
+
+// CIVM runs vm-checks.yml: the guest-booting gate, which needs KVM and
+// minutes and is deliberately NOT on the pull-request path.
+func CIVM() error {
+	return sh.RunV("nix", "flake", "check", "--print-build-logs",
+		"--max-jobs", "1", "--keep-going")
 }
 
 // Documentation tasks
