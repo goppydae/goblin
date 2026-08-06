@@ -23,4 +23,6 @@ happens when that changes.
 - [Usage](usage.md) - start a cluster
 - [Architecture](architecture.md) - membership, consensus, event bus, transport
 - [CLI Reference](cli-reference.md) - every `goblind` flag and `goblinctl` command
-- [Ecosystem](ecosystem.md) - how Goblin and GAPI fit together
+
+How Goblin and GAPI divide the work is documented in the goppydae-docs
+repository.

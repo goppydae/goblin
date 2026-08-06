@@ -71,7 +71,7 @@ full flag and command surface see
 - **[Usage](docs/usage.md)**: setup and multi-node guide.
 - **[CLI reference](docs/cli-reference.md)**: every `goblind` flag and `goblinctl` command.
 - **[Architecture](docs/architecture.md)**: Serf, Raft, the event bus, the ALPN registry, live migration.
-- **[Ecosystem](docs/ecosystem.md)**: how Goblin and GAPI divide the work.
+- **Ecosystem**: how Goblin and GAPI divide the work is documented in the goppydae-docs repository.
 
 ## Project Structure
 
