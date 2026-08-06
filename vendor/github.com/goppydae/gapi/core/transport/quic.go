@@ -24,7 +24,6 @@ import (
 	"math/big"
 	"net"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -229,19 +228,29 @@ func (q *QUIC) handleStream(s *quic.Stream) {
 		payload = env.Payload
 	}
 
-	scope := ""
-	topic := env.Topic
-	if i := strings.IndexByte(env.Topic, '/'); i > 0 {
-		scope = env.Topic[:i]
-		topic = env.Topic[i+1:]
-	}
-
+	// THE TOPIC IS OPAQUE (GAPI-DIV-102). Every routing value is read
+	// from the field that declares it; nothing is re-derived from a
+	// delimiter. The splitter that used to stand here recovered the
+	// scope from the topic's first '/' segment, which made the pair
+	// (scope, topic) unencodable without ambiguity and rested on an
+	// unwritten taboo that no topic's first segment may ever be a scope
+	// name.
+	//
+	// A PRE-102 SENDER'S FRAME ARRIVES SCOPELESS, AND THAT IS THE HARD
+	// CUT (operator decision 39). It carries no scope field, so it
+	// reaches the bus with Scope "" and is refused by the ingress
+	// validation GAPI-DIV-100 added - loudly, with a logged reason.
+	// There is deliberately no fallback re-splitting the topic: a
+	// fallback re-deriving scope from a delimiter is precisely the
+	// ambiguity this deletes.
 	e := eventbus.Event[*anypb.Any]{
-		ID:      env.Id,
-		Scope:   scope,
-		Topic:   topic,
-		Source:  env.Source,
-		Payload: payload,
+		ID:        env.Id,
+		Scope:     env.Scope,
+		Namespace: env.Namespace,
+		Topic:     env.Topic,
+		Source:    env.Source,
+		Payload:   payload,
+		Tags:      env.Tags,
 	}
 
 	if q.onRemote != nil {
@@ -256,13 +265,10 @@ func (q *QUIC) PublishRemote(ctx context.Context, e eventbus.Event[*anypb.Any]) 
 	conn := q.conn
 	q.mu.Unlock()
 	if conn == nil {
-		return io.ErrUnexpectedEOF
-	}
-
-	// Capture values for async closure
-	wireTopic := e.Topic
-	if e.Scope != "" {
-		wireTopic = e.Scope + "/" + e.Topic
+		// NOT io.ErrUnexpectedEOF, which asserts that a read ended before
+		// it should have. Nothing was read and nothing went wrong: there
+		// is simply nobody to send to (GAPI-DIV-095).
+		return eventbus.ErrNoPeer
 	}
 
 	// Async publish to prevent blocking on dead clients
@@ -281,12 +287,27 @@ func (q *QUIC) PublishRemote(ctx context.Context, e eventbus.Event[*anypb.Any]) 
 			}
 		}()
 
+		// Every routing value the Event declares is written to the field
+		// that declares it (GAPI-DIV-102). Namespace and tags were
+		// declared on the Envelope and written by nobody, so they were
+		// dropped on every publish in the system's life.
+		//
+		// Event.Broadcast is deliberately absent, and GAPI-DIV-106 is
+		// why: this transport keeps ONE peer slot, so Broadcast and
+		// PublishRemote are the same operation and there is no fan-out
+		// for a receiver to act on. A flag here would encode a decision
+		// no sender can make - and a field produced and never read can
+		// be wrong indefinitely. The gap is a missing peer set, one
+		// layer below the wire.
 		env := &protopkg.Envelope{
-			Id:      e.ID,
-			Topic:   wireTopic,
-			Source:  e.Source,
-			Type:    "event",
-			Payload: e.Payload,
+			Id:        e.ID,
+			Scope:     e.Scope,
+			Namespace: e.Namespace,
+			Topic:     e.Topic,
+			Source:    e.Source,
+			Type:      "event",
+			Payload:   e.Payload,
+			Tags:      e.Tags,
 		}
 
 		data, err := proto.Marshal(env)

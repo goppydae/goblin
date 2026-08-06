@@ -10,21 +10,17 @@ package lifecycle
 
 import (
 	"context"
-
-	"github.com/goppydae/gapi/core/adk/meta"
 )
 
-type Agent interface {
-	Initialize() error
-	Start() error
-	Stop() error
-	Restart() error
-	Reload() error
-	Describe() *meta.AgentInfo
-	ID() string
-	Type() string
-	Scope() string
-}
+// The agent contract this package once declared lived here as an Agent
+// interface returning *adk/meta.AgentInfo. It had no implementors and no
+// consumers in either repo, and its single reason to exist was that
+// method signature - which is why core/adk/meta was reachable from the
+// binaries at all, and why goblin vendored it (GAPI-DIV-082).
+//
+// The live agent contract is core/agentmgr.Agent. If lifecycle needs its
+// own view of an agent later, it should be written against what
+// lifecycle actually does with one rather than restored from here.
 
 type Runner interface {
 	// Start spawns the runner's process. The context bounds the start
@@ -42,6 +38,28 @@ type Runner interface {
 // Optional capability for runners to support per-start correlation.
 type RunIDSetter interface {
 	SetRunID(string)
+}
+
+// SpeechReporter answers whether the current run's child has written any
+// control frame at all (GAPI-DIV-104).
+//
+// A START DEADLINE THAT EXPIRES HAS TWO CAUSES AND THEY NEED DIFFERENT
+// ANSWERS. A child that spoke and has not yet reached RUNNING is slow;
+// a child that has said nothing is either hung before its first report
+// or built against an ADK that never opened the descriptor. Since
+// GAPI-DIV-099 the supervisor learns state only from frames the agent
+// writes, so silence is the sole evidence for the second case - and
+// without this the timeout names neither, reporting only that the wait
+// ended.
+//
+// Optional, on the same terms as RunIDSetter: an in-process runner has
+// no control channel and simply does not implement it, which is
+// distinct from implementing it and answering false.
+type SpeechReporter interface {
+	// HasSpoken reports whether any valid control frame has arrived
+	// since the current run was started. It is reset by Start, so it
+	// answers about this run and not the agent's history.
+	HasSpoken() bool
 }
 
 // Checkpointer is an optional capability for runners whose process can

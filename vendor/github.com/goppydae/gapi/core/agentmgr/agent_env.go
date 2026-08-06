@@ -31,11 +31,36 @@ const (
 	// EnvRunID correlates one agent start with the events it emits.
 	EnvRunID = "ADK_RUN_ID"
 
-	// EnvForceDummy selects the stub ADK without warning, for tests and
-	// for hosts with no native ADK build.
-	EnvForceDummy = "ADK_FORCE_DUMMY"
-
 	// EnvRejectDummy makes falling back to the stub ADK a hard failure.
-	// Set by the supervisor in production mode.
+	// Set by the supervisor in production mode, and by discovery on the
+	// same condition (GAPI-DIV-086) - the two must answer "is a host with
+	// no native build a supported deployment" identically.
+	//
+	// ADK_FORCE_DUMMY IS GONE (operator decision, 2026-08-06). It selected
+	// the stub deliberately, and its own doc string here said it was "for
+	// tests and for hosts with no native ADK build" - which was the
+	// ambiguity -086 existed to remove, preserved in the constant that
+	// created it. Decision 30 had already settled that a host with no
+	// native build is not a supported deployment.
+	//
+	// Setting it alongside this variable also killed the process outright:
+	// FORCE raised the ImportError and REJECT caught it and exited 1. That
+	// looked like a precedence question needing an answer. It was not one.
+	// The stub was only load-bearing because it was the sole Python ADK
+	// whose events the supervisor could hear (GAPI-DIV-099), and it stopped
+	// being that; nothing legitimate needed to force it afterwards. The
+	// stub remains reachable the honest way - by having no extension built
+	// - which is a state the runner still warns about.
 	EnvRejectDummy = "ADK_REJECT_DUMMY"
+
+	// EnvControlFD names the inherited descriptor an agent writes its
+	// typed lifecycle frames to (operator decisions 37 and 38).
+	//
+	// THE VALUE IS A DESCRIPTOR NUMBER, not a count - unlike LISTEN_FDS,
+	// which is a count whose descriptors start at 3. The control
+	// descriptor is passed AFTER any listeners precisely so systemd's
+	// convention is left alone: an agent that also has sockets finds
+	// them exactly where it always did, and finds this one wherever this
+	// variable says.
+	EnvControlFD = "ADK_CONTROL_FD"
 )

@@ -94,8 +94,7 @@ func New(cfg *config.Config) (*Supervisor, error) {
 		pubKey = &pk
 	}
 
-	// Agent Manager
-	pyRunner := resolvePyRunner()
+	pyRunner := resolvePyRunner(logger)
 	var discoveryKey ed25519.PublicKey
 	if pubKey != nil {
 		discoveryKey = *pubKey

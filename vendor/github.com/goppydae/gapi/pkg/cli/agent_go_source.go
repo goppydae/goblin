@@ -14,13 +14,10 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
-	"github.com/goppydae/gapi/core/crypto"
 	"github.com/goppydae/gapi/core/product"
 	"github.com/goppydae/gapi/internal/safeio"
 )
@@ -317,37 +314,6 @@ func (d *goAgentDecls) needsFmtImport() bool {
 	return false
 }
 
-// adkImportPath is the Go ADK runtime's import path. It is adk/go/AGENT,
-// never adk/go: gopy binds every exported symbol in adk/go into the
-// Python ADK's native module, so importing the runtime from there would
-// leak it into Python's C bindings.
-const adkImportPath = "github.com/goppydae/gapi/adk/go/agent"
-
-// assembleGoAgent writes the author's file and the generated main into
-// dir, ready to build.
-//
-// dir MUST be inside this module's tree. The assembled package imports the
-// ADK by module path, so a directory outside the module would need its own
-// go.mod and a resolvable version of the kernel - which turns an offline
-// build into one that reaches the module proxy. Nesting it keeps the
-// build hermetic and makes vendor-mode resolution work unchanged.
-func assembleGoAgent(srcPath, dir string) error {
-	d, err := scanGoAgent(srcPath)
-	if err != nil {
-		return err
-	}
-
-	// The author's file becomes agent.go. Its name no longer carries the
-	// type because the type has already been read out of it.
-	if err := os.WriteFile(filepath.Join(dir, "agent.go"), d.sourceAsMain(), 0600); err != nil {
-		return fmt.Errorf("write agent source: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "main.go"), d.generateMain(adkImportPath), 0600); err != nil {
-		return fmt.Errorf("write generated main: %w", err)
-	}
-	return nil
-}
-
 // goAgentTypes are the type suffixes a Go agent file may carry. They are
 // the same three the Python side uses, because discovery routes on the
 // declared type rather than on the language.
@@ -393,61 +359,6 @@ func goAgentName(path string) string {
 // agent search path; that separation is what buys the naming back.
 func goAgentArtifact(srcPath string) string {
 	return filepath.Base(srcPath)
-}
-
-// buildGoAgent assembles the agent beside its source, compiles it into
-// outDir, and returns the binary path and the hash of what was compiled.
-//
-// The staging directory sits next to the AUTHOR'S FILE rather than in a
-// system temp dir, because the assembled package imports the ADK by
-// module path: staging outside the module tree would need a generated
-// go.mod and a resolvable kernel version, turning an offline build into
-// one that reaches the module proxy. Staging next to the source keeps it
-// inside whatever module the agent already lives in.
-//
-// KNOWN LIMIT, recorded rather than hidden: this therefore assumes the
-// agent lives inside a checkout that can resolve the kernel. A standalone
-// gapictl building an agent in an unrelated directory needs a generated
-// go.mod, which this does not do.
-func buildGoAgent(srcPath, outDir string) (string, string, error) {
-	stage, err := os.MkdirTemp(filepath.Dir(srcPath), ".agent-build-")
-	if err != nil {
-		return "", "", fmt.Errorf("stage dir: %w", err)
-	}
-	defer func() { _ = os.RemoveAll(stage) }()
-
-	if err := assembleGoAgent(srcPath, stage); err != nil {
-		return "", "", err
-	}
-
-	// Hash the STAGED package, not the author's file alone: the generated
-	// main is compiled into the binary too, so a provenance hash that
-	// ignored it would certify an input that is not the whole input.
-	sourceHash, err := crypto.HashDirectory(stage, "*.go")
-	if err != nil {
-		return "", "", fmt.Errorf("hash assembled package: %w", err)
-	}
-
-	if err := os.MkdirAll(outDir, 0750); err != nil {
-		return "", "", fmt.Errorf("create output directory: %w", err)
-	}
-	outBinary, err := filepath.Abs(filepath.Join(outDir, goAgentArtifact(srcPath)))
-	if err != nil {
-		return "", "", fmt.Errorf("resolve output path: %w", err)
-	}
-
-	buildTime := time.Now().Format(time.RFC3339)
-	ldflags := fmt.Sprintf("-X main.SourceHash=%s -X main.BuildTime=%s", sourceHash, buildTime)
-
-	build := exec.Command("go", "build", "-ldflags", ldflags, "-o", outBinary, ".")
-	build.Dir = stage
-	build.Stdout = os.Stdout
-	build.Stderr = os.Stderr
-	if err := build.Run(); err != nil {
-		return "", "", fmt.Errorf("build %s: %w", filepath.Base(srcPath), err)
-	}
-
-	return outBinary, sourceHash, nil
 }
 
 // findGoAgents lists the agent source files under dir.
