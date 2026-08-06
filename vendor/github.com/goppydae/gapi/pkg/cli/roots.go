@@ -273,7 +273,17 @@ func NewGapidRoot(start func(*cobra.Command, []string) error) (*cobra.Command, *
 		// changed shape and every caller is broken, not just this one.
 		panic("gapid: start subcommand missing from daemon root: " + err.Error())
 	}
-	startCmd.Flags().StringVar(&sf.ListenAddr, "listen-addr", "", "Control-plane bind address (default: 127.0.0.1:14242)")
+	// The default is READ from core/product rather than spelled here.
+	// Help text is the form that goes stale in silence, because nothing
+	// executes it: this string said 127.0.0.1:14242 while the value it
+	// described came from controlAddrDefaults, and only agreement by
+	// coincidence kept it true (GAPI-DIV-112).
+	//
+	// Safe at this point because NewDaemonRoot above has already called
+	// product.Set("gapi"); DefaultControlAddr panics on an unset identity
+	// rather than guessing, so an ordering mistake here fails loudly.
+	startCmd.Flags().StringVar(&sf.ListenAddr, "listen-addr", "",
+		fmt.Sprintf("Control-plane bind address (default: %s)", product.DefaultControlAddr()))
 	startCmd.Flags().BoolVar(&sf.Pid1Mode, "pid1", false, "Run as PID 1: Phase 0 pre-userspace boot (subreaper, signals, mounts, reaping)")
 	startCmd.Flags().BoolVar(&sf.NoEarlyMounts, "no-early-mounts", false, "Skip the Phase 0 mount table (container environments)")
 
