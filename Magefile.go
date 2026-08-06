@@ -434,9 +434,19 @@ func TestUnit() error {
 //     Run, covered by TestRun_ProductionModeRequiresTLS).
 //   - G404: math/rand is scheduler placement jitter; there is no adversary
 //     and crypto/rand would add error paths to hot paths for no benefit.
-//   - G304: fires only in test/cluster/gen_certs.go, a dev-cert fixture
-//     generator whose path segments are validated (nodeIDPattern) and
-//     joined under a constant certDir.
+//   - G304: THE STATED REASON FOR THIS ONE WAS FALSE. It read "fires only
+//     in test/cluster/gen_certs.go, a dev-cert fixture generator"; that
+//     fixture is now deleted and G304 still fires at three PRODUCTION
+//     sites - internal/cli/operator.go:64 (writing the operator private
+//     key to an operator-supplied path), core/migration/client.go:121
+//     (writing a checkpoint received from a peer) and
+//     core/migration/server.go:161 (reading one back, which already
+//     carries its own inline //nolint:gosec with a justification). So the
+//     rule-level exclusion covers the key writer and the checkpoint
+//     writer, both of which handle paths the process did not choose,
+//     which is exactly what G304 is for. Kept rather than dropped because
+//     removing it turns lint red and that is a security decision, not a
+//     cleanup. Filed as GOBLIN-DIV-076.
 func Lint() error {
 	mg.Deps(checkHermetic, checkTerminology, checkFileLength, LicenseCheck)
 	return magelib.Lint("G402", "G404", "G304")
