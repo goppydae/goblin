@@ -39,22 +39,6 @@ import (
 var RootCmd, controlFlags = gapicli.NewControlRoot(
 	"goblin", "goblinctl", version.Version, "Goblin distributed supervisor control")
 
-// defaultControlAddr is goblind's default listen address, and it lives here
-// because the shared --control-addr default is EMPTY.
-//
-// The contract gives that empty default the meaning "resolve from
-// config", which keeps config the source of truth and the flag an
-// override. gapictl can honour that; goblinctl cannot, because goblin
-// has no config package at all - there is nothing to resolve from. So
-// empty resolves to the literal below, which is exactly the default this
-// flag carried before it moved to the shared registrar, and the flag's
-// NAME, shorthand and default still come from one definition as the
-// contract requires. Only the interpretation of empty differs, and it
-// differs because one binary has a config loader and the other does not.
-// Recorded as a residual on GOBLIN-DIV-052 rather than papered over: a
-// config source for goblinctl is its own piece of work.
-const defaultControlAddr = "127.0.0.1:29000"
-
 // controlAddrSource records where the address came from, so a failure
 // can say. Empty means the compiled-in default.
 var controlAddrSource string
@@ -66,11 +50,11 @@ var controlAddrAmbiguity error
 // controlAddr is the daemon to talk to: the --control-addr override when
 // given, then a running daemon's PUBLISHED address, then the local node.
 //
-// GOBLIN-DIV-061. The literal below cannot see a Paseo-allocated port,
+// GOBLIN-DIV-061. The default below cannot see a Paseo-allocated port,
 // so goblinctl could not reach a daemon on a non-default port by any
 // route. REPRODUCED BEFORE FIXING, as that entry demands: goblind on
 // 127.0.0.1:29317, and `goblinctl cluster status` with no flag failed
-// with "failed to dial 127.0.0.1:29000" - this literal - while the same
+// with "failed to dial 127.0.0.1:29000" - the built-in default - while the same
 // command with --control-addr connected.
 //
 // The published address is consulted ONLY when no flag was given, so an
@@ -90,13 +74,13 @@ func controlAddr() string {
 		// because choosing between them would be a coin flip that
 		// looks like a decision.
 		controlAddrAmbiguity = err
-		return defaultControlAddr
+		return defaultControlAddr()
 	}
 	if addr != "" {
 		controlAddrSource = from
 		return addr
 	}
-	return defaultControlAddr
+	return defaultControlAddr()
 }
 
 // describeControlTarget explains WHERE goblinctl dialled and why, for an

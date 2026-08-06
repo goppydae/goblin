@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	gapiproduct "github.com/goppydae/gapi/core/product"
 	gapicli "github.com/goppydae/gapi/pkg/cli"
 	"github.com/goppydae/goblin/internal/version"
 )
@@ -87,7 +88,16 @@ func NewGoblindRoot(start func(*cobra.Command, []string) error) (*cobra.Command,
 	f := startCmd.Flags()
 
 	// Cluster membership and control plane.
-	f.StringVar(&sf.ListenAddr, "listen-addr", "127.0.0.1:29000",
+	// The default is READ from the kernel's table, not spelled here.
+	// This was the SECOND local declaration of goblin's control port
+	// (GOBLIN-DIV-073); with the const in cli.go it meant goblind and
+	// goblinctl each carried their own copy of one value, and the kernel
+	// a third that one goblinctl path already read.
+	//
+	// Safe here because gapicli.NewDaemonRoot above has already called
+	// product.Set("goblin"); DefaultControlAddr panics on an unset
+	// identity rather than guessing another product's port.
+	f.StringVar(&sf.ListenAddr, "listen-addr", gapiproduct.DefaultControlAddr(),
 		"Single control-plane bind address (QUIC; carries agent events, RPC, Serf, and Raft via ALPN)")
 	f.StringVar(&sf.AdvertiseAddr, "advertise-addr", "", "Advertise address (if different from bind)")
 	f.StringVar(&sf.JoinAddr, "join", "", "Join existing cluster peer (host:port)")
