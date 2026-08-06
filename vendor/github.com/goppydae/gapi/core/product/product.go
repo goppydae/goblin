@@ -97,7 +97,7 @@ var directEnv = map[string]string{
 //
 // Every other surface here falls out of the name by string composition:
 // Daemon is Name()+"d", ConfigDir is /etc/<name>, EnvPrefix is the name
-// upper-cased. A PORT does not. 29000 does not fall out of "goblin", and
+// upper-cased. A PORT does not. 31415 does not fall out of "goblin", and
 // Daemon's own comment anticipated this case - "a product whose daemon
 // is not <product>d would need a second value here". This is the first
 // such value (GAPI-DIV-071).
@@ -111,9 +111,47 @@ var directEnv = map[string]string{
 // The addresses are LOOPBACK deliberately. A control plane that binds
 // every interface by default is a decision an operator should have to
 // make, and both architecture docs already specified 127.0.0.1.
+// THE NUMBERS ARE MNEMONIC, and the scheme is written down because the
+// last one was not (operator decision 47). The CONTROL port is what the
+// product IS: 29979 is c, the speed of light, for the kernel; 31415 is
+// pi, the closed circle of a cluster, for the orchestrator. goblin takes
+// the higher number of each pair.
+//
+// The reasoning for the PREVIOUS numbers was never recorded and could
+// not be reconstructed from the ledger, the handoff or the vault. 14242
+// is one transposed digit from 14142 = sqrt(2), which may be all it ever
+// was. That is the argument for this paragraph existing.
+//
+// CONSTRAINT ON ANY VALUE HERE: between 1024 and 32767 - above the
+// privileged range and BELOW the ephemeral floor, measured at
+// 32768-60999 on the development host. A default inside the ephemeral
+// range can be taken by an outbound connection before the daemon binds,
+// which presents as an intermittent bind failure that looks like a race
+// and is not.
 var controlAddrDefaults = map[string]string{
-	"gapi":   "127.0.0.1:14242",
-	"goblin": "127.0.0.1:29000",
+	"gapi":   "127.0.0.1:29979",
+	"goblin": "127.0.0.1:31415",
+}
+
+// metricsAddrDefaults is the same shape for the Prometheus listener, and
+// it is an INDEPENDENT table rather than a derivation from the control
+// port (control+1 was proposed and rejected, operator decision 47).
+//
+// GAPI-DIV-111: this was ONE shared literal, 127.0.0.1:19090, set for
+// every product by a config loader that was product-aware on the line
+// immediately above it. gapid and goblind on one host therefore defaulted
+// to the same metrics listener and contended for it. LATENT rather than
+// active - metrics.enabled defaults to false, so nothing binds it today -
+// which is exactly why it survived: the first operator to enable metrics
+// on both daemons gets a bind failure naming neither product.
+//
+// The METRICS numbers come from spectroscopy, the science of reading a
+// system without consuming it, which is what a metrics endpoint is for:
+// 10973 is the Rydberg constant, 13703 the inverse fine-structure
+// constant. The same 1024-32767 constraint applies and both satisfy it.
+var metricsAddrDefaults = map[string]string{
+	"gapi":   "127.0.0.1:10973",
+	"goblin": "127.0.0.1:13703",
 }
 
 var (
@@ -222,6 +260,26 @@ func DefaultControlAddr() string {
 			"controlAddrDefaults in core/product with the address its daemon "+
 			"binds; falling back to another product's port would bind the "+
 			"wrong one in silence.", n, n))
+	}
+	return addr
+}
+
+// DefaultMetricsAddr is the product's zero-config Prometheus listen
+// address.
+//
+// PANICS on an unknown identity for the same reason DefaultControlAddr
+// does, and the reason is sharper here: the defect this replaces was
+// every product silently sharing ONE address (GAPI-DIV-111), so a
+// fallback would reinstate exactly the collision it removes.
+func DefaultMetricsAddr() string {
+	n := Name()
+	addr, ok := metricsAddrDefaults[n]
+	if !ok {
+		panic(fmt.Sprintf("product %q has no default metrics address. "+
+			"A port cannot be derived from a product name, so add %q to "+
+			"metricsAddrDefaults in core/product with the address its "+
+			"daemon binds; falling back to another product's port would "+
+			"make two daemons on one host contend for one listener.", n, n))
 	}
 	return addr
 }

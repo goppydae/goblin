@@ -192,7 +192,7 @@ func Load() (*Config, error) {
 	v.SetDefault("transport.address", product.DefaultControlAddr())
 	v.SetDefault("transport.insecureSkipVerify", true)
 	v.SetDefault("metrics.enabled", false)
-	v.SetDefault("metrics.addr", "127.0.0.1:19090")
+	v.SetDefault("metrics.addr", product.DefaultMetricsAddr())
 
 	// Logging defaults
 	v.SetDefault("logging.level", "info")
