@@ -1,6 +1,6 @@
 # Goblin
 
-**Goblin** extends [GAPI](https://github.com/goppydae/gapi) with distributed orchestration.
+**Goblin** extends GAPI with distributed orchestration.
 
 GAPI is the kernel: single-node process supervision, mechanism only.
 Goblin is the policy layer around it - which node runs what, and what

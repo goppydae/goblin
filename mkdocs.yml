@@ -16,8 +16,6 @@ nav:
   - Architecture: architecture.md
   - CLI Reference: cli-reference.md
   - Ecosystem: ecosystem.md
-  - Cluster Validation: cluster_validation.md
-  - Cursed Knowledge: cursed-knowledge.md
 
 markdown_extensions:
   - admonition
