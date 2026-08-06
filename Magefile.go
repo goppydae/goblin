@@ -398,7 +398,7 @@ func (Docs) Man() error {
 
 	// Generate man pages for Goblin commands
 	pages := map[string]string{
-		"docs/index.md":           "man/man1/goblin.1",
+		"docs/content/_index.md":  "man/man1/goblin.1",
 		"docs/getting-started.md": "man/man1/goblin-quickstart.1",
 	}
 

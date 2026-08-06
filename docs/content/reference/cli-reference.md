@@ -1,3 +1,8 @@
+---
+title: "CLI Reference"
+weight: 10
+---
+
 # Goblin CLI Reference
 
 The single reference for both binaries: `goblind` (the daemon) and
