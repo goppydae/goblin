@@ -96,7 +96,7 @@ Everything shares a single QUIC listener, routed by TLS ALPN. There are
 no separate Serf, Raft or API ports.
 
 ```
-QUIC listener :29000
+QUIC listener :31415
 |-- ALPN "gapi-quic"     -> embedded GAPI kernel protocol
 |-- ALPN "goblin-rpc"    -> goblinctl and scheduler RPC
 |-- ALPN "serf-quic"     -> membership gossip
