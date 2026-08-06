@@ -389,6 +389,19 @@ func checkFileLength() error {
 	return magelib.CheckFileLength(fileLengthWaivers, fileLengthSkips...)
 }
 
+// checkLedger gates the divergence ledger's STRUCTURE, not its content.
+//
+// The ledger is this project's honesty layer and nothing checked its
+// shape: `jq -e .` proves each line is JSON and says nothing about which
+// keys it carries. Two entries were filed without an `opened` date and
+// nothing noticed until one was rendered by hand to read it.
+func checkLedger() error {
+	if err := magelib.CheckDivergence("divergence.jsonl"); err != nil {
+		return err
+	}
+	return magelib.CheckDeprecation("deprecation.jsonl")
+}
+
 // All runs fmt, tidy, build, and test
 func All() error {
 	mg.Deps(Fmt, Tidy, Build, Test)
@@ -526,7 +539,7 @@ func TestUnit() error {
 //     removing it turns lint red and that is a security decision, not a
 //     cleanup. Filed as GOBLIN-DIV-076.
 func Lint() error {
-	mg.Deps(checkHermetic, checkTerminology, checkFileLength, LicenseCheck)
+	mg.Deps(checkHermetic, checkTerminology, checkFileLength, checkLedger, LicenseCheck)
 	return magelib.Lint("G402", "G404", "G304")
 }
 
