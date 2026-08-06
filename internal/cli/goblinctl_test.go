@@ -135,8 +135,8 @@ func TestControlAddr_ResolvesEmptyToTheLocalNode(t *testing.T) {
 	t.Cleanup(func() { controlFlags.ControlAddr = saved })
 
 	controlFlags.ControlAddr = ""
-	if got := controlAddr(); got != defaultControlAddr {
-		t.Errorf("empty --control-addr resolved to %q, want %q", got, defaultControlAddr)
+	if got := controlAddr(); got != defaultControlAddr() {
+		t.Errorf("empty --control-addr resolved to %q, want %q", got, defaultControlAddr())
 	}
 
 	// The control disagrees with the default, so this fails if
