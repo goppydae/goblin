@@ -1,0 +1,43 @@
+.nh
+.TH "goblinctl" "1" "Jan 1970" "goblinctl 0.1.0-proto2g" "General Commands Manual"
+
+.SH NAME
+goblinctl-agent-crypto - Cryptography utilities
+
+
+.SH SYNOPSIS
+\fBgoblinctl agent crypto [flags]\fP
+
+
+.SH DESCRIPTION
+Cryptography utilities
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for crypto
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--control-addr\fP=""
+	Address of the target daemon's control plane (empty: from config)
+
+.PP
+\fB--log-level\fP=""
+	Log level: debug, info, warn, error
+
+.PP
+\fB--tls-ca\fP=""
+	CA certificate used to verify the daemon
+
+.PP
+\fB--tls-insecure\fP[=false]
+	Skip verification (INSECURE)
+
+.PP
+\fB-v\fP, \fB--version\fP[=false]
+	version for goblinctl
+
+
+.SH SEE ALSO
+\fBgoblinctl-agent(1)\fP, \fBgoblinctl-agent-crypto-age-keygen(1)\fP, \fBgoblinctl-agent-crypto-decrypt(1)\fP, \fBgoblinctl-agent-crypto-encrypt(1)\fP, \fBgoblinctl-agent-crypto-keygen(1)\fP, \fBgoblinctl-agent-crypto-sign(1)\fP, \fBgoblinctl-agent-crypto-verify(1)\fP

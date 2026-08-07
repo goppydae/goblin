@@ -1,0 +1,43 @@
+.nh
+.TH "goblinctl" "1" "Jan 1970" "goblinctl 0.1.0-proto2g" "General Commands Manual"
+
+.SH NAME
+goblinctl-cluster-run - Submit a job to the cluster (YAML or JSON)
+
+
+.SH SYNOPSIS
+\fBgoblinctl cluster run  [flags]\fP
+
+
+.SH DESCRIPTION
+Submit a job to the cluster (YAML or JSON)
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for run
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--control-addr\fP=""
+	Address of the target daemon's control plane (empty: from config)
+
+.PP
+\fB--log-level\fP=""
+	Log level: debug, info, warn, error
+
+.PP
+\fB--tls-ca\fP=""
+	CA certificate used to verify the daemon
+
+.PP
+\fB--tls-insecure\fP[=false]
+	Skip verification (INSECURE)
+
+.PP
+\fB-v\fP, \fB--version\fP[=false]
+	version for goblinctl
+
+
+.SH SEE ALSO
+\fBgoblinctl-cluster(1)\fP

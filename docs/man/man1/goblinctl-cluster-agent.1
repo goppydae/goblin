@@ -1,0 +1,43 @@
+.nh
+.TH "goblinctl" "1" "Jan 1970" "goblinctl 0.1.0-proto2g" "General Commands Manual"
+
+.SH NAME
+goblinctl-cluster-agent - Global agent specification management (specs, scheduling)
+
+
+.SH SYNOPSIS
+\fBgoblinctl cluster agent [flags]\fP
+
+
+.SH DESCRIPTION
+Global agent specification management (specs, scheduling)
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for agent
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--control-addr\fP=""
+	Address of the target daemon's control plane (empty: from config)
+
+.PP
+\fB--log-level\fP=""
+	Log level: debug, info, warn, error
+
+.PP
+\fB--tls-ca\fP=""
+	CA certificate used to verify the daemon
+
+.PP
+\fB--tls-insecure\fP[=false]
+	Skip verification (INSECURE)
+
+.PP
+\fB-v\fP, \fB--version\fP[=false]
+	version for goblinctl
+
+
+.SH SEE ALSO
+\fBgoblinctl-cluster(1)\fP, \fBgoblinctl-cluster-agent-delete(1)\fP, \fBgoblinctl-cluster-agent-get(1)\fP, \fBgoblinctl-cluster-agent-instances(1)\fP, \fBgoblinctl-cluster-agent-list(1)\fP, \fBgoblinctl-cluster-agent-register(1)\fP, \fBgoblinctl-cluster-agent-scale(1)\fP, \fBgoblinctl-cluster-agent-signal(1)\fP

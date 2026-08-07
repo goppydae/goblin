@@ -1,0 +1,67 @@
+.nh
+.TH "goblinctl" "1" "Jan 1970" "goblinctl 0.1.0-proto2g" "General Commands Manual"
+
+.SH NAME
+goblinctl-agent-verify - Verify agent binary integrity and authenticity
+
+
+.SH SYNOPSIS
+\fBgoblinctl agent verify  [flags]\fP
+
+
+.SH DESCRIPTION
+Verify agent binary using hash chain and optional signature.
+
+.PP
+Verification steps:
+  1. Binary hash (compares against .b3 file)
+  2. Signature (if .sig file exists and --pubkey provided)
+  3. Source hash (if --check-source and source available)
+
+.PP
+Examples:
+  goblinctl agent verify agents/my_service.go.service
+  goblinctl agent verify agents/my_service.go.service --pubkey=key.pub
+  goblinctl agent verify agents/my_service.go.service --check-source --source=src/agents/my_service.go.service
+
+
+.SH OPTIONS
+\fB--check-source\fP[=false]
+	Verify source hash
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for verify
+
+.PP
+\fB--pubkey\fP=""
+	Public key for signature verification
+
+.PP
+\fB--source\fP=""
+	Source directory path (for source verification)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--control-addr\fP=""
+	Address of the target daemon's control plane (empty: from config)
+
+.PP
+\fB--log-level\fP=""
+	Log level: debug, info, warn, error
+
+.PP
+\fB--tls-ca\fP=""
+	CA certificate used to verify the daemon
+
+.PP
+\fB--tls-insecure\fP[=false]
+	Skip verification (INSECURE)
+
+.PP
+\fB-v\fP, \fB--version\fP[=false]
+	version for goblinctl
+
+
+.SH SEE ALSO
+\fBgoblinctl-agent(1)\fP

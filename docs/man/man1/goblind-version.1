@@ -1,0 +1,63 @@
+.nh
+.TH "goblind" "1" "Jan 1970" "goblind 0.1.0-proto2g" "General Commands Manual"
+
+.SH NAME
+goblind-version - Print version info
+
+
+.SH SYNOPSIS
+\fBgoblind version [flags]\fP
+
+
+.SH DESCRIPTION
+Print version info
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for version
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--id\fP=""
+	Unique node identifier (default: hostname)
+
+.PP
+\fB--log-file\fP=""
+	Additional rotated file sink
+
+.PP
+\fB--log-format\fP=""
+	Log format: json or console
+
+.PP
+\fB--log-level\fP=""
+	Log level: debug, info, warn, error
+
+.PP
+\fB--log-loki-url\fP=""
+	Forward logs to a Loki endpoint
+
+.PP
+\fB--metrics-addr\fP=""
+	Prometheus listen address (empty: disabled)
+
+.PP
+\fB--tls-ca\fP=""
+	CA certificate for peer verification
+
+.PP
+\fB--tls-cert\fP=""
+	This node's certificate
+
+.PP
+\fB--tls-key\fP=""
+	This node's private key
+
+.PP
+\fB-v\fP, \fB--version\fP[=false]
+	version for goblind
+
+
+.SH SEE ALSO
+\fBgoblind(1)\fP

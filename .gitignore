@@ -59,11 +59,30 @@ gapi.sock
 *.sqlite
 
 # --- Generated Documentation ---
-docs/_build/
-docs/build/
-docs/generated/
-site/
-man/
+#
+# GENERATED REFERENCE IS COMMITTED. docs/content/reference, docs/man and
+# the pages under them are produced by `mage docs:generate` and checked
+# in, so the reference reads on the forge without a build and the drift
+# gate has committed bytes to compare against. Only the RENDERED SITE and
+# the materialised magelib asset tree are ignored.
+#
+# The mkdocs-era patterns are gone with the targets that produced them:
+# docs/_build/, docs/build/, docs/generated/ and site/ were mkdocs
+# output. An ignore rule for a directory nothing writes tells a future
+# reader the build still works that way.
+docs/public/
+docs/.magelib/
+docs/resources/
+.hugo_build.lock
+# ANCHORED. Unanchored `man/` matches docs/man/ as well as the legacy
+# root-level output, so every generated man page would have been
+# silently excluded from the commit while `mage docs:check` passed
+# locally and a fresh clone had nothing to compare. That is the same
+# defect shape as an unanchored rsync exclude reading as a platform
+# incompatibility: a pattern that matches more than it names, failing
+# quietly. gapi hit this exact line; caught here by
+# `git check-ignore -v` on a path the gate depends on.
+/man/
 
 # --- Mage Build Artifacts ---
 mage_output/

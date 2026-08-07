@@ -27,7 +27,8 @@ happens when that changes.
 - [Overview](user/overview.md) - what Goblin is, in one screen
 - [Usage](user/usage.md) - start a cluster
 - [Architecture](architecture.md) - membership, consensus, event bus, transport
-- [CLI Reference](reference/cli-reference.md) - every `goblind` flag and `goblinctl` command
+- [CLI Reference](reference/) - every `goblind` flag and `goblinctl` command,
+  generated from the command trees and gated against them
 
 How Goblin and GAPI divide the work is documented in the goppydae-docs
 repository.

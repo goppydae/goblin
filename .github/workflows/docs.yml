@@ -1,0 +1,93 @@
+name: Documentation
+
+# Goal 5 of the documentation programme: every site is actually
+# reachable. GOBLIN-DIV-078 recorded the state this ends - a content
+# tree with no site configuration, no docs workflow on any branch, and
+# no magelib.DocsConfig, so DocsSync, DocsBuild and the drift gate were
+# all unreachable.
+#
+# The build job runs on pull requests too, and deliberately: a site that
+# only builds on main tells you it is broken after the merge. Deploy is
+# gated to main, so a pull request proves the render without publishing
+# it.
+#
+# TAGS DO NOT BUILD OR DEPLOY, and the reason is a property of Pages
+# rather than a preference: an actions/deploy-pages deployment REPLACES
+# the whole site. A tag cannot add itself alongside what is published; it
+# can only overwrite it, and the next push to main overwrites it back.
+# So a tag deploy is not versioning - it is a race with no winner.
+#
+# Versioned documentation, when it is wanted, belongs in THIS job: the
+# main build enumerates the released tags, renders each into its own
+# subdirectory, and deploys the assembled tree as ONE artifact. That
+# keeps the site a pure function of the repository, with no accumulated
+# state and no second deployment to race. See MAGELIB-DIV-011.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Pages allows one concurrent deployment. cancel-in-progress is false
+# rather than true: cancelling a half-finished deployment leaves the
+# published site in whatever state it reached, which is worse than
+# queueing behind it.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Render the Site
+    runs-on: ubuntu-latest
+    env:
+      # CI has no sibling checkouts for the committed go.work to resolve;
+      # vendored builds are the lone-clone contract. This job needs it
+      # for the same reason the others do - mage compiles the Magefile
+      # against magelib, and docs:generate shells out to
+      # `go run ./tools/gendocs`, which resolves the kernel too.
+      GOWORK: "off"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Synchronize Environment (Nix)
+        uses: cachix/install-nix-action@v24
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      # docs:build syncs the shared assets, regenerates the reference,
+      # and renders. It does NOT gate the result: the drift check is part
+      # of `mage lint` in the CI workflow, because a stale reference is a
+      # lint failure on the pull request rather than a deploy failure
+      # after merge.
+      - name: Build Documentation
+        run: nix develop -c mage -v docs:build
+
+      - name: Upload Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/public
+
+  deploy:
+    name: Publish to Pages
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    # Kept as an explicit guard even though the trigger above no longer
+    # fires on tags. Two independent conditions have to be wrong before
+    # a non-main ref can publish, and the trigger is the one a later
+    # change is likely to widen without thinking about this job.
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,70 @@
+.nh
+.TH "goblinctl" "1" "Jan 1970" "goblinctl 0.1.0-proto2g" "General Commands Manual"
+
+.SH NAME
+goblinctl-agent-build - Build Go agents
+
+
+.SH SYNOPSIS
+\fBgoblinctl agent build [path] [flags]\fP
+
+
+.SH DESCRIPTION
+Build Go agents from source and generate checksums.
+
+.PP
+Examples:
+  goblinctl agent build src/agents/init.go.service
+  goblinctl agent build src/agents/
+  goblinctl agent build --watch src/agents/cluster_join.go.service
+  goblinctl agent build --sign --key=agent-signing.key src/agents/init.go.service
+
+
+.SH OPTIONS
+\fB--cgo\fP[=false]
+	Build the agent with cgo enabled (default: disabled, so no C compiler is needed)
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for build
+
+.PP
+\fB--key\fP=""
+	Path to ED25519 signing key
+
+.PP
+\fB-o\fP, \fB--output\fP="agents"
+	Output directory for built agents
+
+.PP
+\fB--sign\fP[=false]
+	Sign the built binary with ED25519
+
+.PP
+\fB-w\fP, \fB--watch\fP[=false]
+	Watch for changes and rebuild
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--control-addr\fP=""
+	Address of the target daemon's control plane (empty: from config)
+
+.PP
+\fB--log-level\fP=""
+	Log level: debug, info, warn, error
+
+.PP
+\fB--tls-ca\fP=""
+	CA certificate used to verify the daemon
+
+.PP
+\fB--tls-insecure\fP[=false]
+	Skip verification (INSECURE)
+
+.PP
+\fB-v\fP, \fB--version\fP[=false]
+	version for goblinctl
+
+
+.SH SEE ALSO
+\fBgoblinctl-agent(1)\fP
