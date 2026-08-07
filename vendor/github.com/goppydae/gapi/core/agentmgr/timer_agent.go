@@ -186,7 +186,7 @@ func (ta *TimerAgent) publishStatusWithRunID(state, message, rid string) {
 	if err != nil {
 		return
 	}
-	ev := eventbus.NewEvent[*anypb.Any]("system", "", eventbus.TopicAgentLifecycleStatus, ta.id, anyp, true)
+	ev := eventbus.NewEvent[*anypb.Any]("system", "", eventbus.TopicAgentLifecycleStatus, ta.id, anyp)
 	_ = ta.lbus.Publish(ev)
 }
 

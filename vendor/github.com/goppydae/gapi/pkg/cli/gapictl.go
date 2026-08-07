@@ -111,26 +111,46 @@ func GetRoot() *cobra.Command {
 var pingCmd = &cobra.Command{
 	Use:   "ping",
 	Short: "Ping the daemon",
-	Run: func(cmd *cobra.Command, args []string) {
+	// RunE, and the error is RETURNED rather than printed (GAPI-DIV-120).
+	//
+	// This was `Run` with a bare `return` after printing "FAIL: %v", so a
+	// ping that timed out EXITED 0. Nothing downstream could tell a live
+	// daemon from a dead one, and the ADK harness's waitForReady is
+	// exactly that caller: it treats `cmd.Run() == nil` as ready, so its
+	// readiness gate could not fail. It burned the full 30s deadline,
+	// reported ready, and let the suite proceed against a daemon that had
+	// never answered - which surfaced later as `gapictl status` failing
+	// with `context deadline exceeded`, naming the wrong subject.
+	//
+	// A probe that cannot report failure is not a probe. The exit status
+	// IS this command's output; the printed line is for humans.
+	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, _ := controlConfig()
 		c, err := newControlClient(cfg)
 		if err != nil {
-			log.Fatalf("failed to init client: %v", err)
+			return fmt.Errorf("failed to init client: %w", err)
 		}
 
 		fmt.Print("pinging... ")
-		// 30s timeout
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
 		defer cancel()
 
 		status, err := c.Ping(ctx)
 		if err != nil {
-			fmt.Printf("FAIL: %v\n", err)
-			return
+			fmt.Println("FAIL")
+			return fmt.Errorf("ping: %w", err)
 		}
 		fmt.Println("message:", status)
+		return nil
 	},
 }
+
+// pingTimeout bounds a single `gapictl ping`.
+//
+// Named rather than inline because it is the number the ADK harness
+// pays per supervisor start when a ping goes unanswered, and an
+// unexplained literal is what let 30 seconds hide there (GAPI-DIV-120).
+const pingTimeout = 30 * time.Second
 
 // reload
 var agentReloadCmd = &cobra.Command{

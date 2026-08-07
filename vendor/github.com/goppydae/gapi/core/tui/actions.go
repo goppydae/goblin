@@ -73,7 +73,7 @@ func sendLifecycleAction(agentID, action string) tea.Cmd {
 		}
 		packed, _ := anypb.New(req)
 		// Send control event
-		if err := bus.Publish(eventbus.NewEvent("system", "", eventbus.TopicAgentLifecycleAction, "gapictl-tui", packed, true)); err != nil {
+		if err := bus.Publish(eventbus.NewEvent("system", "", eventbus.TopicAgentLifecycleAction, "gapictl-tui", packed)); err != nil {
 			return lifecycleActionMsg{agentID: agentID, action: action, success: false, err: err}
 		}
 

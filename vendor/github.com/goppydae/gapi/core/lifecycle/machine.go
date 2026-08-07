@@ -87,7 +87,6 @@ func (lsm *LifecycleStateMachine) emitLifecycleEvent(from, to string) {
 		eventbus.TopicAgentLifecycleTransition,
 		lsm.agentID,
 		anyMsg,
-		true,
 	)
 
 	// Advisory observability event: log failures loudly, never abort the

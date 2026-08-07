@@ -747,7 +747,7 @@ func (a *PythonAgent) publishStatusWithRunID(state, message, rid string) {
 		RunId:    rid,
 	}
 	anyp, _ := anypb.New(st)
-	ev := eventbus.NewEvent[*anypb.Any]("system", "", eventbus.TopicAgentLifecycleStatus, a.id, anyp, true)
+	ev := eventbus.NewEvent[*anypb.Any]("system", "", eventbus.TopicAgentLifecycleStatus, a.id, anyp)
 	_ = a.bus.Publish(ev)
 }
 
@@ -767,7 +767,7 @@ func (a *PythonAgent) publishHeartbeat(hb *protopkg.Heartbeat) {
 	if err != nil {
 		return
 	}
-	e := eventbus.NewEvent[*anypb.Any]("system", "", eventbus.TopicAgentHeartbeat, a.id, anyp, false)
+	e := eventbus.NewEvent[*anypb.Any]("system", "", eventbus.TopicAgentHeartbeat, a.id, anyp)
 	_ = a.bus.Publish(e)
 }
 
@@ -806,7 +806,7 @@ func (a *PythonAgent) publishLog(stream string, data any) {
 	}
 
 	anyp, _ := anypb.New(logMsg)
-	ev := eventbus.NewEvent[*anypb.Any]("system", "", "logs", a.id, anyp, false)
+	ev := eventbus.NewEvent[*anypb.Any]("system", "", "logs", a.id, anyp)
 	_ = a.bus.Publish(ev)
 }
 

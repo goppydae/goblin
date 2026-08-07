@@ -46,10 +46,39 @@ type TLSConfig struct {
 
 type QUIC struct {
 	listener *quic.Listener
-	conn     *quic.Conn
-	mu       sync.Mutex
+
+	// A SET, NOT A SLOT (GAPI-DIV-106). This was one `conn *quic.Conn`
+	// that handleConn assigned unconditionally, so it was
+	// last-writer-wins with no eviction and no log: a second client
+	// silently displaced the first, and only the newest peer ever
+	// received a server-initiated push.
+	//
+	// It went unnoticed because request/response rides a
+	// CLIENT-opened stream and was unaffected, while the displaced
+	// subscriber simply stopped hearing - no error at either end. A
+	// single operator running the TUI already holds two of these
+	// (core/client.New dials once for the status poller; core/tui
+	// opens a second client per lifecycle action), so serving one peer
+	// was never enough and refusing the second was never an option.
+	//
+	// Keyed by connection because that is the identity the lifecycle
+	// already has: handleConn owns exactly one, adds it on entry and
+	// removes it when its AcceptStream loop ends, which IS the death
+	// of that connection.
+	peers map[*quic.Conn]struct{}
+	mu    sync.Mutex
 
 	onRemote func(eventbus.Event[*anypb.Any])
+}
+
+// PeerCount reports how many connections this transport would address.
+// Exported for tests: "the publish reached both peers" is only a
+// meaningful assertion once "both peers are attached" can be awaited
+// rather than slept on.
+func (q *QUIC) PeerCount() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return len(q.peers)
 }
 
 // ---- Constructors ----
@@ -67,7 +96,7 @@ func NewQUICServer(addr string, cert tls.Certificate) (*QUIC, error) {
 	if err != nil {
 		return nil, err
 	}
-	q := &QUIC{listener: ln}
+	q := &QUIC{listener: ln, peers: make(map[*quic.Conn]struct{})}
 	go q.acceptLoop(ln)
 	return q, nil
 }
@@ -89,7 +118,11 @@ func NewQUICClient(addr string, cert *tls.Certificate, tlsConfig TLSConfig) (*QU
 	if err != nil {
 		return nil, err
 	}
-	q := &QUIC{conn: conn}
+	// The client does not seed the set itself: handleConn adds the
+	// connection and removes it when it dies, so a client's own peer has
+	// exactly the lifecycle a server's does and there is one place that
+	// owns membership.
+	q := &QUIC{peers: make(map[*quic.Conn]struct{})}
 	go q.handleConn(conn)
 	return q, nil
 }
@@ -184,8 +217,20 @@ func (q *QUIC) acceptLoop(ln *quic.Listener) {
 
 func (q *QUIC) handleConn(conn *quic.Conn) {
 	q.mu.Lock()
-	q.conn = conn
+	q.peers[conn] = struct{}{}
 	q.mu.Unlock()
+
+	// REMOVAL BELONGS HERE AND NOWHERE ELSE. This loop already runs
+	// until AcceptStream errors, and that error IS the death of the
+	// connection, so the existing lifecycle already had the right
+	// removal point. Evicting on a failed PUBLISH instead would make a
+	// slow peer indistinguishable from a dead one.
+	defer func() {
+		q.mu.Lock()
+		delete(q.peers, conn)
+		q.mu.Unlock()
+	}()
+
 	for {
 		s, err := conn.AcceptStream(context.Background())
 		if err != nil {
@@ -258,19 +303,40 @@ func (q *QUIC) handleStream(s *quic.Stream) {
 	}
 }
 
-// ---- Publish / Broadcast ----
+// ---- Publish ----
 
 func (q *QUIC) PublishRemote(ctx context.Context, e eventbus.Event[*anypb.Any]) error {
+	// Snapshot under the mutex. Sending while holding it would let one
+	// unresponsive peer block every other publisher.
 	q.mu.Lock()
-	conn := q.conn
+	peers := make([]*quic.Conn, 0, len(q.peers))
+	for c := range q.peers {
+		peers = append(peers, c)
+	}
 	q.mu.Unlock()
-	if conn == nil {
-		// NOT io.ErrUnexpectedEOF, which asserts that a read ended before
-		// it should have. Nothing was read and nothing went wrong: there
-		// is simply nobody to send to (GAPI-DIV-095).
+
+	if len(peers) == 0 {
+		// An EMPTINESS check now, where it was a nil check; GAPI-DIV-095's
+		// reasoning is unchanged. NOT io.ErrUnexpectedEOF, which asserts
+		// that a read ended before it should have. Nothing was read and
+		// nothing went wrong: there is simply nobody to send to.
 		return eventbus.ErrNoPeer
 	}
 
+	// ONE GOROUTINE PER PEER. A publish reaching some peers and not
+	// others must not depend on their order, so no peer's send is
+	// sequenced behind another's timeout.
+	for _, conn := range peers {
+		q.publishTo(ctx, conn, e)
+	}
+
+	return nil
+}
+
+// publishTo sends one event to one peer. The body is unchanged from when
+// this transport addressed a single connection - the defect was never in
+// how a frame is written, only in how many peers were reachable.
+func (q *QUIC) publishTo(ctx context.Context, conn *quic.Conn, e eventbus.Event[*anypb.Any]) {
 	// Async publish to prevent blocking on dead clients
 	go func() {
 		timeoutCtx, cancel := context.WithTimeout(ctx, config.QUICStreamTimeout)
@@ -292,13 +358,13 @@ func (q *QUIC) PublishRemote(ctx context.Context, e eventbus.Event[*anypb.Any]) 
 		// declared on the Envelope and written by nobody, so they were
 		// dropped on every publish in the system's life.
 		//
-		// Event.Broadcast is deliberately absent, and GAPI-DIV-106 is
-		// why: this transport keeps ONE peer slot, so Broadcast and
-		// PublishRemote are the same operation and there is no fan-out
-		// for a receiver to act on. A flag here would encode a decision
-		// no sender can make - and a field produced and never read can
-		// be wrong indefinitely. The gap is a missing peer set, one
-		// layer below the wire.
+		// Event.Broadcast is deliberately absent, and it is now absent
+		// from the Event too (GAPI-DIV-106). It was a flag with no
+		// receiver: this transport addressed ONE peer, so "broadcast"
+		// and "publish" were the same operation and the two bus arms
+		// called the same code. With a peer set, a remote publish IS to
+		// every peer, so the flag has nothing left to select and the
+		// distinction it encoded never existed on the wire.
 		env := &protopkg.Envelope{
 			Id:        e.ID,
 			Scope:     e.Scope,
@@ -332,12 +398,6 @@ func (q *QUIC) PublishRemote(ctx context.Context, e eventbus.Event[*anypb.Any]) 
 			return
 		}
 	}()
-
-	return nil
-}
-
-func (q *QUIC) Broadcast(e eventbus.Event[*anypb.Any]) error {
-	return q.PublishRemote(context.Background(), e)
 }
 
 func (q *QUIC) OnRemoteEvent(fn func(eventbus.Event[*anypb.Any])) { q.onRemote = fn }
@@ -350,9 +410,19 @@ func (q *QUIC) Close() error {
 		err = q.listener.Close()
 		q.listener = nil
 	}
-	if q.conn != nil {
-		_ = q.conn.CloseWithError(0, "shutdown")
-		q.conn = nil
+	// EVERY peer, not the most recent one. When this was a single slot,
+	// closing "the connection" and closing "all connections" were the
+	// same statement; with a set they are not, and a Close that shut
+	// only one would leak the rest - silently, since nothing here
+	// reports a per-peer failure.
+	//
+	// The map is cleared rather than left with dead entries so that
+	// PeerCount and the ErrNoPeer check agree with reality immediately,
+	// instead of waiting for each handleConn goroutine to notice its
+	// AcceptStream has failed and remove itself.
+	for c := range q.peers {
+		_ = c.CloseWithError(0, "shutdown")
+		delete(q.peers, c)
 	}
 	return err
 }

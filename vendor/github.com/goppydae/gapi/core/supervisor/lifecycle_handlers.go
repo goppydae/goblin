@@ -127,7 +127,7 @@ func (s *Supervisor) replyStatus(agentID, state, msg string) {
 		Time:     timestamppb.Now(),
 		Hostname: s.host,
 	}); err == nil {
-		resp := eventbus.NewEvent("system", "", eventbus.TopicAgentLifecycleStatus, "gapid", anyPayload, true)
+		resp := eventbus.NewEvent("system", "", eventbus.TopicAgentLifecycleStatus, "gapid", anyPayload)
 		_ = s.bus.Publish(resp)
 	}
 }

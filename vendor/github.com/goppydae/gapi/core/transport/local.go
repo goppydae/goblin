@@ -26,10 +26,6 @@ func (t *Local[T]) PublishRemote(ctx context.Context, e eventbus.Event[T]) error
 	return nil
 }
 
-func (t *Local[T]) Broadcast(e eventbus.Event[T]) error {
-	return t.PublishRemote(context.Background(), e)
-}
-
 func (t *Local[T]) OnRemoteEvent(fn func(eventbus.Event[T])) { t.onRemote = fn }
 
 func (t *Local[T]) Close() error { return nil }
