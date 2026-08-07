@@ -50,27 +50,6 @@ type Discovered struct {
 	Enabled bool
 }
 
-type pyDescribe struct {
-	Describe struct {
-		ID         string   `json:"id"`
-		Type       string   `json:"type"`
-		Requires   []string `json:"requires"`
-		Wants      []string `json:"wants"`
-		WantedBy   []string `json:"wanted_by"`
-		RequiredBy []string `json:"required_by"`
-		// Pointer so ABSENT is distinguishable from an explicit false.
-		// Go agents do not emit this field at all, and a plain bool
-		// would unmarshal their silence as disabled - turning every
-		// Go agent off the moment the field was honoured.
-		Enabled      *bool    `json:"enabled"`
-		ListenStream string   `json:"listen_stream"`
-		CPULimit     string   `json:"cpu_limit"`
-		MemoryLimit  string   `json:"memory_limit"`
-		Schedule     string   `json:"schedule"` // For timer agents
-		Capabilities []string `json:"capabilities"`
-	} `json:"describe"`
-}
-
 type Agent interface {
 	ID() string
 	Type() string
@@ -272,37 +251,15 @@ func (am *AgentManager) discoverFromSinglePath(root string, pathType config.Path
 	return agents, err
 }
 
-func (am *AgentManager) processDiscovered(path string, d struct {
-	ID         string   `json:"id"`
-	Type       string   `json:"type"`
-	Requires   []string `json:"requires"`
-	Wants      []string `json:"wants"`
-	WantedBy   []string `json:"wanted_by"`
-	RequiredBy []string `json:"required_by"`
-	// Pointer: absent means "not specified", which defaults to
-	// enabled. See the note on pyDescribe.
-	Enabled      *bool    `json:"enabled"`
-	ListenStream string   `json:"listen_stream"`
-	CPULimit     string   `json:"cpu_limit"`
-	MemoryLimit  string   `json:"memory_limit"`
-	Schedule     string   `json:"schedule"`
-	Capabilities []string `json:"capabilities"`
-}, agents *[]Agent) error {
+func (am *AgentManager) processDiscovered(path string, d schema.AgentDescribe, agents *[]Agent) error {
 
 	// Validate agent metadata
-	if err := schema.ValidateAgentDescribe(schema.AgentDescribe{
-		ID:           d.ID,
-		Type:         d.Type,
-		CPULimit:     d.CPULimit,
-		MemoryLimit:  d.MemoryLimit,
-		Schedule:     d.Schedule,
-		ListenStream: d.ListenStream,
-		Requires:     d.Requires,
-		Wants:        d.Wants,
-		WantedBy:     d.WantedBy,
-		RequiredBy:   d.RequiredBy,
-		Capabilities: d.Capabilities,
-	}); err != nil {
+	// VALIDATE EXACTLY WHAT WAS PARSED (GAPI-DIV-115). This was a
+	// field-by-field copy into a second struct, and it silently dropped
+	// SchemaVersion - which both ADKs emit and decision 29 calls
+	// load-bearing. A copy between two spellings of one shape is where
+	// that kind of loss hides; there is no copy now.
+	if err := schema.ValidateAgentDescribe(d); err != nil {
 		slog.Default().LogAttrs(context.Background(), slog.LevelWarn, "agent metadata validation failed", logattr.Module("discovery"), logattr.Path(path), logattr.Err(err))
 		return nil
 	}
@@ -459,7 +416,7 @@ func checkOwner(info os.FileInfo) error {
 	return nil
 }
 
-func (am *AgentManager) binaryDescribe(binPath string) (*pyDescribe, error) {
+func (am *AgentManager) binaryDescribe(binPath string) (*schema.DescribeEnvelope, error) {
 	if err := am.safeToExecute(binPath); err != nil {
 		return nil, err
 	}
@@ -481,14 +438,14 @@ func (am *AgentManager) binaryDescribe(binPath string) (*pyDescribe, error) {
 		return nil, fmt.Errorf("empty output")
 	}
 
-	var d pyDescribe
+	var d schema.DescribeEnvelope
 	if err := json.Unmarshal(out, &d); err != nil {
 		return nil, err
 	}
 	return &d, nil
 }
 
-func (am *AgentManager) pythonDescribe(modulePath string) (*pyDescribe, error) {
+func (am *AgentManager) pythonDescribe(modulePath string) (*schema.DescribeEnvelope, error) {
 	runnerAbs, err := filepath.Abs(am.pyRun)
 	if err != nil {
 		return nil, fmt.Errorf("describe: abs runner: %w", err)
@@ -559,7 +516,7 @@ func (am *AgentManager) pythonDescribe(modulePath string) (*pyDescribe, error) {
 			bytes.TrimSpace(stderr.Bytes()), cmdline)
 	}
 
-	var d pyDescribe
+	var d schema.DescribeEnvelope
 	if err := json.Unmarshal(out, &d); err != nil {
 		return nil, fmt.Errorf("describe: invalid JSON: %w\nstdout: %q\nstderr: %s\ncmd: %s",
 			err, string(out), bytes.TrimSpace(stderr.Bytes()), cmdline)

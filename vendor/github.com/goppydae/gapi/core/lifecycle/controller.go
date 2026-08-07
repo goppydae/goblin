@@ -351,7 +351,7 @@ func (c *Controller) publishControl(a protopkg.LifecycleControl_Action) {
 	// Advisory observability event: a publish failure is logged loudly but
 	// must not abort the lifecycle action itself (aborting stop/start on a
 	// closed bus would invert priorities during shutdown).
-	if err := c.bus.Publish(eventbus.NewEvent("system", "", eventbus.TopicAgentLifecycleControl, c.id, anyMsg, true)); err != nil {
+	if err := c.bus.Publish(eventbus.NewEvent("system", "", eventbus.TopicAgentLifecycleControl, c.id, anyMsg)); err != nil {
 		slog.Default().LogAttrs(context.Background(), slog.LevelError, "failed to publish lifecycle control event", logattr.Module("lifecycle"), logattr.AgentID(c.id), logattr.Err(err))
 	}
 }
@@ -366,7 +366,7 @@ func (c *Controller) publishStatus(state protopkg.AgentState, message string) {
 	}
 	anyMsg, _ := anypb.New(st)
 	// Advisory observability event; see publishControl for the no-abort rationale.
-	if err := c.bus.Publish(eventbus.NewEvent("system", "", eventbus.TopicAgentLifecycleStatus, c.id, anyMsg, true)); err != nil {
+	if err := c.bus.Publish(eventbus.NewEvent("system", "", eventbus.TopicAgentLifecycleStatus, c.id, anyMsg)); err != nil {
 		slog.Default().LogAttrs(context.Background(), slog.LevelError, "failed to publish lifecycle status event", logattr.Module("lifecycle"), logattr.AgentID(c.id), logattr.Err(err))
 	}
 }
@@ -465,7 +465,7 @@ func (c *Controller) publishFailed(runID, message string) {
 		RunId:    runID,
 	}
 	anyMsg, _ := anypb.New(st)
-	if err := c.bus.Publish(eventbus.NewEvent("system", "", eventbus.TopicAgentLifecycleStatus, c.id, anyMsg, true)); err != nil {
+	if err := c.bus.Publish(eventbus.NewEvent("system", "", eventbus.TopicAgentLifecycleStatus, c.id, anyMsg)); err != nil {
 		slog.Default().LogAttrs(context.Background(), slog.LevelError, "failed to publish start-failure status", logattr.Module("lifecycle"), logattr.AgentID(c.id), logattr.Err(err))
 	}
 }

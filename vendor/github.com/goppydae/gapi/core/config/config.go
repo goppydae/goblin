@@ -124,17 +124,35 @@ func EnvKeyFor(path string) string {
 // bindEnvOverrides walks the config struct by its mapstructure tags and
 // binds every scalar leaf to its environment variable.
 //
-// AutomaticEnv alone is not enough: viper's Unmarshal builds its result
-// from the keys viper already knows about, and it learns a key only from
-// a config file, a default, or an explicit bind. Every key that happened
-// to lack a SetDefault was therefore unreachable from the environment and
-// dropped in silence - the whole supervisor section, security.verifyKey,
-// and the transport TLS paths (GAPI-DIV-038).
+// This is the ONLY thing that makes a key reachable from the
+// environment, and that is deliberate. viper's Unmarshal builds its
+// result from the keys viper already knows, and it learns a key only
+// from a config file, a default, or an explicit bind - AutomaticEnv adds
+// no keys, it only changes what Get returns for a key already known. So
+// every key that happened to lack a SetDefault was unreachable and
+// dropped in silence: the whole supervisor section, security.verifyKey,
+// and the transport TLS paths. GAPI_SUPERVISOR_PRODUCTIONMODE=true
+// produced a daemon with signature enforcement OFF and no error
+// (GAPI-DIV-038).
 //
-// Walking the struct rather than listing keys is the point: a field added
-// later is bound because it exists, not because someone remembered. The
-// environment variable name is passed explicitly so the binding does not
-// depend on how viper happens to compose a prefix with a key replacer.
+// Walking the struct rather than listing keys is the point: a field
+// added later is bound because it EXISTS, not because someone
+// remembered. That is a structural guarantee, and it is why this
+// survived the choice to give every key a default - total defaults would
+// have made AutomaticEnv sufficient for reachability, but only for as
+// long as a test kept the defaults total. A property that holds because
+// of the shape of the code outranks one that holds because a test is
+// still watching.
+//
+// AutomaticEnv is deliberately NOT set alongside it. With both, deleting
+// this call changed no observable behaviour and no test went red -
+// measured - so the mechanism closing GAPI-DIV-038 had no gate of its
+// own. With only this, the reachability tests fail the moment it stops
+// covering a leaf.
+//
+// The environment variable name comes from EnvKeyFor rather than from
+// viper composing a prefix with a key replacer, so the name the
+// generated reference PRINTS is definitionally the name that WORKS.
 func bindEnvOverrides(v *viper.Viper, t reflect.Type, prefix string) {
 	for i := range t.NumField() {
 		f := t.Field(i)
@@ -168,31 +186,76 @@ func bindEnvOverrides(v *viper.Viper, t reflect.Type, prefix string) {
 	}
 }
 
-func Load() (*Config, error) {
+// Defaults returns a viper carrying the environment bindings and every
+// registered default, with no config file read.
+//
+// It exists so that the thing which DEFINES the defaults can also be the
+// thing that DOCUMENTS them. The configuration reference and the
+// <product>.conf.5 man page are generated from this viper joined with a
+// reflection walk of Config, so a key cannot appear in the documentation
+// without being reachable in the code, or change its value without the
+// page changing with it. That is goal 4's claim made mechanical rather
+// than promised.
+//
+// It is product-aware: transport.address, metrics.addr and
+// logging.file.path all resolve through core/product, so calling this
+// under gapid and under goblind yields the same key set with different
+// values - which is what lets one renderer produce both products' pages
+// from one schema.
+//
+// Like Load, this panics on an unset product identity rather than
+// guessing one (GAPI-DIV-061).
+func Defaults() *viper.Viper {
 	// A private instance rather than viper's package-level singleton:
 	// the global carried bindings and defaults across every call in a
 	// process, which is exactly the hidden global state that makes a
 	// configuration bug reproduce only in the second test.
 	v := viper.New()
-
-	if env := os.Getenv(product.EnvKey("CONFIG")); env != "" {
-		v.SetConfigFile(env)
-	} else {
-		v.SetConfigName("config")
-		v.SetConfigType("yaml")
-		addDefaultPaths(v) // uses build tag-specific implementation
-	}
 	v.SetEnvPrefix(product.EnvPrefix())
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	v.AutomaticEnv()
 	bindEnvOverrides(v, reflect.TypeOf(Config{}), "")
+	setDefaults(v)
+	return v
+}
 
+// setDefaults registers a default for EVERY key the config tree exposes.
+//
+// Totality is the property, and it was not true until now: twelve of the
+// thirty-three keys had no SetDefault at all. Nothing was broken by that,
+// because bindEnvOverrides binds each key explicitly and is what makes
+// it reachable - but "this key has no default" and "this key was
+// forgotten" were the same silence, and Defaults() could not describe
+// the schema it is now asked to document.
+//
+// What totality buys is therefore documentation, not reachability. The
+// configuration reference and <product>.conf.5 are generated by joining
+// this viper with a reflection walk of Config, and a join over two sets
+// that are allowed to disagree documents whichever one it happened to
+// read. With both total, a key cannot appear in the reference without
+// existing in the struct, or exist in the struct without a stated
+// default. TestDefaultsRegistersEveryReachableKey and its converse hold
+// the two directions.
+//
+// The twelve added here are registered at the values they ALREADY
+// resolve to. Unmarshal yields the zero value for an absent key, and
+// every consumer reads them that way - pid1_wiring.go:85 and :96 parse
+// the duration strings and skip on error, supervisor.go:83 treats an
+// empty verifyKey as "no key". So this declares what happens rather than
+// changing it, which is why the behaviour tests are unchanged.
+func setDefaults(v *viper.Viper) {
 	// Zero-config defaults
 	v.SetDefault("transport.type", "quic")
 	v.SetDefault("transport.address", product.DefaultControlAddr())
 	v.SetDefault("transport.insecureSkipVerify", true)
+	v.SetDefault("transport.tlsCert", "")
+	v.SetDefault("transport.tlsKey", "")
+	v.SetDefault("transport.tlsCa", "")
 	v.SetDefault("metrics.enabled", false)
 	v.SetDefault("metrics.addr", product.DefaultMetricsAddr())
+
+	// Security. Empty means no key configured, which production mode
+	// refuses rather than silently accepting.
+	v.SetDefault("security.verifyKey", "")
 
 	// Logging defaults
 	v.SetDefault("logging.level", "info")
@@ -204,6 +267,19 @@ func Load() (*Config, error) {
 	v.SetDefault("logging.file.maxAge", 28) // days
 	v.SetDefault("logging.file.compress", true)
 	v.SetDefault("logging.loki.enabled", false)
+	v.SetDefault("logging.loki.url", "")
+
+	// Supervisor. Every one of these is off by default: gapid runs as an
+	// ordinary supervisor unless it IS init, and the watchdog and grace
+	// period are opt-in because an unset duration string fails to parse
+	// and is skipped.
+	v.SetDefault("supervisor.productionMode", false)
+	v.SetDefault("supervisor.pid1Mode", false)
+	v.SetDefault("supervisor.noEarlyMounts", false)
+	v.SetDefault("supervisor.watchdog.enabled", false)
+	v.SetDefault("supervisor.watchdog.device", "")
+	v.SetDefault("supervisor.watchdog.interval", "")
+	v.SetDefault("supervisor.shutdown.gracePeriod", "")
 
 	// Timeout defaults (string format for parsing)
 	v.SetDefault("timeouts.quicStream", QUICStreamTimeout.String())
@@ -212,6 +288,18 @@ func Load() (*Config, error) {
 	v.SetDefault("timeouts.clientTerminal", ClientTerminalTimeout.String())
 	v.SetDefault("timeouts.supervisorStart", SupervisorStartDeadline.String())
 	v.SetDefault("timeouts.supervisorShutdown", SupervisorShutdownTimeout.String())
+}
+
+func Load() (*Config, error) {
+	v := Defaults()
+
+	if env := os.Getenv(product.EnvKey("CONFIG")); env != "" {
+		v.SetConfigFile(env)
+	} else {
+		v.SetConfigName("config")
+		v.SetConfigType("yaml")
+		addDefaultPaths(v) // uses build tag-specific implementation
+	}
 
 	if err := v.ReadInConfig(); err != nil {
 		var notFound viper.ConfigFileNotFoundError

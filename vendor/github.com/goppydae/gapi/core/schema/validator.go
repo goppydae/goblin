@@ -31,20 +31,53 @@ var CurrentVersion = Version{Major: 1, Minor: 0, Patch: 0}
 // ValidAgentTypes are the supported agent unit types
 var ValidAgentTypes = []string{"service", "timer", "socket", "pipe", "event", "init", "oneshot"}
 
-// AgentDescribe represents agent metadata for validation
+// AgentDescribe is an agent's DECLARATION, and it is the one place this
+// shape is spelled (GAPI-DIV-115).
+//
+// It was spelled four times: twice in core/agentmgr/discovery.go - once
+// as pyDescribe's inner struct and once as an inline anonymous parameter
+// to processDiscovered, which had to match it structurally - and here,
+// with a field-by-field copy between them. The copy is what drifted:
+// GAPI-DIV-083 records Describe() spelling `mem_limit` where the wire
+// spells `memory_limit`, and that is the class of defect a hand-written
+// translation between two identical shapes produces.
+//
+// THE JSON TAGS LIVE HERE because discovery now unmarshals STRAIGHT
+// INTO this type. Parsing and validating the same struct means a field
+// added to the schema cannot be silently dropped on the way to the
+// validator - previously it had to be added in three places and
+// forgetting the third was invisible.
+//
+// Note the type serves BOTH languages despite the old name: Go agents
+// and Python agents emit the same `describe` object, and binaryDescribe
+// and pythonDescribe both decoded it.
 type AgentDescribe struct {
-	SchemaVersion string
-	ID            string
-	Type          string
-	CPULimit      string
-	MemoryLimit   string
-	Schedule      string
-	ListenStream  string
-	Requires      []string
-	Wants         []string
-	WantedBy      []string
-	RequiredBy    []string
-	Capabilities  []string
+	SchemaVersion string   `json:"schema_version"`
+	ID            string   `json:"id"`
+	Type          string   `json:"type"`
+	CPULimit      string   `json:"cpu_limit"`
+	MemoryLimit   string   `json:"memory_limit"`
+	Schedule      string   `json:"schedule"`
+	ListenStream  string   `json:"listen_stream"`
+	Requires      []string `json:"requires"`
+	Wants         []string `json:"wants"`
+	WantedBy      []string `json:"wanted_by"`
+	RequiredBy    []string `json:"required_by"`
+	Capabilities  []string `json:"capabilities"`
+
+	// POINTER, so ABSENT is distinguishable from an explicit false. Go
+	// agents do not emit this field at all, and a plain bool would
+	// unmarshal their silence as disabled - turning every Go agent off
+	// the moment the field was honoured. Validation ignores it; only
+	// discovery resolves it.
+	Enabled *bool `json:"enabled"`
+}
+
+// DescribeEnvelope is the object an agent actually prints: the
+// declaration under a "describe" key. Named for what it is rather than
+// for one of the two languages that emit it.
+type DescribeEnvelope struct {
+	Describe AgentDescribe `json:"describe"`
 }
 
 // ValidateAgentDescribe validates agent metadata

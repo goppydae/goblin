@@ -161,6 +161,12 @@ func (s *Supervisor) Bus() *eventbus.EventBus[*anypb.Any] {
 func (s *Supervisor) Run(ctx context.Context) error {
 	s.logger.LogAttrs(context.Background(), slog.LevelInfo, "starting supervisor")
 
+	// Liveness BEFORE agent bring-up: the transport is accepting long
+	// before setupAgents returns, and a ping arriving in that window was
+	// dropped with no subscriber to answer it. See liveness.go for the
+	// measurement and for what may go there (GAPI-DIV-120).
+	s.registerLivenessHandlers()
+
 	// Setup Agents
 	s.setupAgents()
 
@@ -384,30 +390,13 @@ func (s *Supervisor) setupAgents() {
 
 func (s *Supervisor) registerHandlers() {
 	s.subscribeSystemShutdown()
-	// Ping/Pong
-	err := s.bus.SubscribePrefix("system", "", "ping", func(e eventbus.Event[*anypb.Any]) {
-		s.logger.LogAttrs(context.Background(), slog.LevelDebug, "received ping, preparing pong", logattr.Event("handling_ping"), logattr.EventID(e.ID))
-		s.logger.LogAttrs(context.Background(), slog.LevelInfo, "lifecycle event",
-			logattr.Event("lifecycle"), logattr.Source("supervisor"), logattr.Action("handle_ping"),
-			logattr.AgentID("supervisor"), logattr.Version(version.BinaryVersion()))
 
-		pong := &protopkg.PingStatus{Status: "pong"}
-		anyPayload, err := anypb.New(pong)
-		if err != nil {
-			s.logger.LogAttrs(context.Background(), slog.LevelError, "failed to pack pong payload", logattr.Err(err))
-			return
-		}
-
-		response := eventbus.NewEvent("system", "", "pong", "gapid", anyPayload, true)
-		response.ID = e.ID // correlate reply to the originating request
-		_ = s.bus.Publish(response)
-	})
-	if err != nil {
-		s.logger.LogAttrs(context.Background(), slog.LevelError, "failed to subscribe to ping event", logattr.Err(err))
-	}
+	// Ping/Pong is NOT here: it is subscribed by registerLivenessHandlers
+	// before setupAgents, so the daemon answers a liveness probe during
+	// agent bring-up instead of dropping it (GAPI-DIV-120).
 
 	// Agent Status
-	err = s.bus.SubscribePrefix("system", "", "agents/", func(e eventbus.Event[*anypb.Any]) {
+	err := s.bus.SubscribePrefix("system", "", "agents/", func(e eventbus.Event[*anypb.Any]) {
 		s.logger.LogAttrs(context.Background(), slog.LevelDebug, "received agent status request", logattr.EventID(e.ID))
 
 		entries, err := s.registry.List()
@@ -464,7 +453,7 @@ func (s *Supervisor) registerHandlers() {
 			return
 		}
 
-		response := eventbus.NewEvent("system", "", "agents.reply", "gapid", anyPayload, true)
+		response := eventbus.NewEvent("system", "", "agents.reply", "gapid", anyPayload)
 		response.ID = e.ID // correlate reply to the originating request
 		_ = s.bus.Publish(response)
 	})

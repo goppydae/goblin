@@ -33,11 +33,17 @@ type Event[T any] struct {
 	Topic     string
 	Payload   T
 	Source    string
-	Broadcast bool
 	Tags      []string
 }
 
-func NewEvent[T any](scope, namespace, topic, source string, payload T, broadcast bool, tags ...string) Event[T] {
+// NewEvent no longer takes a broadcast flag (GAPI-DIV-106). It selected
+// between two Transport methods that did the same thing, because the
+// QUIC transport addressed a single peer: "broadcast" and "publish to
+// the one peer you have" are indistinguishable. Now that the transport
+// holds a peer SET, a remote publish IS to every peer, so there is no
+// second behaviour left for a flag to choose - and the flag was never
+// carried on the wire, so no receiver could ever act on it.
+func NewEvent[T any](scope, namespace, topic, source string, payload T, tags ...string) Event[T] {
 	return Event[T]{
 		ID:        ident.NewV7String(),
 		Scope:     scope,
@@ -45,7 +51,6 @@ func NewEvent[T any](scope, namespace, topic, source string, payload T, broadcas
 		Topic:     topic,
 		Source:    source,
 		Payload:   payload,
-		Broadcast: broadcast,
 		Tags:      tags,
 	}
 }
@@ -232,12 +237,10 @@ func (b *EventBus[T]) Publish(e Event[T]) error {
 		logattr.PayloadType(fmt.Sprintf("%T", e.Payload)))
 
 	if b.transport != nil {
-		var terr error
-		if e.Broadcast {
-			terr = b.transport.Broadcast(e)
-		} else {
-			terr = b.transport.PublishRemote(context.Background(), e)
-		}
+		// ONE ARM, because there was only ever one operation
+		// (GAPI-DIV-106). Broadcast delegated to PublishRemote, so the
+		// branch chose between a method and itself.
+		terr := b.transport.PublishRemote(context.Background(), e)
 		// Having no peer is not a publish failure (GAPI-DIV-095). Only
 		// this ONE sentinel is demoted, and only by matching it: lowering
 		// the level for every transport error would hide a real one
@@ -309,6 +312,5 @@ func UnmarshalAnyPayload(e Event[*anypb.Any], target proto.Message) error {
 type LocalTransport[T any] struct{}
 
 func (t *LocalTransport[T]) PublishRemote(ctx context.Context, e Event[T]) error { return nil }
-func (t *LocalTransport[T]) Broadcast(Event[T]) error                            { return nil }
 func (t *LocalTransport[T]) OnRemoteEvent(func(Event[T]))                        {}
 func (t *LocalTransport[T]) Close() error                                        { return nil }
