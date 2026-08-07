@@ -74,9 +74,13 @@ pkgs.mkShell {
     # shell).
     export CGO_CFLAGS=-std=gnu17
 
-    if [ ! -x "$GOBIN/gopy" ]; then
-      echo "Building pinned gopy from tools/gopy..."
-      (cd tools/gopy && GOWORK=off go build -o "$GOBIN/gopy" github.com/go-python/gopy)
+    # goblin does not use gopy; see flake.nix for the full reasoning.
+    # Building one here wrote into whatever directory the shell was
+    # entered from, because GOBIN leads PATH and nix does not change
+    # directory (GOBLIN-DIV-077).
+    if [ -e "$GOBIN/gopy" ]; then
+      echo "Removing $GOBIN/gopy: goblin does not use gopy and GOBIN precedes it on PATH."
+      rm -f "$GOBIN/gopy"
     fi
 
     echo "Goblin - Distributed Orchestrator (legacy shell.nix)"
