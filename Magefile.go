@@ -31,9 +31,18 @@ import (
 var toolchain = magelib.DoctorConfig{
 	ReplaceTargets: []string{"../gapi", "../magelib"},
 	ProtoPlugins:   []string{"buf", "protoc-gen-go", "protoc-gen-go-grpc"},
-	GopyVersion:    "v0.4.10",
-	RequiredEnv:    []string{"GOBIN"},
-	SharedTools:    []string{"buf", "golangci-lint", "gosec", "govulncheck", "mage", "goimports", "mkdocs", "pandoc", "criu"},
+	// GopyVersion is deliberately UNSET, so doctor reports
+	// "no FFI codegen tool required" rather than checking for gopy.
+	//
+	// goblin generates no Python bindings. Operator decision 49 has it
+	// take gapi as a flake input and copy the ADK gapi has already
+	// BUILT; nothing here runs gopy, and no target in this repo can.
+	// The check was asserting a capability this repo does not use, and
+	// the shell hook built a gopy into $GOBIN to satisfy it - which is
+	// how goblin's shell came to write a stale binary into a SIBLING's
+	// .bin and break gapi's hermetic gate (GOBLIN-DIV-077).
+	RequiredEnv: []string{"GOBIN"},
+	SharedTools: []string{"buf", "golangci-lint", "gosec", "govulncheck", "mage", "goimports", "mkdocs", "pandoc", "criu"},
 }
 
 // fileLengthWaivers is DEBT: hand-written files the 500-line rule applies

@@ -156,9 +156,25 @@
             # symmetric with gapi's shell).
             export CGO_CFLAGS=-std=gnu17
 
-            if [ ! -x "$GOBIN/gopy" ]; then
-              echo "Building pinned gopy from tools/gopy..."
-              (cd tools/gopy && GOWORK=off go build -o "$GOBIN/gopy" github.com/go-python/gopy)
+            # goblin does not use gopy. It generates no Python bindings:
+            # operator decision 49 has it take gapi as a flake input and
+            # copy the ADK gapi has already BUILT, so nothing in this
+            # repo ever runs gopy.
+            #
+            # This hook built one anyway, copied from gapi's shell before
+            # GAPI-DIV-096 moved gopy into the flake there. Two facts made
+            # that actively harmful rather than merely wasteful: GOBIN
+            # LEADS PATH, and `nix develop` DOES NOT CHANGE DIRECTORY - so
+            # entering this shell from a sibling's checkout wrote a gopy
+            # into THAT repo's .bin, where it shadowed the packaged one.
+            # gapi's `mage envcheck` enters this shell to inventory tools,
+            # which is exactly how it reached gapi (GOBLIN-DIV-077).
+            #
+            # Removed rather than warned about, because .bin is gitignored
+            # build state and gapi's shell already does the same.
+            if [ -e "$GOBIN/gopy" ]; then
+              echo "Removing $GOBIN/gopy: goblin does not use gopy and GOBIN precedes it on PATH."
+              rm -f "$GOBIN/gopy"
             fi
 
             echo "Goblin - Distributed Orchestrator"
