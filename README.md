@@ -62,16 +62,16 @@ bare `goblinctl status` is not a command:
 ./bin/goblinctl cluster status --tls-insecure
 ```
 
-For a multi-node cluster see [docs/usage.md](docs/usage.md), and for the
+For a multi-node cluster see [docs/content/user/usage.md](docs/content/user/usage.md), and for the
 full flag and command surface see
-[docs/cli-reference.md](docs/cli-reference.md).
+[docs/content/reference/cli-reference.md](docs/content/reference/cli-reference.md).
 
 ## Documentation
 
-- **[Usage](docs/usage.md)**: setup and multi-node guide.
-- **[CLI reference](docs/cli-reference.md)**: every `goblind` flag and `goblinctl` command.
-- **[Architecture](docs/architecture.md)**: Serf, Raft, the event bus, the ALPN registry, live migration.
-- **[Ecosystem](docs/ecosystem.md)**: how Goblin and GAPI divide the work.
+- **[Usage](docs/content/user/usage.md)**: setup and multi-node guide.
+- **[CLI reference](docs/content/reference/cli-reference.md)**: every `goblind` flag and `goblinctl` command.
+- **[Architecture](docs/content/architecture.md)**: Serf, Raft, the event bus, the ALPN registry, live migration.
+- **Ecosystem**: how Goblin and GAPI divide the work is documented in the goppydae-docs repository.
 
 ## Project Structure
 

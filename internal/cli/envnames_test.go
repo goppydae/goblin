@@ -65,7 +65,7 @@ var oldPrefixRe = regexp.MustCompile(`\b(?:RUNTIME|GAPID)_[A-Z0-9_]+\b`)
 // Applied to code only, and the exclusion of documentation is a real
 // distinction rather than a convenience. RUNTIME_ is dead in BOTH
 // products, so it must not survive in any file. GAPI_ is alive and
-// correct for gapid - docs/ecosystem.md explains gapid's own
+// correct for gapid - docs/content/architecture.md explains gapid's own
 // configuration, and forbidding the kernel's namespace there would make
 // the document unable to describe the thing it exists to describe.
 var gapiPrefixRe = regexp.MustCompile(`\bGAPI_[A-Z0-9_]+\b`)

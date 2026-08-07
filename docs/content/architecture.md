@@ -1,8 +1,18 @@
+---
+title: "Architecture"
+weight: 5
+---
+
 # Goblin Architecture
 
-Goblin is the **distributed supervisor** of the GoPPydae ecosystem. It
-adds cluster coordination, global scheduling and multi-node resilience
-on top of GAPI's local supervision.
+Goblin is the **distributed supervisor** of the GoPPydae ecosystem. It adds
+cluster coordination, global scheduling and multi-node resilience on top of
+GAPI's local supervision.
+
+This is orientation, not the full design. It describes how Goblin is put
+together well enough to decide whether to build on it. The complete target
+architecture - the identity model, the FSM command set, the migration
+protocol - is maintained in the goppydae-docs repository.
 
 ## Design philosophy
 
@@ -64,18 +74,6 @@ consistent.
 - **Leader election**: one node leads; only the leader accepts writes.
 - **Log replication**: commands are committed to a replicated FSM.
 
-The FSM is **not** just a key-value store. It dispatches nine command
-types (`core/consensus/fsm.go`):
-
-| Command | Purpose |
-| ------- | ------- |
-| `SET`, `DELETE`, `CAS` | the generic KV namespace |
-| `ADMIT` | admit an instance, minting its UUID at propose time |
-| `TRANSITION` | lifecycle state changes, illegal ones rejected |
-| `SIGNAL` | authorize and audit a signal before delivery |
-| `MIGRATE_BEGIN`, `MIGRATE_COMMIT` | live migration intent and outcome |
-| `UNSPECIFIED` | rejected loudly - never misapplied |
-
 Instance identity lives here and is immutable. Instance *location* does
 not: it lives in gossip, because it changes on every restart and
 migration.
@@ -122,54 +120,6 @@ plane exactly while a migration is in flight.
 **Why one port**: simpler firewall rules, one certificate, stream
 multiplexing, and ALPN doing the routing.
 
-### 5. RPC surface
-
-Two services ride `goblin-rpc`, registered in
-`internal/supervisor/quic_handlers.go`:
-
-- **`SchedulerRPC`** - cluster operations through the leader:
-  `SubmitJob`, `DrainNode`, `MigrateJob`, `MigrateInstance`, `ListJobs`,
-  `Members`, `GetEvents`, `PublishEvent`, `SignalAgentInstance`,
-  `ListAgentInstances`, `RegisterGlobalAgent`, `ListGlobalAgents`,
-  `GetGlobalAgent`, `ScaleAgent`, `DeleteGlobalAgent`,
-  `ListLocalAgents`.
-- **`NodeRPC`** - node-local execution of the leader's decisions:
-  `StartAgentInstance`, `StopAgentInstance`, `SignalAgentInstance`,
-  `CheckpointAgentInstance`, `RestoreAgentInstance`, `PullCheckpoint`.
-
-Every mutating verb is authorized against a capability token scoped to a
-named subject, and the authorization is audited through Raft.
-
-## Live migration
-
-Moving a running process between nodes, with its memory intact and its
-instance UUID unchanged. The PID changes; the identity does not.
-
-The sequence, driven by the coordinator on the leader
-(`core/migration/coordinator.go`):
-
-1. `MIGRATE_BEGIN` commits the intent. This is also the concurrency
-   gate: the FSM refuses a second migration of the same instance.
-2. The source checkpoints the instance with CRIU. The process is
-   **stopped** by this - the image is the rollback artifact, and a
-   source that kept running would have diverged from it.
-3. The destination **pulls** the image over `goblin-ckpt`, keyed by
-   `{instance_uuid, checkpoint_epoch}`. Pull, not push, so retry and
-   backpressure sit with the node that will run the instance next
-   rather than the one being torn down.
-4. The destination restores from the image and adopts the process.
-5. `MIGRATE_COMMIT` records the outcome and moves the instance's
-   `node_id`.
-
-The instance's lifecycle state stays `RUNNING` throughout. Migration is
-a **locator** event, not a lifecycle event, so the lifecycle FSM stays
-monotonic and its append-only tombstone model is undisturbed.
-
-On failure after the dump, the source is restored from the same image
-and the migration commits as `ABORTED`. If that rollback also fails the
-instance is running nowhere, and the error says so distinctly - the two
-outcomes need different responses from an operator.
-
 ## Data flow
 
 **Member join**: node starts, initializes Serf, joins existing members;
@@ -185,49 +135,6 @@ leader begins applying FSM commands.
   unpacks and republishes locally.
 - *Consensus*: `PublishLeader(cmd, data)` - forwarded to the leader,
   applied through Raft, and the FSM on every node updates.
-
-## Diagram
-
-```mermaid
-graph TD
-    subgraph NodeA [Node A - Leader]
-        GAPI_A[GAPI kernel]
-        AgentMgr_A[Agent manager]
-        EB_A[Event bus]
-        Serf_A[Serf]
-        Raft_A[Raft leader]
-        FSM_A[FSM]
-        Sched_A[Scheduler]
-        Mig_A[Migration coordinator]
-
-        GAPI_A --> AgentMgr_A
-        AgentMgr_A --> EB_A
-        EB_A -- "cluster event" --> Serf_A
-        EB_A -- "leader event" --> Raft_A
-        Raft_A --> FSM_A
-        Serf_A --> EB_A
-        Sched_A --> AgentMgr_A
-        Mig_A --> Raft_A
-    end
-
-    subgraph NodeB [Node B - Follower]
-        GAPI_B[GAPI kernel]
-        AgentMgr_B[Agent manager]
-        EB_B[Event bus]
-        Serf_B[Serf]
-        Raft_B[Raft follower]
-        FSM_B[FSM]
-
-        GAPI_B --> AgentMgr_B
-        AgentMgr_B --> EB_B
-        Raft_B --> FSM_B
-        Serf_B --> EB_B
-    end
-
-    Serf_A -- gossip --> Serf_B
-    Raft_A -- "AppendEntries" --> Raft_B
-    Mig_A -- "checkpoint image (goblin-ckpt)" --> AgentMgr_B
-```
 
 ## Local agent communication
 

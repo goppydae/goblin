@@ -11,13 +11,10 @@ theme:
       accent: teal
 
 nav:
-  - Home: index.md
-  - Usage: usage.md
-  - Architecture: architecture.md
-  - CLI Reference: cli-reference.md
-  - Ecosystem: ecosystem.md
-  - Cluster Validation: cluster_validation.md
-  - Cursed Knowledge: cursed-knowledge.md
+  - Home: content/_index.md
+  - Usage: content/user/usage.md
+  - Architecture: content/architecture.md
+  - CLI Reference: content/reference/cli-reference.md
 
 markdown_extensions:
   - admonition

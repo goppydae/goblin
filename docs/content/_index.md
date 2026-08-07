@@ -1,6 +1,10 @@
+---
+title: "Goblin"
+---
+
 # Goblin
 
-**Goblin** extends [GAPI](https://github.com/goppydae/gapi) with distributed orchestration.
+**Goblin** extends GAPI with distributed orchestration.
 
 GAPI is the kernel: single-node process supervision, mechanism only.
 Goblin is the policy layer around it - which node runs what, and what
@@ -20,7 +24,10 @@ happens when that changes.
 
 ## Guides
 
-- [Usage](usage.md) - start a cluster
+- [Overview](user/overview.md) - what Goblin is, in one screen
+- [Usage](user/usage.md) - start a cluster
 - [Architecture](architecture.md) - membership, consensus, event bus, transport
-- [CLI Reference](cli-reference.md) - every `goblind` flag and `goblinctl` command
-- [Ecosystem](ecosystem.md) - how Goblin and GAPI fit together
+- [CLI Reference](reference/cli-reference.md) - every `goblind` flag and `goblinctl` command
+
+How Goblin and GAPI divide the work is documented in the goppydae-docs
+repository.
