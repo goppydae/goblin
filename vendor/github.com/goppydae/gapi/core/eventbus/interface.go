@@ -28,7 +28,6 @@ var ErrNoPeer = errors.New("eventbus: no peer connected")
 
 type Transport[T any] interface {
 	PublishRemote(ctx context.Context, e Event[T]) error
-	Broadcast(Event[T]) error
 	OnRemoteEvent(func(Event[T]))
 	Close() error
 }
