@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 
 	"github.com/goppydae/magelib/pkg/magelib"
 	"github.com/magefile/mage/mg"
@@ -42,7 +41,13 @@ var toolchain = magelib.DoctorConfig{
 	// how goblin's shell came to write a stale binary into a SIBLING's
 	// .bin and break gapi's hermetic gate (GOBLIN-DIV-077).
 	RequiredEnv: []string{"GOBIN"},
-	SharedTools: []string{"buf", "golangci-lint", "gosec", "govulncheck", "mage", "goimports", "mkdocs", "pandoc", "criu"},
+	// hugo replaced mkdocs and pandoc when the generated site landed. All
+	// three are documentation tools and that is the whole resemblance:
+	// mkdocs rendered a hand-written tree, and pandoc converted pages one
+	// of which did not exist and was skipped in silence. Both targets are
+	// retired, so leaving their tools declared would keep two entries the
+	// doctor requires, the hermetic check gates on, and no target uses.
+	SharedTools: []string{"buf", "golangci-lint", "gosec", "govulncheck", "mage", "goimports", "hugo", "criu"},
 }
 
 // fileLengthWaivers is DEBT: hand-written files the 500-line rule applies
@@ -463,51 +468,184 @@ func CIVM() error {
 		"--max-jobs", "1", "--keep-going")
 }
 
+// docsConfig is this repo's documentation site.
+//
+// Generators is what gives tools/gendocs a caller. GOBLIN-DIV-078: the
+// content tree existed with no Hugo configuration, no docs workflow on
+// any branch, and zero occurrences of magelib.DocsConfig here, so
+// DocsSync, DocsBuild and the drift gate were all unreachable.
+//
+// The generator is invoked with ONE APPENDED ARGUMENT, the output root.
+// That is magelib's contract and it is what makes the drift gate
+// trustworthy: CheckDocsDrift regenerates into a temporary tree and
+// byte-compares, which it can only do if generation is redirectable. A
+// generator that hardcoded its output would force the gate to either
+// mutate the working tree - repairing the drift it is measuring - or
+// compare against something it did not produce.
+//
+// APIPackages is empty, so there is no gomarkdoc target: goblin
+// publishes an operator reference, and its exported Go surface is
+// served by pkg.go.dev, which the sidebar links.
+//
+// There is no configuration reference either, and that is a real
+// difference from gapi rather than an omission - goblin declares no
+// config schema, so there is nothing to join defaults against.
+var docsConfig = magelib.DocsConfig{
+	Dir:        "docs",
+	Title:      "goblin",
+	BaseURL:    "https://goppydae.github.io/goblin/",
+	Repo:       "github.com/goppydae/goblin",
+	Generators: [][]string{{"go", "run", "./tools/gendocs"}},
+	Committed:  docsCommitted,
+}
+
+// docsCommitted are the generated paths under drift control.
+//
+// Produced by tools/gendocs and checked in, so the reference reads on
+// the forge without a build. Exhaustive by necessity rather than by
+// style: CheckDocsDrift reports a generated file this list omits as
+// UNTRACKED and fails, which is what stops a new command's page from
+// escaping the gate. Listing a directory would give up that check.
+var docsCommitted = []string{
+	// The goblinctl and goblind command trees. goblinctl mounts the
+	// kernel's agent verbs under `agent`, so its pages cover both
+	// goblin's own surface and the embedded supervisor's.
+	"docs/content/reference/cli/goblinctl/goblinctl.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_agent.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_agent_build.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_agent_clean.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_agent_crypto.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_agent_crypto_age-keygen.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_agent_crypto_decrypt.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_agent_crypto_encrypt.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_agent_crypto_keygen.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_agent_crypto_sign.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_agent_crypto_verify.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_agent_lifecycle.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_agent_lifecycle_reload.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_agent_lifecycle_restart.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_agent_lifecycle_start.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_agent_lifecycle_status.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_agent_lifecycle_stop.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_agent_new.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_agent_ping.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_agent_reload.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_agent_shutdown.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_agent_status.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_agent_tui.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_agent_verify.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_cluster.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_cluster_agent.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_cluster_agent_delete.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_cluster_agent_get.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_cluster_agent_instances.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_cluster_agent_list.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_cluster_agent_register.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_cluster_agent_scale.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_cluster_agent_signal.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_cluster_drain.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_cluster_migrate-instance.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_cluster_migrate.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_cluster_publish.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_cluster_run.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_cluster_status.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_operator.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_operator_keygen.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_tui.md",
+	"docs/content/reference/cli/goblinctl/goblinctl_version.md",
+	"docs/content/reference/cli/goblind/goblind.md",
+	"docs/content/reference/cli/goblind/goblind_start.md",
+	"docs/content/reference/cli/goblind/goblind_version.md",
+
+	// Man pages, section 1, from the same two trees.
+	"docs/man/man1/goblinctl-agent-build.1",
+	"docs/man/man1/goblinctl-agent-clean.1",
+	"docs/man/man1/goblinctl-agent-crypto-age-keygen.1",
+	"docs/man/man1/goblinctl-agent-crypto-decrypt.1",
+	"docs/man/man1/goblinctl-agent-crypto-encrypt.1",
+	"docs/man/man1/goblinctl-agent-crypto-keygen.1",
+	"docs/man/man1/goblinctl-agent-crypto-sign.1",
+	"docs/man/man1/goblinctl-agent-crypto-verify.1",
+	"docs/man/man1/goblinctl-agent-crypto.1",
+	"docs/man/man1/goblinctl-agent-lifecycle-reload.1",
+	"docs/man/man1/goblinctl-agent-lifecycle-restart.1",
+	"docs/man/man1/goblinctl-agent-lifecycle-start.1",
+	"docs/man/man1/goblinctl-agent-lifecycle-status.1",
+	"docs/man/man1/goblinctl-agent-lifecycle-stop.1",
+	"docs/man/man1/goblinctl-agent-lifecycle.1",
+	"docs/man/man1/goblinctl-agent-new.1",
+	"docs/man/man1/goblinctl-agent-ping.1",
+	"docs/man/man1/goblinctl-agent-reload.1",
+	"docs/man/man1/goblinctl-agent-shutdown.1",
+	"docs/man/man1/goblinctl-agent-status.1",
+	"docs/man/man1/goblinctl-agent-tui.1",
+	"docs/man/man1/goblinctl-agent-verify.1",
+	"docs/man/man1/goblinctl-agent.1",
+	"docs/man/man1/goblinctl-cluster-agent-delete.1",
+	"docs/man/man1/goblinctl-cluster-agent-get.1",
+	"docs/man/man1/goblinctl-cluster-agent-instances.1",
+	"docs/man/man1/goblinctl-cluster-agent-list.1",
+	"docs/man/man1/goblinctl-cluster-agent-register.1",
+	"docs/man/man1/goblinctl-cluster-agent-scale.1",
+	"docs/man/man1/goblinctl-cluster-agent-signal.1",
+	"docs/man/man1/goblinctl-cluster-agent.1",
+	"docs/man/man1/goblinctl-cluster-drain.1",
+	"docs/man/man1/goblinctl-cluster-migrate-instance.1",
+	"docs/man/man1/goblinctl-cluster-migrate.1",
+	"docs/man/man1/goblinctl-cluster-publish.1",
+	"docs/man/man1/goblinctl-cluster-run.1",
+	"docs/man/man1/goblinctl-cluster-status.1",
+	"docs/man/man1/goblinctl-cluster.1",
+	"docs/man/man1/goblinctl-operator-keygen.1",
+	"docs/man/man1/goblinctl-operator.1",
+	"docs/man/man1/goblinctl-tui.1",
+	"docs/man/man1/goblinctl-version.1",
+	"docs/man/man1/goblinctl.1",
+	"docs/man/man1/goblind-start.1",
+	"docs/man/man1/goblind-version.1",
+	"docs/man/man1/goblind.1",
+
+	// Section 7, converted from the written overview rather than
+	// generated from a command tree.
+	"docs/man/man7/goblin.7",
+}
+
 // Documentation tasks
 type Docs mg.Namespace
 
-// Html generates the static documentation site using MkDocs
-func (Docs) Html() error {
-	fmt.Println("Generating HTML documentation...")
-	if _, err := exec.LookPath("mkdocs"); err != nil {
-		return fmt.Errorf("mkdocs not found. Run 'nix develop' to get documentation tools")
-	}
-	return sh.RunV("mkdocs", "build")
+// Sync materialises the shared Hugo assets into docs/.magelib.
+func (Docs) Sync() error {
+	mg.Deps(checkHermetic)
+	return magelib.DocsSync(docsConfig)
 }
 
-// Man generates man pages from markdown files using Pandoc
-func (Docs) Man() error {
-	fmt.Println("Generating Man pages...")
-	// Check for pandoc
-	if _, err := exec.LookPath("pandoc"); err != nil {
-		return fmt.Errorf("pandoc not found. Run 'nix develop' to get documentation tools")
-	}
+// Generate renders the reference from source.
+func (Docs) Generate() error {
+	mg.Deps(checkHermetic)
+	return magelib.DocsGenerate(docsConfig)
+}
 
-	if err := os.MkdirAll("man/man1", 0755); err != nil {
-		return err
-	}
+// Build renders the static site into docs/public.
+func (Docs) Build() error {
+	mg.Deps(checkHermetic)
+	return magelib.DocsBuild(docsConfig)
+}
 
-	// Generate man pages for Goblin commands
-	pages := map[string]string{
-		"docs/content/_index.md":  "man/man1/goblin.1",
-		"docs/getting-started.md": "man/man1/goblin-quickstart.1",
-	}
+// Serve runs Hugo's own server with live reload.
+func (Docs) Serve() error {
+	mg.Deps(checkHermetic)
+	return magelib.DocsServe(docsConfig)
+}
 
-	for src, dst := range pages {
-		// Check if source exists
-		if _, err := os.Stat(src); os.IsNotExist(err) {
-			fmt.Printf("Skipping %s (not found)\n", src)
-			continue
-		}
-
-		fmt.Printf("Generating %s -> %s\n", src, dst)
-		if err := sh.Run("pandoc", src, "-s", "-t", "man", "-o", dst); err != nil {
-			return fmt.Errorf("failed to generate %s: %w", dst, err)
-		}
-	}
-
-	fmt.Println("Man pages generated in ./man/man1")
-	return nil
+// Check fails when the committed reference no longer matches its source.
+//
+// Wired into Lint rather than left to a separate invocation, because a
+// gate nobody runs is the state this reference was already in: 312
+// hand-written lines of cli-reference.md that nothing compared to the
+// command tree.
+func (Docs) Check() error {
+	mg.Deps(checkHermetic)
+	return magelib.CheckDocsDrift(docsConfig)
 }
 
 // TestUnit runs only unit tests (core and internal packages)
@@ -539,7 +677,7 @@ func TestUnit() error {
 //     removing it turns lint red and that is a security decision, not a
 //     cleanup. Filed as GOBLIN-DIV-076.
 func Lint() error {
-	mg.Deps(checkHermetic, checkTerminology, checkFileLength, checkLedger, LicenseCheck)
+	mg.Deps(checkHermetic, checkTerminology, checkFileLength, checkLedger, LicenseCheck, Docs.Check)
 	return magelib.Lint("G402", "G404", "G304")
 }
 

@@ -64,12 +64,13 @@ bare `goblinctl status` is not a command:
 
 For a multi-node cluster see [docs/content/user/usage.md](docs/content/user/usage.md), and for the
 full flag and command surface see
-[docs/content/reference/cli-reference.md](docs/content/reference/cli-reference.md).
+[docs/content/reference/](docs/content/reference/).
 
 ## Documentation
 
 - **[Usage](docs/content/user/usage.md)**: setup and multi-node guide.
-- **[CLI reference](docs/content/reference/cli-reference.md)**: every `goblind` flag and `goblinctl` command.
+- **[CLI reference](docs/content/reference/)**: every `goblind` flag and
+  `goblinctl` command, generated from the cobra trees and gated against them.
 - **[Architecture](docs/content/architecture.md)**: Serf, Raft, the event bus, the ALPN registry, live migration.
 - **Ecosystem**: how Goblin and GAPI divide the work is documented in the goppydae-docs repository.
 

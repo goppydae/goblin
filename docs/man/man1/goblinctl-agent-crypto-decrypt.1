@@ -1,0 +1,47 @@
+.nh
+.TH "goblinctl" "1" "Jan 1970" "goblinctl 0.1.0-proto2g" "General Commands Manual"
+
+.SH NAME
+goblinctl-agent-crypto-decrypt - Decrypt data from stdin to stdout (AGE)
+
+
+.SH SYNOPSIS
+\fBgoblinctl agent crypto decrypt --identity  [flags]\fP
+
+
+.SH DESCRIPTION
+Decrypt data from stdin to stdout (AGE)
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for decrypt
+
+.PP
+\fB-i\fP, \fB--identity\fP=""
+	Identity file
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--control-addr\fP=""
+	Address of the target daemon's control plane (empty: from config)
+
+.PP
+\fB--log-level\fP=""
+	Log level: debug, info, warn, error
+
+.PP
+\fB--tls-ca\fP=""
+	CA certificate used to verify the daemon
+
+.PP
+\fB--tls-insecure\fP[=false]
+	Skip verification (INSECURE)
+
+.PP
+\fB-v\fP, \fB--version\fP[=false]
+	version for goblinctl
+
+
+.SH SEE ALSO
+\fBgoblinctl-agent-crypto(1)\fP

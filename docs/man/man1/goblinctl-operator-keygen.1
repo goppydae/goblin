@@ -1,0 +1,64 @@
+.nh
+.TH "goblinctl" "1" "Jan 1970" "goblinctl 0.1.0-proto2g" "General Commands Manual"
+
+.SH NAME
+goblinctl-operator-keygen - Generate an operator Ed25519 keypair
+
+
+.SH SYNOPSIS
+\fBgoblinctl operator keygen [flags]\fP
+
+
+.SH DESCRIPTION
+Writes \&.key (PEM PKCS#8 private) and \&.pub (hex public).
+Pass the .pub path to goblind --operator-key; keep the .key off the cluster.
+
+.PP
+Never retire your last known-good key until the new key has authorized
+one real change. The last registered key cannot be removed - that is what
+stops a compromised node emptying the registry and re-seeding it with its
+own key - but the rule counts keys, it cannot tell whether anyone holds
+the private half. A registry holding only unreachable keys can neither
+authorize anything nor be re-seeded.
+
+.PP
+Recovery is wiping the data dir on EVERY replica and re-bootstrapping;
+wiping one node only makes it catch up from the leader and inherit the
+same dead registry. On a cluster that has already run, that wipe also
+destroys the instance table and the append-only tombstone set, making
+terminated instance UUIDs re-admittable, and leaves the agent processes
+themselves running to be reaped by hand.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for keygen
+
+.PP
+\fB--out\fP=""
+	Output path prefix; writes \&.key and \&.pub
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--control-addr\fP=""
+	Address of the target daemon's control plane (empty: from config)
+
+.PP
+\fB--log-level\fP=""
+	Log level: debug, info, warn, error
+
+.PP
+\fB--tls-ca\fP=""
+	CA certificate used to verify the daemon
+
+.PP
+\fB--tls-insecure\fP[=false]
+	Skip verification (INSECURE)
+
+.PP
+\fB-v\fP, \fB--version\fP[=false]
+	version for goblinctl
+
+
+.SH SEE ALSO
+\fBgoblinctl-operator(1)\fP

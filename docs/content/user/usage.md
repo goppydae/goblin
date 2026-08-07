@@ -6,7 +6,7 @@ weight: 10
 # Goblin Usage Guide
 
 How to run Goblin. For the full flag and command surface, see the
-[CLI Reference](../reference/cli-reference.md).
+[CLI Reference](../reference/).
 
 ## Prerequisites
 

@@ -1,0 +1,135 @@
+.nh
+.TH "goblind" "1" "Jan 1970" "goblind 0.1.0-proto2g" "General Commands Manual"
+
+.SH NAME
+goblind-start - Start the goblind daemon
+
+
+.SH SYNOPSIS
+\fBgoblind start [flags]\fP
+
+
+.SH DESCRIPTION
+Start the goblind daemon
+
+
+.SH OPTIONS
+\fB--advertise-addr\fP=""
+	Advertise address (if different from bind)
+
+.PP
+\fB--agent-verify-key\fP=""
+	Path to the Ed25519 public key for agent signature verification (falls back to $GOBLIN_VERIFY_KEY)
+
+.PP
+\fB--bootstrap-expect\fP=0
+	Seed the cluster once this many nodes carrying the same value are visible; one of them is elected to bootstrap (0: seed model, the node with no --join bootstraps alone)
+
+.PP
+\fB--data\fP="./data/raft"
+	Data directory for Raft log
+
+.PP
+\fB--encrypt\fP=""
+	Base64 encoded 32-byte secret key for Serf encryption
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for start
+
+.PP
+\fB--join\fP=""
+	Join existing cluster peer (host:port)
+
+.PP
+\fB--listen-addr\fP="127.0.0.1:31415"
+	Single control-plane bind address (QUIC; carries agent events, RPC, Serf, and Raft via ALPN)
+
+.PP
+\fB--network-gate-timeout\fP=0s
+	Block startup until the network agent reports running, failing after this bound (0: gate disabled)
+
+.PP
+\fB--no-early-mounts\fP[=false]
+	Skip the Phase 0 mount table (container environments)
+
+.PP
+\fB--operator-key\fP=[]
+	Path to a hex-encoded Ed25519 operator public key that bootstraps the cluster's operator registry (repeatable; with none, every mutating verb is refused). Keep the matching private key: the last registered key cannot be removed, so a registry left holding only keys nobody controls can neither authorize anything nor be re-seeded, and the only recovery is wiping the data dir on EVERY replica and re-bootstrapping. Produce keys with 'goblinctl operator keygen'. These are also this node's FOUNDING SEED: a snapshot's registry is authenticated by replaying its provenance from exactly this key set, so every node in a cluster must be given the same one, and a node joining after the registry has been rotated is still given the FOUNDING keys rather than the current ones. Keep them for the cluster's life (GOBLIN-DIV-047).
+
+.PP
+\fB--pid1\fP[=false]
+	Run as PID 1: kernel Phase 0 boot before the cluster stack; reversed teardown on shutdown
+
+.PP
+\fB--production\fP[=false]
+	Restrict agent discovery to binaries with verified signatures
+
+.PP
+\fB--raft-snapshot-interval\fP=0s
+	How often Raft checks whether a compaction snapshot is due (0: raft default, 120s)
+
+.PP
+\fB--raft-snapshot-threshold\fP=0
+	Outstanding Raft log entries before a compaction snapshot (0: raft default, 8192)
+
+.PP
+\fB--raft-trailing-logs\fP=0
+	Raft log entries retained after a snapshot for fast follower replay (0: raft default, 10240)
+
+.PP
+\fB--shutdown-grace\fP=10s
+	Per-phase shutdown grace (drain + agent stop) before forcing
+
+.PP
+\fB--watchdog-device\fP=""
+	Hardware watchdog device to keep alive (empty: disabled)
+
+.PP
+\fB--watchdog-interval\fP=10s
+	Watchdog keepalive kick interval
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--id\fP=""
+	Unique node identifier (default: hostname)
+
+.PP
+\fB--log-file\fP=""
+	Additional rotated file sink
+
+.PP
+\fB--log-format\fP=""
+	Log format: json or console
+
+.PP
+\fB--log-level\fP=""
+	Log level: debug, info, warn, error
+
+.PP
+\fB--log-loki-url\fP=""
+	Forward logs to a Loki endpoint
+
+.PP
+\fB--metrics-addr\fP=""
+	Prometheus listen address (empty: disabled)
+
+.PP
+\fB--tls-ca\fP=""
+	CA certificate for peer verification
+
+.PP
+\fB--tls-cert\fP=""
+	This node's certificate
+
+.PP
+\fB--tls-key\fP=""
+	This node's private key
+
+.PP
+\fB-v\fP, \fB--version\fP[=false]
+	version for goblind
+
+
+.SH SEE ALSO
+\fBgoblind(1)\fP
