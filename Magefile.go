@@ -243,7 +243,18 @@ func CheckVersion() error {
 func EnvCheck() error {
 	return magelib.CheckShellUnification(
 		map[string]string{"gapi": "../gapi", "goblin": ".", "magelib": "path:../magelib"},
-		[]string{"go", "gcc", "protoc", "buf", "golangci-lint", "gosec", "govulncheck", "mage", "goimports"},
+		[]string{
+			"go", "gcc", "protoc",
+			// THE CODEGEN PLUGINS, and they are the reason this list grew
+			// (MAGELIB-DIV-010 blind spot 2). They were in all three flakes
+			// and in no unification check, so nothing asserted the shells
+			// resolve the SAME protoc-gen-go. For a codegen plugin a
+			// store-path difference is not cosmetic: it produces different
+			// generated output from identical .proto files.
+			"protoc-gen-go", "protoc-gen-go-grpc",
+			"buf", "golangci-lint", "gosec", "govulncheck",
+			"mage", "goimports",
+		},
 	)
 }
 
