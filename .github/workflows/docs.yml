@@ -62,6 +62,38 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixos-unstable
 
+      # OPERATOR DECISION 65: CACHE BEFORE GATING. The relearn theme is
+      # a Hugo module, and it is 43M extracted.
+      #
+      # THE PATH IS HUGO'S OWN CACHE AND NOT $GOMODCACHE, WHICH IS THE
+      # ASSUMPTION THIS STEP WAS FIRST WRITTEN AGAINST. Hugo drives Go
+      # modules but keeps its own store: measured 2026-08-07 with a fully
+      # warm $GOMODCACHE, a render still wrote 71M into
+      # hugo_cache/modules/filecache/modules/pkg/mod, a second copy of
+      # the same theme. Caching the Go module cache instead would have
+      # been a cache that never hits, which is worse than none - it pays
+      # the upload and keeps the fetch.
+      #
+      # The key is docs/go.sum, which is COMMITTED here and pins the
+      # theme's exact pseudo-version, so a theme bump misses by
+      # construction rather than serving a stale tree. The restore-keys
+      # prefix makes that miss partial instead of total.
+      #
+      # THIS JOB IS NOT THE CONSUMER THE CACHE EXISTS FOR.
+      # MAGELIB-DIV-012's h1 gate renders the site inside `mage lint`,
+      # which would hand a pull-request gate a 43M network dependency on
+      # a cold cache. Caches restore from the default branch and are
+      # scoped to the repository rather than to the workflow, so this job
+      # populating the key on main is what ci.yml will restore later.
+      # That ordering is the decision; the gate is a separate change.
+      - name: Cache the Hugo Module
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/hugo_cache
+          key: hugo-modules-${{ runner.os }}-${{ hashFiles('docs/go.sum') }}
+          restore-keys: |
+            hugo-modules-${{ runner.os }}-
+
       # docs:build syncs the shared assets, regenerates the reference,
       # and renders. It does NOT gate the result: the drift check is part
       # of `mage lint` in the CI workflow, because a stale reference is a
